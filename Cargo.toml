@@ -1,0 +1,11 @@
+[package]
+name = "ecc-rust"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ecc"
+path = "src/main.rs"
+
+[dependencies]
+regex = "1"
