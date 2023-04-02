@@ -1,5 +1,5 @@
 use super::lexer::{Lexer, TokenValue, Token};
-use super::ast::{BuiltinType, BuiltinTypeCode, Type, TranslateUnit, Variable, CompoundStmt, ReturnStmt, IntImm};
+use super::ast::{BuiltinType, BuiltinTypeCode, Type, TranslateUnit, Variable, CompoundStmt, ReturnStmt, IntImm, Decl};
 use super::ast::{FuncDecl, Stmt, Expr};
 
 macro_rules! required_token {
@@ -69,10 +69,10 @@ fn parse_compound_stmt(tokenizer: &mut Lexer) -> Result<CompoundStmt, String> {
     }
   }
   let right = required_token!(tokenizer, TokenValue::RBrace, true);
-  Ok(CompoundStmt::new(left, right, stmts))
+  Ok(CompoundStmt{left, right, stmts})
 }
 
-pub fn parse_program(tokenizer: &mut Lexer) -> Result<FuncDecl, String> {
+pub fn parse_function(tokenizer: &mut Lexer) -> Result<FuncDecl, String> {
   let parsed_dtype = parse_dtype(tokenizer);
   match parsed_dtype {
     Ok(dtype) => {
@@ -94,6 +94,18 @@ pub fn parse_program(tokenizer: &mut Lexer) -> Result<FuncDecl, String> {
       Err(msg)
     }
   }
+}
+
+pub fn parse_program(tokenizer: &mut Lexer) -> Result<TranslateUnit, String> {
+  let mut decls : Vec<Decl> = Vec::new();
+  while !expected_token!(tokenizer, TokenValue::Eof, false) {
+    let func = parse_function(tokenizer);
+    match func {
+      Ok(func) => decls.push(Decl::Func(func)),
+      Err(msg) => return Err(msg)
+    }
+  }
+  Ok(TranslateUnit{decls})
 }
 
 fn parse_identifier(tokenizer: &mut Lexer) -> Result<Token, String> {

@@ -1,15 +1,11 @@
-use super::lexer::{Lexer, Token, TokenValue};
-
-pub struct Parser {
-  tokenizer: Lexer,
-}
+use super::lexer::Token;
 
 pub enum Decl {
   Func(FuncDecl)
 }
 
 pub struct TranslateUnit {
-  decl: Vec<Decl>
+  pub decls: Vec<Decl>
 }
 
 pub enum BuiltinTypeCode {
@@ -21,7 +17,6 @@ pub enum BuiltinTypeCode {
 
 pub enum Type {
   Builtin(BuiltinType),
-  Class,
 }
 
 pub struct BuiltinType {
@@ -34,23 +29,21 @@ pub struct Variable {
   pub token: Token
 }
 
+impl Variable {
+  pub fn id(&self) -> &String {
+    &self.token.literal
+  }
+}
+
 pub struct FuncDecl {
   pub var: Variable,
   pub body: CompoundStmt
 }
 
 pub struct CompoundStmt {
-  left: Token, // Left braces
-  right: Token, // Right braces
-  stmts: Vec<Stmt>
-}
-
-impl CompoundStmt {
-  pub fn new(left: Token, right: Token, stmts: Vec<Stmt>) -> Self {
-    CompoundStmt {
-      left, right, stmts
-    }
-  }
+  pub left: Token, // Left braces
+  pub right: Token, // Right braces
+  pub stmts: Vec<Stmt>
 }
 
 pub enum Stmt {

@@ -1,3 +1,5 @@
+use std::fmt;
+use snailquote;
 use regex::Regex;
 
 pub struct Lexer {
@@ -24,6 +26,7 @@ pub enum TokenValue {
   RBracket,
   Semicolon,
   IntLiteral(i32),
+  StringLiteral(String),
   Eof,
   Unknown,
 }
@@ -42,6 +45,12 @@ pub struct Token {
   pub value: TokenValue,
 }
 
+impl fmt::Display for Token {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "@<row {}, col {}> \"{}\"", self.row, self.col, self.literal)
+  }
+}
+
 impl Token {
   fn len(&self) -> usize {
     return self.literal.len();
@@ -50,13 +59,18 @@ impl Token {
 
 impl Lexer {
 
-  fn integer(row: usize, col: usize, literal: String) -> Token {
+  fn handle_integer(row: usize, col: usize, literal: String) -> Token {
     let value : i32 = literal.parse().unwrap();
     let res = Token {
       row, col, literal,
       value: TokenValue::IntLiteral(value),
     };
     res
+  }
+
+  fn handle_string(row: usize, col: usize, literal: String) -> Token {
+    let value = snailquote::unescape(&literal[1..literal.len()-1]).unwrap();
+    Token { row, col, literal, value: TokenValue::StringLiteral(value) } 
   }
 
   fn valueless_token_impl(row: usize, col: usize, literal: String, value: TokenValue) -> Token {
@@ -84,7 +98,8 @@ impl Lexer {
         (Regex::new(r"^\["), valueless_token!(TokenValue::LBracket)),
         (Regex::new(r"^\]"), valueless_token!(TokenValue::RBracket)),
         (Regex::new(r"^;"), valueless_token!(TokenValue::Semicolon)),
-        (Regex::new(r"^\d+"), Lexer::integer),
+        (Regex::new(r"^\d+"), Lexer::handle_integer),
+        (Regex::new("\".*\""), Lexer::handle_string)
       ]
     }
   }
@@ -149,7 +164,7 @@ impl Lexer {
       self.head += res.len();
       self.col += res.len();
     }
-    return res;
+    res
   }
 
 }

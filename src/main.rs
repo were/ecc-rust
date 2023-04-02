@@ -15,7 +15,7 @@ fn main() {
   let mut src = String::new();
   match file {
     Ok(mut f) => {
-      f.read_to_string(&mut src);
+      f.read_to_string(&mut src).unwrap();
       parse(&src);
     }
     Err(error) => {
