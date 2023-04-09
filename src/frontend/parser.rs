@@ -1,14 +1,22 @@
-use super::lexer::{Lexer, TokenValue, Token};
-use super::ast::{BuiltinType, BuiltinTypeCode, Type, TranslateUnit, Variable, CompoundStmt, ReturnStmt, IntImm, Decl};
-use super::ast::{FuncDecl, Stmt, Expr};
+use quote::quote;
+use super::lexer::{Lexer, TokenType, Token};
+use super::ast::{BuiltinType, BuiltinTypeCode, Type, TranslateUnit, CompoundStmt, ReturnStmt, IntImm, Decl, InlineAsm};
+use super::ast::{FuncDecl, Stmt, Expr, StrImm, FuncCall, ClassDecl, VarDecl, Variable, ArrayType, BinaryOp};
+use super::sema::{SymbolTable, WithID};
 
 macro_rules! required_token {
   ($pp: expr, $expected: pat, $consume: expr) => {
     {
-      let to_consume = $pp.next_token($consume);
+      let to_consume = $pp.lookahead(0);
+      if ($consume) {
+        $pp.consume().unwrap();
+      }
       match to_consume.value {
         $expected => { to_consume }
-        _=> { return Err("Expect A but B got".to_string()) }
+        _=> {
+          let pat_str = quote!($expected).to_string();
+          return Err(format!("Expect {} but got {} @{}", pat_str, to_consume, line!()))
+        }
       }
     }
   };
@@ -17,7 +25,16 @@ macro_rules! required_token {
 macro_rules! expected_token {
   ($pp: expr, $expected: pat, $consume: expr) => {
     {
-      let to_consume = $pp.next_token($consume);
+      let to_consume = $pp.lookahead(0);
+      match to_consume.value {
+        $expected => { true }
+        _=> { false }
+      }
+    }
+  };
+  ($pp: expr, $expected: pat, $consume: expr, $ahead: expr) => {
+    {
+      let to_consume = $pp.lookahead($ahead);
       match to_consume.value {
         $expected => { true }
         _=> { false }
@@ -26,108 +43,295 @@ macro_rules! expected_token {
   };
 }
 
-fn parse_intimm(tokenizer: &mut Lexer) -> Result<Expr, String> {
-  let token = required_token!(tokenizer, TokenValue::IntLiteral(_), true);
-  Ok(Expr::IntImm(IntImm{token}))
+macro_rules! lookahead_tokens_impl {
+
+  ($pp: expr, $ahead: expr, $head:pat, $($rest: pat),*) => {
+    expected_token!($pp, $head, false, $ahead) && lookahead_tokens_impl!($pp, $ahead + 1, $($rest),*)
+  };
+
+  ($pp: expr, $ahead: expr, $head:pat) => {
+    expected_token!($pp, $head, false, $ahead)
+  };
+
 }
 
-fn parse_expr(tokenizer: &mut Lexer) -> Result<Expr, String> {
-  parse_intimm(tokenizer)
+macro_rules! lookahead_tokens {
+
+  ($pp: expr, $($expected: pat),*) => {
+    lookahead_tokens_impl!($pp, 0, $($expected),*)
+  };
+
+}
+
+fn parse_intimm(tokenizer: &mut Lexer) -> Result<Expr, String> {
+  let token = required_token!(tokenizer, TokenType::IntLiteral, true);
+  let value : i32 = token.literal.parse().unwrap();
+  Ok(Expr::IntImm(Box::new(IntImm{token, value })))
+}
+
+fn parse_expr_term(tokenizer: &mut Lexer) -> Result<Expr, String> {
+  if expected_token!(tokenizer, TokenType::IntLiteral, false) {
+    return parse_intimm(tokenizer)
+  }
+  if expected_token!(tokenizer, TokenType::StringLiteral, false) {
+    return parse_strimm(tokenizer)
+  }
+  if lookahead_tokens!(tokenizer, TokenType::Identifier, TokenType::LPran) {
+    return parse_func_call(tokenizer)
+  }
+  if lookahead_tokens!(tokenizer, TokenType::Identifier) {
+    let tok = required_token!(tokenizer, TokenType::Identifier, true);
+    match tokenizer.scopes.find(&tok.literal) {
+      Some(x) => {
+        match x {
+          WithID::Variable(var) => {
+            return Ok(Expr::Variable(Box::new(Variable{id: tok, decl: Some(var.clone())})))
+          }
+          _ => {
+            return Err(format!("{} is a function or class, not a variable", tok))
+          }
+        }
+      }
+      None => {
+        return Ok(Expr::UnknownRef(tok))
+      }
+    }
+  }
+  let tok = tokenizer.lookahead(0);
+  Err(format!("Fail to parse expr {} {}", tok, tok.value))
+}
+
+fn parse_expr(tokenizer: &mut Lexer, terminator: fn(&Token)->bool) -> Result<Expr, String> {
+  let mut expr = parse_expr_term(tokenizer).unwrap();
+  loop {
+    if lookahead_tokens!(tokenizer, TokenType::AttrAccess) {
+      let op = tokenizer.lookahead(0);
+      tokenizer.consume().unwrap();
+      let rhs = parse_expr(tokenizer, terminator).unwrap();
+      expr = Expr::BinaryOp(Box::new(BinaryOp{op, lhs: expr, rhs}));
+      continue;
+    }
+    if terminator(&tokenizer.lookahead(0)) {
+      return Ok(expr)
+    }
+  }
+}
+
+fn parse_strimm(tokenizer: &mut Lexer) -> Result<Expr, String> {
+  let token = required_token!(tokenizer, TokenType::StringLiteral, true);
+  let value = snailquote::unescape(&token.literal[1..token.literal.len()-1]).unwrap();
+  Ok(Expr::StrImm(Box::new(StrImm{token, value})))
 }
 
 fn parse_return(tokenizer: &mut Lexer) -> Result<ReturnStmt, String> {
-  let token = required_token!(tokenizer, TokenValue::KeywordReturn, true);
-  if expected_token!(tokenizer, TokenValue::Semicolon, false) {
-    required_token!(tokenizer, TokenValue::Semicolon, true);
+  let token = required_token!(tokenizer, TokenType::KeywordReturn, true);
+  if expected_token!(tokenizer, TokenType::Semicolon, false) {
+    required_token!(tokenizer, TokenType::Semicolon, true);
     return Ok(ReturnStmt{token, value: None})
   }
-  let parsed_value = parse_expr(tokenizer);
+  let cond = |tv: &Token| {
+    match tv.value {
+      TokenType::Semicolon => true,
+      _ => false
+    }
+  };
+  let parsed_value = parse_expr(tokenizer, cond);
   match parsed_value {
     Ok(value) => {
-      required_token!(tokenizer, TokenValue::Semicolon, true);
+      required_token!(tokenizer, TokenType::Semicolon, true);
       Ok(ReturnStmt{token, value: Some(value)})
     }
     Err(msg) => Err(msg)
   }
 }
 
-fn parse_statement(tokenizer: &mut Lexer) -> Result<Stmt, String> {
-  let parsed = parse_return(tokenizer);
-  match parsed {
-    Ok(ret) => { Ok(Stmt::Ret(ret)) }
-    Err(msg) => Err(msg)
+fn parse_params(tokenizer: &mut Lexer) -> Result<Vec<Expr>, String> {
+  let mut params = Vec::new();
+  while !expected_token!(tokenizer, TokenType::RPran, false) {
+    let cond = |tv: &Token| {
+      match tv.value {
+        TokenType::RPran => true,
+        TokenType::Comma => true,
+        _ => false
+      }
+    };
+    let parsed = parse_expr(tokenizer, cond);
+    match parsed {
+      Ok(expr) => { params.push(expr) }
+      Err(msg) => { return Err(msg) }
+    }
+    if expected_token!(tokenizer, TokenType::Comma, false) {
+      required_token!(tokenizer, TokenType::Comma, true);
+    }
   }
+  Ok(params)
 }
 
-fn parse_compound_stmt(tokenizer: &mut Lexer) -> Result<CompoundStmt, String> {
-  let left = required_token!(tokenizer, TokenValue::LBrace, true);
+fn parse_func_call(tokenizer: &mut Lexer) -> Result<Expr, String> {
+  let fid = required_token!(tokenizer, TokenType::Identifier, true);
+  required_token!(tokenizer, TokenType::LPran, true);
+  let params = parse_params(tokenizer).unwrap();
+  required_token!(tokenizer, TokenType::RPran, true);
+  Ok(Expr::FuncCall(Box::new(FuncCall{fname: fid, func: None, params})))
+}
+
+fn parse_inline_asm(tokenizer: &mut Lexer) -> Result<InlineAsm, String> {
+  required_token!(tokenizer, TokenType::KeywordAsm, true);
+  required_token!(tokenizer, TokenType::LPran, true);
+  let args = parse_params(tokenizer).unwrap();
+  required_token!(tokenizer, TokenType::RPran, true);
+  required_token!(tokenizer, TokenType::Semicolon, true);
+  if let Expr::StrImm(code) = args[0].clone() {
+    if let Expr::StrImm(operands) = args[args.len() - 1].clone() {
+      return Ok(InlineAsm{code, args: args[1..args.len()-1].to_vec(), operands})
+    }
+  }
+  Err("Unexpected expr type in ASM parsing".to_string())
+}
+
+fn parse_statement(tokenizer: &mut Lexer) -> Result<Stmt, String> {
+  if lookahead_tokens!(tokenizer, TokenType::KeywordReturn) {
+    let ret = parse_return(tokenizer).unwrap();
+    return Ok(Stmt::Ret(Box::new(ret)));
+  }
+  if lookahead_tokens!(tokenizer, TokenType::Identifier, TokenType::LPran) {
+    if let Expr::FuncCall(call) = parse_func_call(tokenizer).unwrap() {
+      required_token!(tokenizer, TokenType::Semicolon, true);
+      return Ok(Stmt::FuncCall(call))
+    }
+  }
+  if lookahead_tokens!(tokenizer, TokenType::KeywordAsm) {
+    let asm = parse_inline_asm(tokenizer).unwrap();
+    return Ok(Stmt::InlineAsm(Box::new(asm)));
+  }
+  Err(format!("Failed to parse statement {}", tokenizer.lookahead(0)))
+}
+
+fn parse_compound_stmt(tokenizer: &mut Lexer, vars : &Vec<Box<VarDecl>>) -> Result<CompoundStmt, String> {
+  let left = required_token!(tokenizer, TokenType::LBrace, true);
   let mut stmts : Vec<Stmt> = Vec::new();
-  while !expected_token!(tokenizer, TokenValue::RBrace, false) {
+  let mut symbols = SymbolTable::new();
+  for elem in vars.iter() {
+    symbols.insert(elem.id.literal.clone(), WithID::Variable(elem.clone()));
+  }
+  tokenizer.scopes.push(Box::new(symbols));
+  while !expected_token!(tokenizer, TokenType::RBrace, false) {
     match parse_statement(tokenizer) {
       Ok(stmt) => { stmts.push(stmt); }
       Err(msg) => { return Err(msg); }
     }
   }
-  let right = required_token!(tokenizer, TokenValue::RBrace, true);
-  Ok(CompoundStmt{left, right, stmts})
+  let right = required_token!(tokenizer, TokenType::RBrace, true);
+
+  match tokenizer.scopes.pop() {
+    Some(scope) => { 
+      return Ok(CompoundStmt{ left, right, stmts, symbols: scope })
+    }
+    None => { return Err("Failed to pop scope".to_string()); }
+  }
+}
+
+pub fn parse_args(tokenizer: &mut Lexer) -> Result<Vec<Box<VarDecl>>, String> {
+  let mut res : Vec<Box<VarDecl>> = Vec::new();
+  while !expected_token!(tokenizer, TokenType::RPran, false) {
+    let dtype = parse_dtype(tokenizer).unwrap();
+    let id = required_token!(tokenizer, TokenType::Identifier, true);
+    res.push(Box::new(VarDecl{ty: dtype, id}));
+    if expected_token!(tokenizer, TokenType::Comma, false) {
+      tokenizer.consume().unwrap();
+    }
+  }
+  return Ok(res)
 }
 
 pub fn parse_function(tokenizer: &mut Lexer) -> Result<FuncDecl, String> {
-  let parsed_dtype = parse_dtype(tokenizer);
-  match parsed_dtype {
-    Ok(dtype) => {
-      let parsed_id = parse_identifier(tokenizer);
-      let var : Variable; 
-      match parsed_id {
-        Ok(token) => { var = Variable{ty: dtype, token} }
-        Err(msg) => { return Err(msg); }
-      }
-      required_token!(tokenizer, TokenValue::LPran, true);
-      required_token!(tokenizer, TokenValue::RPran, true);
-      let parsed_body = parse_compound_stmt(tokenizer);
-      match parsed_body {
-        Ok(body) => { Ok(FuncDecl{var, body}) }
-        _ => { Err("Function body parse failure".to_string()) }
-      }
-    }
-    Err(msg) => {
-      Err(msg)
-    }
+  let dtype = parse_dtype(tokenizer).unwrap();
+  let parsed_id = required_token!(tokenizer, TokenType::Identifier, true);
+  required_token!(tokenizer, TokenType::LPran, true);
+  let args = parse_args(tokenizer).unwrap();
+  required_token!(tokenizer, TokenType::RPran, true);
+  let parsed_body = parse_compound_stmt(tokenizer, &args);
+  match parsed_body {
+    Ok(body) => { Ok(FuncDecl{ty: dtype, id: parsed_id, args, body: Box::new(body)}) }
+    _ => { Err("Function body parse failure".to_string()) }
   }
 }
 
-pub fn parse_program(tokenizer: &mut Lexer) -> Result<TranslateUnit, String> {
+fn parse_var_decl(tokenizer: &mut Lexer) -> Result<VarDecl, String> {
+  let dtype = parse_dtype(tokenizer).unwrap();
+  let id = required_token!(tokenizer, TokenType::Identifier, true);
+  let var = VarDecl{ty: dtype, id};
+  required_token!(tokenizer, TokenType::Semicolon, true);
+  Ok(var)
+}
+
+fn parse_class(tokenizer: &mut Lexer) -> Result<ClassDecl, String> {
+  let mut methods : Vec<Box<FuncDecl>> = Vec::new();
+  let mut attrs : Vec<Box<VarDecl>> = Vec::new();
+  required_token!(tokenizer, TokenType::KeywordClass, true);
+  let id = required_token!(tokenizer, TokenType::Identifier, true);
+  required_token!(tokenizer, TokenType::LBrace, true);
+  while !lookahead_tokens!(tokenizer, TokenType::RBrace) {
+    // 0 is dtype, 1 is identifier, 2 is (, then function call
+    if expected_token!(tokenizer, TokenType::LPran, false, 2) {
+      let func = parse_function(tokenizer).unwrap();
+      methods.push(Box::new(func));
+    } else {
+      let attr = parse_var_decl(tokenizer).unwrap();
+      attrs.push(Box::new(attr));
+    }
+  }
+  required_token!(tokenizer, TokenType::RBrace, true);
+  Ok(ClassDecl{id, methods, attrs})
+}
+
+pub fn parse_program(tokenizer: &mut Lexer, fname: String) -> Result<TranslateUnit, String> {
   let mut decls : Vec<Decl> = Vec::new();
-  while !expected_token!(tokenizer, TokenValue::Eof, false) {
-    let func = parse_function(tokenizer);
-    match func {
-      Ok(func) => decls.push(Decl::Func(func)),
-      Err(msg) => return Err(msg)
-    }
-  }
-  Ok(TranslateUnit{decls})
-}
 
-fn parse_identifier(tokenizer: &mut Lexer) -> Result<Token, String> {
-  let token = tokenizer.next_token(true);
-  match token.value {
-    TokenValue::Identifier => {
-      Ok(token)
-    }
-    _ => {
-      Err("Expect an identifier but, ".to_string())
+  while !expected_token!(tokenizer, TokenType::Eof, false) {
+    if lookahead_tokens!(tokenizer, TokenType::KeywordClass) {
+      let parsed_class = parse_class(tokenizer).unwrap();
+      decls.push(Decl::Class(Box::new(parsed_class)));
+    } else {
+      let func = parse_function(tokenizer).unwrap();
+      decls.push(Decl::Func(Box::new(func)));
     }
   }
+  Ok(TranslateUnit{fname, decls})
 }
 
 fn parse_dtype(tokenizer: &mut Lexer) -> Result<Type, String> {
-  let token = tokenizer.next_token(true);
-  match token.value {
-    TokenValue::KeywordInt => {
-      Ok(Type::Builtin(BuiltinType{token, code: BuiltinTypeCode::Int}))
+  let token = tokenizer.lookahead(0);
+  tokenizer.consume().unwrap();
+  let scalar_ty = match token.value {
+    TokenType::KeywordInt => {
+      Ok(Type::Builtin(Box::new(BuiltinType{token, code: BuiltinTypeCode::Int})))
+    }
+    TokenType::KeywordVoid => {
+      Ok(Type::Builtin(Box::new(BuiltinType{token, code: BuiltinTypeCode::Void})))
+    }
+    TokenType::KeywordChar => {
+      Ok(Type::Builtin(Box::new(BuiltinType{token, code: BuiltinTypeCode::Char})))
+    }
+    TokenType::KeywordBool => {
+      Ok(Type::Builtin(Box::new(BuiltinType{token, code: BuiltinTypeCode::Bool})))
+    }
+    TokenType::Identifier => {
+      Ok(Type::Builtin(Box::new(BuiltinType{token, code: BuiltinTypeCode::Unknown})))
     }
     _ => {
-      Err("data type parse failure".to_string())
+      Err(format!("Data type parse failure {}", token))
     }
+  };
+  let mut dims = 0;
+  while expected_token!(tokenizer, TokenType::LBracket, false) {
+    required_token!(tokenizer, TokenType::LBracket, true);
+    required_token!(tokenizer, TokenType::RBracket, true);
+    dims += 1
+  }
+  if dims == 0 {
+    scalar_ty
+  } else {
+    Ok(Type::Array(Box::new(ArrayType{scalar_ty: scalar_ty.unwrap(), dims})))
   }
 }

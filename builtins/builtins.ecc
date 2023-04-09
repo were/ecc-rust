@@ -1,0 +1,35 @@
+void print(string s) {
+  asm(
+    "movl $0, %eax\nmovl $1, %edi\nmovq $2, %rsi\nmovl $3, %edx", // mnemonic
+    1, // write,
+    1, // stdout,
+    s.data_, // data
+    s.length_, // length
+    "i,i,r,r,~{eax},~{edi},~{rsi},~{edx}" // operands
+  );
+  return;
+}
+
+void println(string s) {
+  print(s);
+  print("\n");
+  return;
+}
+
+string toString(int x) {
+  return;
+}
+
+class string {
+
+  int length() {
+    return 0;
+  }
+
+  int parseInt() {
+    return 0;
+  }
+
+  int length_;
+  char[] data_;
+}
