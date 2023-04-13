@@ -179,6 +179,7 @@ pub fn hoist_methods(ast: &Rc<Linkage>) -> Rc<Linkage> {
 struct SymbolResolver {
   scopes: ScopeStack,
   var_decls: Vec<Rc<VarDecl>>,
+  check_func_sig: bool,
 }
 
 
@@ -311,9 +312,11 @@ impl Visitor for SymbolResolver {
       if callee.args.len() != params.len() {
         panic!("Expect {} args, but got {}", callee.args.len(), params.len());
       }
-      for (i, (arg, param)) in Iterator::zip(callee.args.iter(), params.iter()).enumerate() {
-        if !type_eq(&arg.ty, &param.dtype(&self.scopes)) {
-          panic!("Expect argument {} to be {}, but {}", i, arg.ty, param.dtype(&self.scopes));
+      if self.check_func_sig {
+        for (i, (arg, param)) in Iterator::zip(callee.args.iter(), params.iter()).enumerate() {
+          if !type_eq(&arg.ty, &param.dtype(&self.scopes)) {
+            panic!("Expect argument {} to be {}, but {}", i, arg.ty, param.dtype(&self.scopes));
+          }
         }
       }
     } else {
@@ -347,10 +350,11 @@ impl Visitor for SymbolResolver {
 }
 
 
-pub fn resolve_symbols(ast: &Rc<Linkage>) -> Rc<Linkage> {
+pub fn resolve_symbols(ast: &Rc<Linkage>, check_func_sig:bool) -> Rc<Linkage> {
   SymbolResolver{
     scopes: ScopeStack::new(),
-    var_decls: Vec::new()
+    var_decls: Vec::new(),
+    check_func_sig
   }.visit_linkage(ast)
 }
 

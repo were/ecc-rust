@@ -12,13 +12,13 @@ use super::sema::SymbolTable;
 #[macro_export]
 macro_rules! mutated {
   ($a:expr, $b:expr) => {
-    Iterator::zip($a.iter(), $b.iter()).fold(true, |acc, x| {
-      acc && Rc::ptr_eq(x.0, x.1)
+    Iterator::zip($a.iter(), $b.iter()).fold(false, |acc, x| {
+      acc || !Rc::ptr_eq(x.0, x.1)
     })
   };
-  ($a:expr, $b:expr, $cond:expr) => {
-    Iterator::zip($a.iter(), $b.iter()).fold(true, |acc, x| {
-      acc && $cond(x.0, x.1)
+  ($a:expr, $b:expr, $eq_cond:expr) => {
+    Iterator::zip($a.iter(), $b.iter()).fold(false, |acc, x| {
+      acc || !$eq_cond(x.0, x.1)
     })
   };
 }

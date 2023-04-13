@@ -26,7 +26,8 @@ pub fn parse(fname: String, src: String) -> Rc<Linkage> {
 }
 
 pub fn semantic_check(ast: &Rc<Linkage>) -> Rc<Linkage> {
-  let new_ast = sema::hoist_methods(ast);
-  println!("{}", new_ast);
-  sema::resolve_symbols(&new_ast)
+  let hoisted = sema::hoist_methods(ast);
+  let type_resolved = sema::resolve_symbols(&hoisted, false);
+  println!("{}", type_resolved);
+  sema::resolve_symbols(&type_resolved, true)
 }
