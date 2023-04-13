@@ -1,4 +1,4 @@
-void print(string s) {
+func print(string s) -> void {
   asm(
     "movl $0, %eax\nmovl $1, %edi\nmovq $2, %rsi\nmovl $3, %edx", // mnemonic
     1, // write,
@@ -10,23 +10,23 @@ void print(string s) {
   return;
 }
 
-void println(string s) {
+func println(string s) -> void {
   print(s);
   print("\n");
   return;
 }
 
-string toString(int x) {
+func toString(int x) -> string {
   return;
 }
 
 class string {
 
-  int length() {
+  func length() -> int {
     return 0;
   }
 
-  int parseInt() {
+  func parseInt() -> int {
     return 0;
   }
 

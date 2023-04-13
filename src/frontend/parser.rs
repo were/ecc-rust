@@ -223,11 +223,13 @@ pub fn parse_args(tokenizer: &mut Lexer) -> Result<Vec<Rc<VarDecl>>, String> {
 }
 
 pub fn parse_function(tokenizer: &mut Lexer) -> Result<FuncDecl, String> {
-  let dtype = parse_dtype(tokenizer).unwrap();
+  required_token!(tokenizer, TokenType::KeywordFunc, true);
   let parsed_id = required_token!(tokenizer, TokenType::Identifier, true);
   required_token!(tokenizer, TokenType::LPran, true);
   let args = parse_args(tokenizer).unwrap();
   required_token!(tokenizer, TokenType::RPran, true);
+  required_token!(tokenizer, TokenType::FuncMap, true);
+  let dtype = parse_dtype(tokenizer).unwrap();
   let parsed_body = parse_compound_stmt(tokenizer);
   match parsed_body {
     Ok(body) => {
@@ -255,8 +257,7 @@ fn parse_class(tokenizer: &mut Lexer) -> Result<ClassDecl, String> {
   let id = required_token!(tokenizer, TokenType::Identifier, true);
   required_token!(tokenizer, TokenType::LBrace, true);
   while !lookahead_tokens!(tokenizer, TokenType::RBrace) {
-    // 0 is dtype, 1 is identifier, 2 is (, then function call
-    if expected_token!(tokenizer, TokenType::LPran, false, 2) {
+    if lookahead_tokens!(tokenizer, TokenType::KeywordFunc) {
       let func = parse_function(tokenizer).unwrap();
       methods.push(Rc::new(func));
     } else {
