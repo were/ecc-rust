@@ -9,27 +9,65 @@ use super::ast::{
 
 use super::sema::SymbolTable;
 
+macro_rules! mutated {
+  ($a:expr, $b:expr) => {
+    Iterator::zip($a.iter(), $b.iter()).fold(true, |acc, x| {
+      acc && Rc::ptr_eq(x.0, x.1)
+    })
+  };
+  ($a:expr, $b:expr, $cond:expr) => {
+    Iterator::zip($a.iter(), $b.iter()).fold(true, |acc, x| {
+      acc && $cond(x.0, x.1)
+    })
+  };
+}
+
+fn expr_eq(a:&Expr, b:&Expr) -> bool {
+  match (a, b) {
+    (Expr::StrImm(v0), Expr::StrImm(v1)) => Rc::ptr_eq(v0, v1),
+    (Expr::IntImm(v0),Expr::IntImm(v1)) => Rc::ptr_eq(v0, v1),
+    (Expr::FuncCall(v0),Expr::FuncCall(v1)) => Rc::ptr_eq(v0, v1),
+    (Expr::Variable(v0),Expr::Variable(v1)) => Rc::ptr_eq(v0, v1),
+    (Expr::BinaryOp(v0),Expr::BinaryOp(v1)) => Rc::ptr_eq(v0, v1),
+    (Expr::AttrAccess(v0),Expr::AttrAccess(v1)) => Rc::ptr_eq(v0, v1),
+    (Expr::UnknownRef(v0),Expr::UnknownRef(v1)) => v0.literal == v1.literal,
+    _ => { false }
+  }
+}
+
+fn stmt_eq(a:&Stmt, b:&Stmt) -> bool {
+  match (a, b) {
+    (Stmt::Ret(v0),Stmt::Ret(v1)) => Rc::ptr_eq(v0, v1),
+    (Stmt::FuncCall(v0),Stmt::FuncCall(v1)) => Rc::ptr_eq(v0, v1),
+    (Stmt::InlineAsm(v0),Stmt::InlineAsm(v1)) => Rc::ptr_eq(v0, v1),
+    _ => { false }
+  }
+}
+
+fn type_eq(a:&Type, b:&Type) -> bool {
+  match (a, b) {
+    (Type::Builtin(v0), Type::Builtin(v1)) => Rc::ptr_eq(v0, v1),
+    (Type::Array(v0), Type::Array(v1)) => Rc::ptr_eq(v0, v1),
+    (Type::Class(v0), Type::Class(v1)) => Rc::ptr_eq(v0, v1),
+    _ => { false }
+  }
+}
+
+fn decl_eq(a:&Decl, b:&Decl) -> bool {
+  match (a, b) {
+    (Decl::Func(v0), Decl::Func(v1)) => Rc::ptr_eq(v0, v1),
+    (Decl::Class(v0), Decl::Class(v1)) => Rc::ptr_eq(v0, v1),
+    _ => false
+  }
+}
+
 pub trait Visitor {
 
-  fn visit_linkage(&mut self, linkage: &Linkage) -> Linkage {
-    let tus = linkage.tus.iter().map(|elem| self.visit_tu(elem)).collect();
-    Linkage {
-      tus,
-      symbols: linkage.symbols.clone()
-    }
-  }
-
-  fn visit_decl(&mut self, decl: &Decl) -> Decl {
+  fn visit_decl(&mut self, decl:&Decl) -> Decl {
     match decl {
       Decl::Func(func) => Decl::Func(self.visit_func(func)),
       Decl::Class(class) => Decl::Class(self.visit_class(class)),
     }
-  }
-
-  fn visit_class(&mut self, class: &Rc<ClassDecl>) -> Rc<ClassDecl> {
-    let methods = class.methods.iter().map(|elem| self.visit_func(elem)).collect();
-    let attrs = class.attrs.iter().map(|elem| self.visit_var_decl(elem)).collect();
-    Rc::new(ClassDecl{ id: class.id.clone(), methods, attrs, })
   }
 
   fn visit_expr(&mut self, expr: &Expr) -> Expr {
@@ -60,57 +98,109 @@ pub trait Visitor {
     }
   }
 
+  fn visit_linkage(&mut self, linkage:&Rc<Linkage>) -> Rc<Linkage> {
+    let tus:Vec<Rc<TranslateUnit>> =
+      linkage.tus.iter().map(|elem| self.visit_tu(elem)).collect();
+    if mutated!(tus, linkage.tus) {
+      return Rc::new(Linkage {
+        tus,
+        symbols: linkage.symbols.clone()
+      })
+    }
+    linkage.clone()
+  }
+
+  fn visit_class(&mut self, class:&Rc<ClassDecl>) -> Rc<ClassDecl> {
+    let methods:Vec<Rc<FuncDecl>> =
+      class.methods.iter().map(|elem| self.visit_func(elem)).collect();
+    let attrs:Vec<Rc<VarDecl>> =
+      class.attrs.iter().map(|elem| self.visit_var_decl(elem)).collect();
+    if mutated!(methods, class.methods) || mutated!(attrs, class.attrs) {
+      return Rc::new(ClassDecl{ id: class.id.clone(), methods, attrs, })
+    }
+    class.clone()
+  }
+
   fn visit_func_call(&mut self, call: &Rc<FuncCall>) -> Rc<FuncCall> {
-    let params : Vec<Expr> = call.params.iter().map(|x| self.visit_expr(x)).collect();
-    Rc::new(FuncCall{
-      fname: call.fname.clone(),
-      params,
-      func: call.func.clone()
-    })
+    let params:Vec<Expr> = call.params.iter().map(|x| self.visit_expr(x)).collect();
+    if mutated!(params, call.params, expr_eq) {
+      return Rc::new(FuncCall{
+        fname: call.fname.clone(),
+        params,
+        func: call.func.clone()
+      })
+    }
+    call.clone()
   }
 
   fn visit_tu(&mut self, tu: &Rc<TranslateUnit>) -> Rc<TranslateUnit> {
-    let decls : Vec<Decl> = tu.decls.iter().map(|x| self.visit_decl(x)).collect();
-    Rc::new(TranslateUnit{ fname: tu.fname.clone(), decls })
+    let decls:Vec<Decl> = tu.decls.iter().map(|x| self.visit_decl(x)).collect();
+    if mutated!(decls, tu.decls, decl_eq) {
+      return Rc::new(TranslateUnit{ fname: tu.fname.clone(), decls })
+    }
+    return tu.clone()
   }
 
   fn visit_func(&mut self, func: &Rc<FuncDecl>) -> Rc<FuncDecl> {
-    let body = self.visit_compound_stmt(&func.body);
-    let args = func.args.iter().map(|x| self.visit_var_decl(x)).collect();
-    Rc::new(FuncDecl{
-      ty: func.ty.clone(),
-      id: func.id.clone(),
-      args, body,
-    })
+    let body:Rc<CompoundStmt> = self.visit_compound_stmt(&func.body);
+    let args:Vec<Rc<VarDecl>> = func.args.iter().map(|x| self.visit_var_decl(x)).collect();
+    if !Rc::ptr_eq(&body, &func.body) || mutated!(args, func.args) {
+      return Rc::new(FuncDecl{
+        ty: func.ty.clone(),
+        id: func.id.clone(),
+        args, body,
+      })
+    }
+    func.clone()
   }
 
   fn visit_var_decl(&mut self, var: &Rc<VarDecl>) -> Rc<VarDecl> {
     let ty = self.visit_type(&var.ty);
+    if type_eq(&ty, &var.ty) {
+      return var.clone()
+    }
     Rc::new(VarDecl{ ty, id: var.id.clone() })
   }
 
   fn visit_compound_stmt(&mut self, block: &Rc<CompoundStmt>) -> Rc<CompoundStmt> {
-    let stmts = block.stmts.iter().map(|x| self.visit_stmt(x)).collect();
-    Rc::new(CompoundStmt{
-      left: block.left.clone(),
-      right: block.right.clone(),
-      stmts, symbols: Rc::new(SymbolTable::new())
-    })
+    let stmts:Vec<Stmt> = block.stmts.iter().map(|x| self.visit_stmt(x)).collect();
+    if mutated!(stmts, block.stmts, stmt_eq) {
+      return Rc::new(CompoundStmt{
+        left: block.left.clone(),
+        right: block.right.clone(),
+        stmts, symbols: Rc::new(SymbolTable::new())
+      })
+    }
+    block.clone()
   }
 
   fn visit_inline_asm(&mut self, asm: &Rc<InlineAsm>) -> Stmt {
-    // TODO(@were): Improve the performance later.
-    let args : Vec<Expr> = asm.args.iter().map(|x| self.visit_expr(x)).collect();
-    Stmt::InlineAsm(Rc::new(InlineAsm{ code : asm.code.clone(), args, operands: asm.operands.clone() }))
+    let args:Vec<Expr> = asm.args.iter().map(|x| self.visit_expr(x)).collect();
+    if mutated!(args, asm.args, expr_eq) {
+      return Stmt::InlineAsm(Rc::new(InlineAsm{
+        code : asm.code.clone(), args, operands: asm.operands.clone()
+      }))
+    }
+    return Stmt::InlineAsm(asm.clone())
   }
 
   fn visit_binary_op(&mut self, op: &Rc<BinaryOp>) -> Expr {
     let lhs = self.visit_expr(&op.lhs);
     let rhs = self.visit_expr(&op.rhs);
+    if expr_eq(&lhs, &op.lhs) && expr_eq(&rhs, &op.rhs) {
+      return Expr::BinaryOp(op.clone())
+    }
     Expr::BinaryOp(Rc::new(BinaryOp{ lhs, rhs, op: op.op.clone() }))
   }
 
   fn visit_return(&mut self, x: &Rc<ReturnStmt>) -> Stmt {
+    if let Some(val) = &x.value {
+      let new_val = self.visit_expr(&val);
+      if expr_eq(&new_val, &val) {
+        return Stmt::Ret(x.clone())
+      }
+      return Stmt::Ret(Rc::new(ReturnStmt{ token: x.token.clone(), value: Some(new_val) }))
+    }
     Stmt::Ret(x.clone())
   }
 
@@ -128,11 +218,17 @@ pub trait Visitor {
 
   fn visit_array_ty(&mut self, x: &Rc<ArrayType>) -> Type {
     let ty = self.visit_type(&x.scalar_ty);
+    if type_eq(&ty, &x.scalar_ty) {
+      return Type::Array(x.clone())
+    }
     Type::Array(Rc::new(ArrayType{ scalar_ty: ty, dims: x.dims }))
   }
 
   fn visit_attr_access(&mut self, x: &Rc<AttrAccess>) -> Expr {
     let this = self.visit_expr(&x.this);
+    if expr_eq(&this, &x.this) {
+      return Expr::AttrAccess(x.clone())
+    }
     Expr::AttrAccess(Rc::new(AttrAccess{ this, attr: x.attr.clone(), idx: x.idx }))
   }
 

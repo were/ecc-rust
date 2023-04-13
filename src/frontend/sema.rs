@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use super::ast::{
   FuncDecl, VarDecl, Linkage, TranslateUnit, Decl, ClassDecl, Type, Stmt, CompoundStmt,
-  Expr, Variable, BinaryOp, ClassRef, AttrAccess, BuiltinTypeCode
+  Expr, Variable, BinaryOp, ClassRef, AttrAccess, BuiltinTypeCode, FuncCall
 };
 use super::visitor::Visitor;
 use super::lexer::{Token, TokenType};
@@ -23,7 +23,11 @@ pub struct SymbolTable {
 impl SymbolTable {
 
   pub fn insert(&mut self, id: String, instance: WithID) {
-    self.symbols.insert(id, instance);
+    if let None = self.get(&id) {
+      self.symbols.insert(id, instance);
+    } else {
+      panic!("Symbol {} already defined", id);
+    }
   }
 
   pub fn get(&self, id: &String) -> Option<&WithID> {
@@ -50,13 +54,13 @@ impl ScopeStack {
     self.scopes.push(scope);
   }
 
-  pub fn insert(&mut self, id: String, instance: WithID) {
-    if let Some(last) = self.scopes.last_mut() {
-      if let Some(scope) = Rc::get_mut(last) {
-        scope.insert(id, instance);
-      }
-    }
-  }
+  // pub fn insert(&mut self, id: String, instance: WithID) {
+  //   if let Some(last) = self.scopes.last_mut() {
+  //     if let Some(scope) = Rc::get_mut(last) {
+  //       scope.insert(id, instance);
+  //     }
+  //   }
+  // }
 
   pub fn pop(&mut self) -> Option<Rc<SymbolTable>> {
     self.scopes.pop()
@@ -71,6 +75,18 @@ impl ScopeStack {
     None
   }
 
+}
+
+#[macro_export]
+macro_rules! find_in_scope {
+  ($scope:expr, $id:expr, $ty:pat => $result:expr) => {
+    $scope.find($id).and_then(|instance| {
+      match instance {
+        $ty => { $result }
+        _ => None
+      }
+    })
+  };
 }
 
 struct MethodHoister {
@@ -151,7 +167,7 @@ impl Visitor for MethodHoister {
 }
 
 // Hoist methods, and gather global symbols
-pub fn hoist_methods(ast: &Linkage) -> Linkage {
+pub fn hoist_methods(ast: &Rc<Linkage>) -> Rc<Linkage> {
   MethodHoister {
     to_add: Vec::new(),
     under_class: None
@@ -166,7 +182,7 @@ struct SymbolResolver {
 
 impl Visitor for SymbolResolver {
 
-  fn visit_linkage(&mut self, linkage: &Linkage) -> Linkage {
+  fn visit_linkage(&mut self, linkage: &Rc<Linkage>) -> Rc<Linkage> {
     let mut symbols = SymbolTable::new();
     for tu in linkage.tus.iter() {
       tu.decls.iter().for_each(|decl| {
@@ -182,10 +198,10 @@ impl Visitor for SymbolResolver {
     }
     self.scopes.push(Rc::new(symbols));
     let tus = linkage.tus.iter().map(|tu| self.visit_tu(tu)).collect();
-    Linkage {
+    Rc::new(Linkage {
       tus,
       symbols: self.scopes.pop().unwrap(),
-    }
+    })
   }
 
   fn visit_func(&mut self, func: &Rc<FuncDecl>) -> Rc<FuncDecl> {
@@ -245,31 +261,25 @@ impl Visitor for SymbolResolver {
     match &op.op.value {
       TokenType::AttrAccess => {
         let lhs = self.visit_expr(&op.lhs);
-        if let Expr::UnknownRef(attr) = &op.rhs {
-          let ty = lhs.dtype();
-          if let Type::Class(class_ref) = ty {
-            if let Some(with_id) = self.scopes.find(&class_ref.id.literal) {
-              if let WithID::Class(class) = with_id {
-                for (i, elem) in class.attrs.iter().enumerate() {
-                  if elem.id.literal == attr.literal {
-                    return Expr::AttrAccess(Rc::new(AttrAccess{
-                      this: lhs,
-                      attr: attr.clone(), idx: i
-                    }));
-                  }
+        match &op.rhs {
+          Expr::UnknownRef(attr) => {
+            let ty = lhs.dtype().as_class(&self.scopes);
+            if let Some(class) = ty {
+              for (i, elem) in class.attrs.iter().enumerate() {
+                if elem.id.literal == attr.literal {
+                  return Expr::AttrAccess(Rc::new(AttrAccess{
+                    this: lhs,
+                    attr: attr.clone(), idx: i
+                  }));
                 }
-                panic!("{} not founded", attr);
-              } else {
-                panic!("Expect {} to be a class, but {}", lhs, lhs.dtype());
               }
-            } else {
-              panic!("{} not founded", class_ref.id);
+              panic!("{} not founded", attr);
             }
-          } else {
             panic!("Expect {} to be a class, but {}", lhs, lhs.dtype());
           }
-        } else {
-          panic!("Expect {} to be an attribute", op.rhs);
+          _ => {
+            panic!("Expect {} to be an class attribute", op.rhs);
+          }
         }
       }
       _ => {
@@ -278,6 +288,15 @@ impl Visitor for SymbolResolver {
         Expr::BinaryOp(Rc::new(BinaryOp{ lhs, rhs, op: op.op.clone() }))
       }
     }
+  }
+
+  fn visit_func_call(&mut self, call: &Rc<super::ast::FuncCall>) -> Rc<super::ast::FuncCall> {
+    let params = call.params.iter().map(|arg| self.visit_expr(arg)).collect();
+    let func = find_in_scope!(self.scopes, &call.fname.literal, WithID::Function(func) => Some(func.clone()));
+    Rc::new(FuncCall{
+      fname: call.fname.clone(),
+      params, func
+    })
   }
 
   fn visit_builtin(&mut self, x: &Rc<super::ast::BuiltinType>) -> Type {
@@ -299,7 +318,7 @@ impl Visitor for SymbolResolver {
 }
 
 
-pub fn resolve_types(ast: &Linkage) -> Linkage {
+pub fn resolve_types(ast: &Rc<Linkage>) -> Rc<Linkage> {
   SymbolResolver{
     scopes: ScopeStack::new(),
     var_decls: Vec::new()

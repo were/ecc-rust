@@ -1,7 +1,10 @@
 use std::rc::Rc;
 
+use crate::find_in_scope;
+use crate::frontend::sema::WithID;
+
 use super::lexer::{Token, TokenType};
-use super::sema::SymbolTable;
+use super::sema::{SymbolTable, ScopeStack};
 
 #[derive(Clone)]
 pub struct Linkage {
@@ -48,6 +51,26 @@ pub enum Type {
   Builtin(Rc<BuiltinType>),
   Array(Rc<ArrayType>),
   Class(Rc<ClassRef>),
+}
+
+impl Type {
+
+  pub fn as_builtin(&self) -> Option<Rc<BuiltinType>> {
+    match self {
+      Type::Builtin(b) => Some(b.clone()),
+      _ => None
+    }
+  }
+
+  pub fn as_class(&self, table: &ScopeStack) -> Option<Rc<ClassDecl>> {
+    match self {
+      Type::Class(class_ref) => {
+        find_in_scope!(table, &class_ref.id.literal, WithID::Class(class) => Some(class.clone()))
+      }
+      _ => None
+    }
+  }
+
 }
 
 #[derive(Clone)]
@@ -128,6 +151,7 @@ pub enum Expr {
 }
 
 impl Expr {
+
   pub fn dtype(&self) -> Type {
     match self {
       Expr::StrImm(s) => {
@@ -185,6 +209,7 @@ impl Expr {
       }
     }
   }
+
 }
 
 #[derive(Clone)]
