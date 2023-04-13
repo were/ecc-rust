@@ -1,12 +1,12 @@
-use std::boxed::Box;
+use std::rc::Rc;
 
-use super::lexer::Token;
+use super::lexer::{Token, TokenType};
 use super::sema::SymbolTable;
 
 #[derive(Clone)]
 pub struct Linkage {
-  pub tus: Vec<Box<TranslateUnit>>,
-  pub symbols: Box<SymbolTable>,
+  pub tus: Vec<Rc<TranslateUnit>>,
+  pub symbols: Rc<SymbolTable>
 }
 
 #[derive(Clone)]
@@ -17,15 +17,15 @@ pub struct TranslateUnit {
 
 #[derive(Clone)]
 pub enum Decl {
-  Func(Box<FuncDecl>),
-  Class(Box<ClassDecl>)
+  Func(Rc<FuncDecl>),
+  Class(Rc<ClassDecl>)
 }
 
 #[derive(Clone)]
 pub struct ClassDecl {
   pub id: Token,
-  pub methods: Vec<Box<FuncDecl>>,
-  pub attrs: Vec<Box<VarDecl>>,
+  pub methods: Vec<Rc<FuncDecl>>,
+  pub attrs: Vec<Rc<VarDecl>>,
 }
 
 #[derive(Clone)]
@@ -38,10 +38,16 @@ pub enum BuiltinTypeCode {
 }
 
 #[derive(Clone)]
+pub struct ClassRef {
+  pub id: Token,
+  pub class: Option<Rc<ClassDecl>>
+}
+
+#[derive(Clone)]
 pub enum Type {
-  Builtin(Box<BuiltinType>),
-  Array(Box<ArrayType>),
-  Class(Box<ClassDecl>),
+  Builtin(Rc<BuiltinType>),
+  Array(Rc<ArrayType>),
+  Class(Rc<ClassRef>),
 }
 
 #[derive(Clone)]
@@ -59,7 +65,7 @@ pub struct ArrayType {
 #[derive(Clone)]
 pub struct Variable {
   pub id: Token,
-  pub decl: Option<Box<VarDecl>>
+  pub decl: Rc<VarDecl>
 }
 
 impl Variable {
@@ -72,8 +78,8 @@ impl Variable {
 pub struct FuncDecl {
   pub ty: Type,
   pub id: Token,
-  pub args: Vec<Box<VarDecl>>,
-  pub body: Box<CompoundStmt>
+  pub args: Vec<Rc<VarDecl>>,
+  pub body: Rc<CompoundStmt>,
 }
 
 #[derive(Clone)]
@@ -87,21 +93,21 @@ pub struct CompoundStmt {
   pub left: Token, // Left braces
   pub right: Token, // Right braces
   pub stmts: Vec<Stmt>,
-  pub symbols: Box<SymbolTable>,
+  pub symbols: Rc<SymbolTable>
 }
 
 #[derive(Clone)]
 pub enum Stmt {
-  Ret(Box<ReturnStmt>),
-  FuncCall(Box<FuncCall>),
-  InlineAsm(Box<InlineAsm>),
+  Ret(Rc<ReturnStmt>),
+  FuncCall(Rc<FuncCall>),
+  InlineAsm(Rc<InlineAsm>),
 }
 
 #[derive(Clone)]
 pub struct InlineAsm {
-  pub code: Box<StrImm>,
+  pub code: Rc<StrImm>,
   pub args: Vec<Expr>,
-  pub operands: Box<StrImm>,
+  pub operands: Rc<StrImm>,
 }
 
 #[derive(Clone)]
@@ -112,12 +118,73 @@ pub struct ReturnStmt {
 
 #[derive(Clone)]
 pub enum Expr {
-  StrImm(Box<StrImm>),
-  IntImm(Box<IntImm>),
-  FuncCall(Box<FuncCall>),
-  Variable(Box<Variable>),
-  BinaryOp(Box<BinaryOp>),
+  StrImm(Rc<StrImm>),
+  IntImm(Rc<IntImm>),
+  FuncCall(Rc<FuncCall>),
+  Variable(Rc<Variable>),
+  BinaryOp(Rc<BinaryOp>),
+  AttrAccess(Rc<AttrAccess>),
   UnknownRef(Token)
+}
+
+impl Expr {
+  pub fn dtype(&self) -> Type {
+    match self {
+      Expr::StrImm(s) => {
+        Type::Class(Rc::new(ClassRef {
+          id: Token{
+            literal: "string".to_string(),
+            row: s.token.row,
+            col: s.token.col,
+            value: TokenType::Identifier,
+          },
+          class: None
+        }))
+      }
+      Expr::IntImm(i) => {
+        Type::Builtin(Rc::new(BuiltinType {
+          token: i.token.clone(),
+          code: BuiltinTypeCode::Int
+        }))
+      }
+      Expr::FuncCall(f) => {
+        if let Some(f) = f.func.clone() {
+          f.ty.clone()
+        } else {
+          Type::Builtin(Rc::new(BuiltinType {
+            token: f.fname.clone(),
+            code: BuiltinTypeCode::Unknown
+          }))
+        }
+      }
+      Expr::Variable(v) => {
+        v.decl.ty.clone()
+      }
+      Expr::BinaryOp(s) => {
+        s.lhs.dtype()
+      }
+      Expr::UnknownRef(tok) => {
+        Type::Builtin(Rc::new(BuiltinType {
+          token: tok.clone(),
+          code: BuiltinTypeCode::Unknown
+        }))
+      }
+      Expr::AttrAccess(access) => {
+        if let Type::Class(x) = access.this.dtype() {
+          if let Some(class) = &x.class {
+            class.attrs[access.idx as usize].ty.clone()
+          } else {
+            Type::Builtin(Rc::new(BuiltinType {
+              token: access.attr.clone(),
+              code: BuiltinTypeCode::Unknown
+            }))
+          }
+        } else {
+          panic!("Cannot access attribute of non-class type");
+        }
+      }
+    }
+  }
 }
 
 #[derive(Clone)]
@@ -125,6 +192,13 @@ pub struct BinaryOp {
   pub lhs: Expr,
   pub rhs: Expr,
   pub op: Token,
+}
+
+#[derive(Clone)]
+pub struct AttrAccess {
+  pub this: Expr,
+  pub attr: Token,
+  pub idx: usize,
 }
 
 #[derive(Clone)]
@@ -142,6 +216,6 @@ pub struct StrImm {
 #[derive(Clone)]
 pub struct FuncCall {
   pub fname : Token,
-  pub func : Option<Box<FuncDecl>>,
+  pub func : Option<Rc<FuncDecl>>,
   pub params : Vec<Expr>,
 }

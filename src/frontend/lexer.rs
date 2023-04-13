@@ -1,12 +1,9 @@
 use std::fmt;
 use regex::Regex;
 
-use super::sema::ScopeStack;
-
 pub struct Lexer {
   i : usize,
   tokens : Vec<Token>,
-  pub scopes : ScopeStack,
 }
 
 #[derive(Clone)]
@@ -242,7 +239,7 @@ impl Lexer {
     //   println!("{} {}", token.value, token);
     // }
 
-    Lexer { i : 0, tokens, scopes : ScopeStack::new() }
+    Lexer { i : 0, tokens }
   }
 
   pub fn lookahead(&self, i : usize) -> Token {

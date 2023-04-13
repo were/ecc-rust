@@ -1,6 +1,10 @@
 use std::fmt;
-use super::ast::{Decl, FuncDecl, Variable, Type, BuiltinType, CompoundStmt, Stmt,
-                 ReturnStmt, Expr, TranslateUnit, Linkage, FuncCall, VarDecl, ClassDecl, ArrayType, InlineAsm, StrImm, BinaryOp};
+use super::ast::{
+  Decl, FuncDecl, Variable, Type, BuiltinType, CompoundStmt, Stmt,
+  ReturnStmt, Expr, TranslateUnit, Linkage, FuncCall, VarDecl,
+  ClassDecl, ArrayType, InlineAsm, StrImm, BinaryOp, AttrAccess,
+  BuiltinTypeCode
+};
 
 fn print_linkage(linkage: &Linkage, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
   for (i, tu) in linkage.tus.iter().enumerate() {
@@ -205,7 +209,23 @@ fn print_expr(expr: &Expr, f: &mut fmt::Formatter, indent: &String) -> fmt::Resu
     Expr::BinaryOp(op) => {
       print_binary_op(op, f, indent)
     }
+    Expr::AttrAccess(access) => {
+      print_attr_access(access, f, indent)
+    }
   }
+}
+
+impl fmt::Display for Expr {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    return print_expr(&self, f, &"".to_string());
+  }
+}
+
+fn print_attr_access(access: &AttrAccess, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
+  write!(f, "AttrAccess").unwrap();
+  write!(f, "\n{}|->This=", indent).unwrap();
+  print_expr(&access.this, f, &format!("{}|  ", indent)).unwrap();
+  write!(f, "\n{}`->Attr={} ({})", indent, access.attr, access.idx)
 }
 
 fn print_binary_op(op: &BinaryOp, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
@@ -221,7 +241,7 @@ fn print_str_imm(s: &StrImm, f: &mut fmt::Formatter, _indent: &String) -> fmt::R
 }
 
 fn print_var(var: &Variable, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
-  write!(f, "Variable {}\n", var.id).unwrap();
+  write!(f, "Variable {} 0x{:x}\n", var.id, (&*var.decl) as *const VarDecl as usize).unwrap();
   write!(f, "{}`->Name={}", indent, var.id())
 }
 
@@ -233,6 +253,12 @@ fn print_type(ty: &Type, f: &mut fmt::Formatter, indent: &String) -> fmt::Result
   }
 }
 
+impl fmt::Display for Type {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    return print_type(&self, f, &"".to_string());
+  }
+}
+
 fn print_array_type(ty: &ArrayType, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
   write!(f, "ArrayType").unwrap();
   write!(f, "\n{}|->Scalar=", indent).unwrap();
@@ -241,6 +267,10 @@ fn print_array_type(ty: &ArrayType, f: &mut fmt::Formatter, indent: &String) -> 
 }
 
 fn print_builtin_type(ty: &BuiltinType, f: &mut fmt::Formatter, _: &String) -> fmt::Result{
-  write!(f, "BuiltinType{}", ty.token)
+  if let BuiltinTypeCode::Unknown = ty.code {
+    write!(f, "UnknownType{}", ty.token)
+  } else {
+    write!(f, "BuiltinType{}", ty.token)
+  }
 }
 

@@ -1,8 +1,10 @@
 use quote::quote;
+use std::rc::Rc;
+use crate::frontend::sema::SymbolTable;
+
 use super::lexer::{Lexer, TokenType, Token};
 use super::ast::{BuiltinType, BuiltinTypeCode, Type, TranslateUnit, CompoundStmt, ReturnStmt, IntImm, Decl, InlineAsm};
-use super::ast::{FuncDecl, Stmt, Expr, StrImm, FuncCall, ClassDecl, VarDecl, Variable, ArrayType, BinaryOp};
-use super::sema::{SymbolTable, WithID};
+use super::ast::{FuncDecl, Stmt, Expr, StrImm, FuncCall, ClassDecl, VarDecl, ArrayType, BinaryOp};
 
 macro_rules! required_token {
   ($pp: expr, $expected: pat, $consume: expr) => {
@@ -66,7 +68,7 @@ macro_rules! lookahead_tokens {
 fn parse_intimm(tokenizer: &mut Lexer) -> Result<Expr, String> {
   let token = required_token!(tokenizer, TokenType::IntLiteral, true);
   let value : i32 = token.literal.parse().unwrap();
-  Ok(Expr::IntImm(Box::new(IntImm{token, value })))
+  Ok(Expr::IntImm(Rc::new(IntImm{token, value })))
 }
 
 fn parse_expr_term(tokenizer: &mut Lexer) -> Result<Expr, String> {
@@ -81,21 +83,7 @@ fn parse_expr_term(tokenizer: &mut Lexer) -> Result<Expr, String> {
   }
   if lookahead_tokens!(tokenizer, TokenType::Identifier) {
     let tok = required_token!(tokenizer, TokenType::Identifier, true);
-    match tokenizer.scopes.find(&tok.literal) {
-      Some(x) => {
-        match x {
-          WithID::Variable(var) => {
-            return Ok(Expr::Variable(Box::new(Variable{id: tok, decl: Some(var.clone())})))
-          }
-          _ => {
-            return Err(format!("{} is a function or class, not a variable", tok))
-          }
-        }
-      }
-      None => {
-        return Ok(Expr::UnknownRef(tok))
-      }
-    }
+    return Ok(Expr::UnknownRef(tok))
   }
   let tok = tokenizer.lookahead(0);
   Err(format!("Fail to parse expr {} {}", tok, tok.value))
@@ -108,7 +96,7 @@ fn parse_expr(tokenizer: &mut Lexer, terminator: fn(&Token)->bool) -> Result<Exp
       let op = tokenizer.lookahead(0);
       tokenizer.consume().unwrap();
       let rhs = parse_expr(tokenizer, terminator).unwrap();
-      expr = Expr::BinaryOp(Box::new(BinaryOp{op, lhs: expr, rhs}));
+      expr = Expr::BinaryOp(Rc::new(BinaryOp{op, lhs: expr, rhs}));
       continue;
     }
     if terminator(&tokenizer.lookahead(0)) {
@@ -120,7 +108,7 @@ fn parse_expr(tokenizer: &mut Lexer, terminator: fn(&Token)->bool) -> Result<Exp
 fn parse_strimm(tokenizer: &mut Lexer) -> Result<Expr, String> {
   let token = required_token!(tokenizer, TokenType::StringLiteral, true);
   let value = snailquote::unescape(&token.literal[1..token.literal.len()-1]).unwrap();
-  Ok(Expr::StrImm(Box::new(StrImm{token, value})))
+  Ok(Expr::StrImm(Rc::new(StrImm{token, value})))
 }
 
 fn parse_return(tokenizer: &mut Lexer) -> Result<ReturnStmt, String> {
@@ -172,7 +160,7 @@ fn parse_func_call(tokenizer: &mut Lexer) -> Result<Expr, String> {
   required_token!(tokenizer, TokenType::LPran, true);
   let params = parse_params(tokenizer).unwrap();
   required_token!(tokenizer, TokenType::RPran, true);
-  Ok(Expr::FuncCall(Box::new(FuncCall{fname: fid, func: None, params})))
+  Ok(Expr::FuncCall(Rc::new(FuncCall{fname: fid, func: None, params})))
 }
 
 fn parse_inline_asm(tokenizer: &mut Lexer) -> Result<InlineAsm, String> {
@@ -192,7 +180,7 @@ fn parse_inline_asm(tokenizer: &mut Lexer) -> Result<InlineAsm, String> {
 fn parse_statement(tokenizer: &mut Lexer) -> Result<Stmt, String> {
   if lookahead_tokens!(tokenizer, TokenType::KeywordReturn) {
     let ret = parse_return(tokenizer).unwrap();
-    return Ok(Stmt::Ret(Box::new(ret)));
+    return Ok(Stmt::Ret(Rc::new(ret)));
   }
   if lookahead_tokens!(tokenizer, TokenType::Identifier, TokenType::LPran) {
     if let Expr::FuncCall(call) = parse_func_call(tokenizer).unwrap() {
@@ -202,19 +190,14 @@ fn parse_statement(tokenizer: &mut Lexer) -> Result<Stmt, String> {
   }
   if lookahead_tokens!(tokenizer, TokenType::KeywordAsm) {
     let asm = parse_inline_asm(tokenizer).unwrap();
-    return Ok(Stmt::InlineAsm(Box::new(asm)));
+    return Ok(Stmt::InlineAsm(Rc::new(asm)));
   }
   Err(format!("Failed to parse statement {}", tokenizer.lookahead(0)))
 }
 
-fn parse_compound_stmt(tokenizer: &mut Lexer, vars : &Vec<Box<VarDecl>>) -> Result<CompoundStmt, String> {
+fn parse_compound_stmt(tokenizer: &mut Lexer) -> Result<CompoundStmt, String> {
   let left = required_token!(tokenizer, TokenType::LBrace, true);
   let mut stmts : Vec<Stmt> = Vec::new();
-  let mut symbols = SymbolTable::new();
-  for elem in vars.iter() {
-    symbols.insert(elem.id.literal.clone(), WithID::Variable(elem.clone()));
-  }
-  tokenizer.scopes.push(Box::new(symbols));
   while !expected_token!(tokenizer, TokenType::RBrace, false) {
     match parse_statement(tokenizer) {
       Ok(stmt) => { stmts.push(stmt); }
@@ -223,20 +206,15 @@ fn parse_compound_stmt(tokenizer: &mut Lexer, vars : &Vec<Box<VarDecl>>) -> Resu
   }
   let right = required_token!(tokenizer, TokenType::RBrace, true);
 
-  match tokenizer.scopes.pop() {
-    Some(scope) => { 
-      return Ok(CompoundStmt{ left, right, stmts, symbols: scope })
-    }
-    None => { return Err("Failed to pop scope".to_string()); }
-  }
+  return Ok(CompoundStmt{ left, right, stmts, symbols: Rc::new(SymbolTable::new()) })
 }
 
-pub fn parse_args(tokenizer: &mut Lexer) -> Result<Vec<Box<VarDecl>>, String> {
-  let mut res : Vec<Box<VarDecl>> = Vec::new();
+pub fn parse_args(tokenizer: &mut Lexer) -> Result<Vec<Rc<VarDecl>>, String> {
+  let mut res : Vec<Rc<VarDecl>> = Vec::new();
   while !expected_token!(tokenizer, TokenType::RPran, false) {
     let dtype = parse_dtype(tokenizer).unwrap();
     let id = required_token!(tokenizer, TokenType::Identifier, true);
-    res.push(Box::new(VarDecl{ty: dtype, id}));
+    res.push(Rc::new(VarDecl{ty: dtype, id}));
     if expected_token!(tokenizer, TokenType::Comma, false) {
       tokenizer.consume().unwrap();
     }
@@ -250,9 +228,14 @@ pub fn parse_function(tokenizer: &mut Lexer) -> Result<FuncDecl, String> {
   required_token!(tokenizer, TokenType::LPran, true);
   let args = parse_args(tokenizer).unwrap();
   required_token!(tokenizer, TokenType::RPran, true);
-  let parsed_body = parse_compound_stmt(tokenizer, &args);
+  let parsed_body = parse_compound_stmt(tokenizer);
   match parsed_body {
-    Ok(body) => { Ok(FuncDecl{ty: dtype, id: parsed_id, args, body: Box::new(body)}) }
+    Ok(body) => {
+      Ok(FuncDecl{
+        ty: dtype, id: parsed_id, args,
+        body: Rc::new(body),
+      })
+    }
     _ => { Err("Function body parse failure".to_string()) }
   }
 }
@@ -266,8 +249,8 @@ fn parse_var_decl(tokenizer: &mut Lexer) -> Result<VarDecl, String> {
 }
 
 fn parse_class(tokenizer: &mut Lexer) -> Result<ClassDecl, String> {
-  let mut methods : Vec<Box<FuncDecl>> = Vec::new();
-  let mut attrs : Vec<Box<VarDecl>> = Vec::new();
+  let mut methods : Vec<Rc<FuncDecl>> = Vec::new();
+  let mut attrs : Vec<Rc<VarDecl>> = Vec::new();
   required_token!(tokenizer, TokenType::KeywordClass, true);
   let id = required_token!(tokenizer, TokenType::Identifier, true);
   required_token!(tokenizer, TokenType::LBrace, true);
@@ -275,10 +258,10 @@ fn parse_class(tokenizer: &mut Lexer) -> Result<ClassDecl, String> {
     // 0 is dtype, 1 is identifier, 2 is (, then function call
     if expected_token!(tokenizer, TokenType::LPran, false, 2) {
       let func = parse_function(tokenizer).unwrap();
-      methods.push(Box::new(func));
+      methods.push(Rc::new(func));
     } else {
       let attr = parse_var_decl(tokenizer).unwrap();
-      attrs.push(Box::new(attr));
+      attrs.push(Rc::new(attr));
     }
   }
   required_token!(tokenizer, TokenType::RBrace, true);
@@ -291,10 +274,10 @@ pub fn parse_program(tokenizer: &mut Lexer, fname: String) -> Result<TranslateUn
   while !expected_token!(tokenizer, TokenType::Eof, false) {
     if lookahead_tokens!(tokenizer, TokenType::KeywordClass) {
       let parsed_class = parse_class(tokenizer).unwrap();
-      decls.push(Decl::Class(Box::new(parsed_class)));
+      decls.push(Decl::Class(Rc::new(parsed_class)));
     } else {
       let func = parse_function(tokenizer).unwrap();
-      decls.push(Decl::Func(Box::new(func)));
+      decls.push(Decl::Func(Rc::new(func)));
     }
   }
   Ok(TranslateUnit{fname, decls})
@@ -305,19 +288,19 @@ fn parse_dtype(tokenizer: &mut Lexer) -> Result<Type, String> {
   tokenizer.consume().unwrap();
   let scalar_ty = match token.value {
     TokenType::KeywordInt => {
-      Ok(Type::Builtin(Box::new(BuiltinType{token, code: BuiltinTypeCode::Int})))
+      Ok(Type::Builtin(Rc::new(BuiltinType{token, code: BuiltinTypeCode::Int})))
     }
     TokenType::KeywordVoid => {
-      Ok(Type::Builtin(Box::new(BuiltinType{token, code: BuiltinTypeCode::Void})))
+      Ok(Type::Builtin(Rc::new(BuiltinType{token, code: BuiltinTypeCode::Void})))
     }
     TokenType::KeywordChar => {
-      Ok(Type::Builtin(Box::new(BuiltinType{token, code: BuiltinTypeCode::Char})))
+      Ok(Type::Builtin(Rc::new(BuiltinType{token, code: BuiltinTypeCode::Char})))
     }
     TokenType::KeywordBool => {
-      Ok(Type::Builtin(Box::new(BuiltinType{token, code: BuiltinTypeCode::Bool})))
+      Ok(Type::Builtin(Rc::new(BuiltinType{token, code: BuiltinTypeCode::Bool})))
     }
     TokenType::Identifier => {
-      Ok(Type::Builtin(Box::new(BuiltinType{token, code: BuiltinTypeCode::Unknown})))
+      Ok(Type::Builtin(Rc::new(BuiltinType{token, code: BuiltinTypeCode::Unknown})))
     }
     _ => {
       Err(format!("Data type parse failure {}", token))
@@ -332,6 +315,6 @@ fn parse_dtype(tokenizer: &mut Lexer) -> Result<Type, String> {
   if dims == 0 {
     scalar_ty
   } else {
-    Ok(Type::Array(Box::new(ArrayType{scalar_ty: scalar_ty.unwrap(), dims})))
+    Ok(Type::Array(Rc::new(ArrayType{scalar_ty: scalar_ty.unwrap(), dims})))
   }
 }

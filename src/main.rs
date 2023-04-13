@@ -12,14 +12,14 @@ fn main() {
   if args.len() < 2 {
     println!("Usage: ./ecc [file-name]");
   }
-  
+
   let file = File::open(&args[1]);
   let mut src = String::new();
   match file {
     Ok(mut f) => {
       f.read_to_string(&mut src).unwrap();
       let mut ast = parse(args[1].clone(), src);
-      semantic_check(&mut ast);
+      ast = semantic_check(&ast);
       println!("{}", ast);
     }
     Err(error) => {
