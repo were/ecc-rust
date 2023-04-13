@@ -160,7 +160,7 @@ fn parse_func_call(tokenizer: &mut Lexer) -> Result<Expr, String> {
   required_token!(tokenizer, TokenType::LPran, true);
   let params = parse_params(tokenizer).unwrap();
   required_token!(tokenizer, TokenType::RPran, true);
-  Ok(Expr::FuncCall(Rc::new(FuncCall{fname: fid, func: None, params})))
+  Ok(Expr::FuncCall(Rc::new(FuncCall{fname: fid, params})))
 }
 
 fn parse_inline_asm(tokenizer: &mut Lexer) -> Result<InlineAsm, String> {

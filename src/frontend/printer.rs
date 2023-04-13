@@ -158,14 +158,7 @@ fn print_inline_asm(asm: &InlineAsm, f: &mut fmt::Formatter, indent: &String) ->
 }
 
 fn print_func_call(call: &FuncCall, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
-  if let Some(func) = &call.func {
-    write!(
-      f, "Call={} 0x{:x}\n{}`->Params\n",
-      call.fname.literal,
-      func.as_ref() as *const FuncDecl as usize, indent).unwrap();
-  } else {
-    write!(f, "Call={} [Unknown]\n{}`->Params\n", call.fname.literal, indent).unwrap();
-  }
+  write!(f, "Call={}\n{}`->Params\n", call.fname.literal, indent).unwrap();
   let new_indent = format!("{}   ", indent);
   for (i, elem) in call.params.iter().enumerate() {
     if i != call.params.len() - 1 {

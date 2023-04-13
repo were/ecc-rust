@@ -1,11 +1,13 @@
 use std::rc::Rc;
 use std::collections::HashMap;
 
+use crate::mutated;
+
 use super::ast::{
   FuncDecl, VarDecl, Linkage, TranslateUnit, Decl, ClassDecl, Type, Stmt, CompoundStmt,
   Expr, Variable, BinaryOp, ClassRef, AttrAccess, BuiltinTypeCode, FuncCall
 };
-use super::visitor::Visitor;
+use super::visitor::{Visitor, expr_eq, stmt_eq, type_eq};
 use super::lexer::{Token, TokenType};
 
 #[derive(Clone)]
@@ -197,16 +199,22 @@ impl Visitor for SymbolResolver {
       });
     }
     self.scopes.push(Rc::new(symbols));
-    let tus = linkage.tus.iter().map(|tu| self.visit_tu(tu)).collect();
-    Rc::new(Linkage {
-      tus,
-      symbols: self.scopes.pop().unwrap(),
-    })
+    let tus:Vec<Rc<TranslateUnit>> = linkage.tus.iter().map(|tu| self.visit_tu(tu)).collect();
+    if mutated!(tus, linkage.tus) {
+      return Rc::new(Linkage {
+        tus,
+        symbols: self.scopes.pop().unwrap(),
+      })
+    }
+    return linkage.clone();
   }
 
   fn visit_func(&mut self, func: &Rc<FuncDecl>) -> Rc<FuncDecl> {
     self.var_decls = func.args.iter().map(|arg| self.visit_var_decl(arg)).collect();
     let body = self.visit_compound_stmt(&func.body);
+    if Rc::ptr_eq(&body, &func.body) && !mutated!(self.var_decls, func.args) {
+      return func.clone();
+    }
     Rc::new(FuncDecl{
       ty: func.ty.clone(),
       id: func.id.clone(),
@@ -221,7 +229,10 @@ impl Visitor for SymbolResolver {
       symbols.insert(decl.id.literal.clone(), WithID::Variable(decl.clone()));
     });
     self.scopes.push(Rc::new(symbols));
-    let stmts : Vec<Stmt> = block.stmts.iter().map(|stmt| { self.visit_stmt(stmt) }).collect();
+    let stmts:Vec<Stmt> = block.stmts.iter().map(|stmt| { self.visit_stmt(stmt) }).collect();
+    if !mutated!(stmts, block.stmts, stmt_eq) {
+      return block.clone();
+    }
     Rc::new(CompoundStmt {
       left: block.left.clone(),
       right: block.right.clone(),
@@ -263,7 +274,7 @@ impl Visitor for SymbolResolver {
         let lhs = self.visit_expr(&op.lhs);
         match &op.rhs {
           Expr::UnknownRef(attr) => {
-            let ty = lhs.dtype().as_class(&self.scopes);
+            let ty = lhs.dtype(&self.scopes).as_class(&self.scopes);
             if let Some(class) = ty {
               for (i, elem) in class.attrs.iter().enumerate() {
                 if elem.id.literal == attr.literal {
@@ -275,7 +286,7 @@ impl Visitor for SymbolResolver {
               }
               panic!("{} not founded", attr);
             }
-            panic!("Expect {} to be a class, but {}", lhs, lhs.dtype());
+            panic!("Expect {} to be a class, but {}", lhs, lhs.dtype(&self.scopes));
           }
           _ => {
             panic!("Expect {} to be an class attribute", op.rhs);
@@ -285,17 +296,35 @@ impl Visitor for SymbolResolver {
       _ => {
         let lhs = self.visit_expr(&op.lhs);
         let rhs = self.visit_expr(&op.rhs);
-        Expr::BinaryOp(Rc::new(BinaryOp{ lhs, rhs, op: op.op.clone() }))
+        if expr_eq(&lhs, &op.lhs) && expr_eq(&rhs, &op.rhs) {
+          return Expr::BinaryOp(op.clone());
+        }
+        return Expr::BinaryOp(Rc::new(BinaryOp{ lhs, rhs, op: op.op.clone() }))
       }
     }
   }
 
   fn visit_func_call(&mut self, call: &Rc<super::ast::FuncCall>) -> Rc<super::ast::FuncCall> {
-    let params = call.params.iter().map(|arg| self.visit_expr(arg)).collect();
+    let params:Vec<Expr> = call.params.iter().map(|arg| self.visit_expr(arg)).collect();
     let func = find_in_scope!(self.scopes, &call.fname.literal, WithID::Function(func) => Some(func.clone()));
+    if let Some(callee) = &func {
+      if callee.args.len() != params.len() {
+        panic!("Expect {} args, but got {}", callee.args.len(), params.len());
+      }
+      for (i, (arg, param)) in Iterator::zip(callee.args.iter(), params.iter()).enumerate() {
+        if !type_eq(&arg.ty, &param.dtype(&self.scopes)) {
+          panic!("Expect argument {} to be {}, but {}", i, arg.ty, param.dtype(&self.scopes));
+        }
+      }
+    } else {
+      panic!("Unknown function {}", call.fname.literal);
+    }
+    if !mutated!(params, call.params, expr_eq) {
+      return call.clone();
+    }
     Rc::new(FuncCall{
       fname: call.fname.clone(),
-      params, func
+      params
     })
   }
 
@@ -318,9 +347,10 @@ impl Visitor for SymbolResolver {
 }
 
 
-pub fn resolve_types(ast: &Rc<Linkage>) -> Rc<Linkage> {
+pub fn resolve_symbols(ast: &Rc<Linkage>) -> Rc<Linkage> {
   SymbolResolver{
     scopes: ScopeStack::new(),
     var_decls: Vec::new()
   }.visit_linkage(ast)
 }
+

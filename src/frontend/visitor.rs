@@ -9,6 +9,7 @@ use super::ast::{
 
 use super::sema::SymbolTable;
 
+#[macro_export]
 macro_rules! mutated {
   ($a:expr, $b:expr) => {
     Iterator::zip($a.iter(), $b.iter()).fold(true, |acc, x| {
@@ -22,7 +23,7 @@ macro_rules! mutated {
   };
 }
 
-fn expr_eq(a:&Expr, b:&Expr) -> bool {
+pub fn expr_eq(a:&Expr, b:&Expr) -> bool {
   match (a, b) {
     (Expr::StrImm(v0), Expr::StrImm(v1)) => Rc::ptr_eq(v0, v1),
     (Expr::IntImm(v0),Expr::IntImm(v1)) => Rc::ptr_eq(v0, v1),
@@ -35,7 +36,7 @@ fn expr_eq(a:&Expr, b:&Expr) -> bool {
   }
 }
 
-fn stmt_eq(a:&Stmt, b:&Stmt) -> bool {
+pub fn stmt_eq(a:&Stmt, b:&Stmt) -> bool {
   match (a, b) {
     (Stmt::Ret(v0),Stmt::Ret(v1)) => Rc::ptr_eq(v0, v1),
     (Stmt::FuncCall(v0),Stmt::FuncCall(v1)) => Rc::ptr_eq(v0, v1),
@@ -44,16 +45,20 @@ fn stmt_eq(a:&Stmt, b:&Stmt) -> bool {
   }
 }
 
-fn type_eq(a:&Type, b:&Type) -> bool {
+pub fn type_eq(a:&Type, b:&Type) -> bool {
   match (a, b) {
-    (Type::Builtin(v0), Type::Builtin(v1)) => Rc::ptr_eq(v0, v1),
-    (Type::Array(v0), Type::Array(v1)) => Rc::ptr_eq(v0, v1),
-    (Type::Class(v0), Type::Class(v1)) => Rc::ptr_eq(v0, v1),
+    (Type::Builtin(v0), Type::Builtin(v1)) => {
+      v0.token.literal == v1.token.literal
+    }
+    (Type::Array(v0), Type::Array(v1)) => {
+      v0.dims == v1.dims && type_eq(&v0.scalar_ty, &v1.scalar_ty)
+    }
+    (Type::Class(v0), Type::Class(v1)) => v0.id.literal == v1.id.literal,
     _ => { false }
   }
 }
 
-fn decl_eq(a:&Decl, b:&Decl) -> bool {
+pub fn decl_eq(a:&Decl, b:&Decl) -> bool {
   match (a, b) {
     (Decl::Func(v0), Decl::Func(v1)) => Rc::ptr_eq(v0, v1),
     (Decl::Class(v0), Decl::Class(v1)) => Rc::ptr_eq(v0, v1),
@@ -127,7 +132,6 @@ pub trait Visitor {
       return Rc::new(FuncCall{
         fname: call.fname.clone(),
         params,
-        func: call.func.clone()
       })
     }
     call.clone()

@@ -152,7 +152,7 @@ pub enum Expr {
 
 impl Expr {
 
-  pub fn dtype(&self) -> Type {
+  pub fn dtype(&self, symbols: &ScopeStack) -> Type {
     match self {
       Expr::StrImm(s) => {
         Type::Class(Rc::new(ClassRef {
@@ -172,8 +172,8 @@ impl Expr {
         }))
       }
       Expr::FuncCall(f) => {
-        if let Some(f) = f.func.clone() {
-          f.ty.clone()
+        if let Some(callee) = find_in_scope!(symbols, &f.fname.literal, WithID::Function(f) => Some(f.clone())) {
+          callee.ty.clone()
         } else {
           Type::Builtin(Rc::new(BuiltinType {
             token: f.fname.clone(),
@@ -185,7 +185,7 @@ impl Expr {
         v.decl.ty.clone()
       }
       Expr::BinaryOp(s) => {
-        s.lhs.dtype()
+        s.lhs.dtype(symbols)
       }
       Expr::UnknownRef(tok) => {
         Type::Builtin(Rc::new(BuiltinType {
@@ -194,7 +194,7 @@ impl Expr {
         }))
       }
       Expr::AttrAccess(access) => {
-        if let Type::Class(x) = access.this.dtype() {
+        if let Type::Class(x) = access.this.dtype(symbols) {
           if let Some(class) = &x.class {
             class.attrs[access.idx as usize].ty.clone()
           } else {
@@ -241,6 +241,5 @@ pub struct StrImm {
 #[derive(Clone)]
 pub struct FuncCall {
   pub fname : Token,
-  pub func : Option<Rc<FuncDecl>>,
   pub params : Vec<Expr>,
 }
