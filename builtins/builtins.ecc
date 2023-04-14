@@ -1,11 +1,21 @@
 func print(string s) -> void {
+
+  // x86
+  // asm(
+  //   "movl $0, %eax\nmovl $1, %edi\nmovq $2, %rsi\nmovl $3, %edx", // mnemonic
+  //   1, // write,
+  //   1, // stdout,
+  //   s.data_, // data
+  //   s.length_, // length
+  //   "i,i,r,r,~{eax},~{edi},~{rsi},~{edx}" // operands
+  // );
+
+  // riscv
   asm(
-    "movl $0, %eax\nmovl $1, %edi\nmovq $2, %rsi\nmovl $3, %edx", // mnemonic
-    1, // write,
-    1, // stdout,
+    "addi a0, x0, 1\nla a1, $0\naddi a2, x0, $1\naddi a7, x0, 64\necall",
     s.data_, // data
     s.length_, // length
-    "i,i,r,r,~{eax},~{edi},~{rsi},~{edx}" // operands
+    "r,r,~{a0},~{a1},~{a2},~{a7}"
   );
   return;
 }

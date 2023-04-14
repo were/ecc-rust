@@ -89,20 +89,23 @@ fn parse_expr_term(tokenizer: &mut Lexer) -> Result<Expr, String> {
   Err(format!("Fail to parse expr {} {}", tok, tok.value))
 }
 
-fn parse_expr(tokenizer: &mut Lexer, terminator: fn(&Token)->bool) -> Result<Expr, String> {
+fn parse_attr_access(tokenizer: &mut Lexer) -> Result<Expr, String> {
   let mut expr = parse_expr_term(tokenizer).unwrap();
-  loop {
-    if lookahead_tokens!(tokenizer, TokenType::AttrAccess) {
-      let op = tokenizer.lookahead(0);
-      tokenizer.consume().unwrap();
-      let rhs = parse_expr(tokenizer, terminator).unwrap();
-      expr = Expr::BinaryOp(Rc::new(BinaryOp{op, lhs: expr, rhs}));
-      continue;
-    }
-    if terminator(&tokenizer.lookahead(0)) {
-      return Ok(expr)
-    }
+  while lookahead_tokens!(tokenizer, TokenType::AttrAccess) {
+    let op = tokenizer.lookahead(0);
+    tokenizer.consume().unwrap();
+    let rhs = required_token!(tokenizer, TokenType::Identifier, true);
+    expr = Expr::BinaryOp(Rc::new(BinaryOp{op, lhs: expr, rhs: Expr::UnknownRef(rhs)}));
   }
+  Ok(expr)
+}
+
+fn parse_rvalue(tokenizer: &mut Lexer, terminator: fn(&Token)->bool) -> Result<Expr, String> {
+  let expr = parse_attr_access(tokenizer).unwrap();
+  if terminator(&tokenizer.lookahead(0)) {
+    return Ok(expr);
+  }
+  return Err("Unexpected the terminator".to_string());
 }
 
 fn parse_strimm(tokenizer: &mut Lexer) -> Result<Expr, String> {
@@ -123,7 +126,7 @@ fn parse_return(tokenizer: &mut Lexer) -> Result<ReturnStmt, String> {
       _ => false
     }
   };
-  let parsed_value = parse_expr(tokenizer, cond);
+  let parsed_value = parse_rvalue(tokenizer, cond);
   match parsed_value {
     Ok(value) => {
       required_token!(tokenizer, TokenType::Semicolon, true);
@@ -143,7 +146,7 @@ fn parse_params(tokenizer: &mut Lexer) -> Result<Vec<Expr>, String> {
         _ => false
       }
     };
-    let parsed = parse_expr(tokenizer, cond);
+    let parsed = parse_rvalue(tokenizer, cond);
     match parsed {
       Ok(expr) => { params.push(expr) }
       Err(msg) => { return Err(msg) }
@@ -171,10 +174,13 @@ fn parse_inline_asm(tokenizer: &mut Lexer) -> Result<InlineAsm, String> {
   required_token!(tokenizer, TokenType::Semicolon, true);
   if let Expr::StrImm(code) = args[0].clone() {
     if let Expr::StrImm(operands) = args[args.len() - 1].clone() {
-      return Ok(InlineAsm{code, args: args[1..args.len()-1].to_vec(), operands})
+      Ok(InlineAsm{code, args: args[1..args.len()-1].to_vec(), operands})
+    } else {
+      Err(format!("Unexpected last arg to be operand format {}", args[args.len() - 1]))
     }
+  } else {
+    Err(format!("Unexpected 1st arg to be mnemonic {}", args[0]))
   }
-  Err("Unexpected expr type in ASM parsing".to_string())
 }
 
 fn parse_statement(tokenizer: &mut Lexer) -> Result<Stmt, String> {

@@ -22,7 +22,10 @@ pub fn inject_builtins(ast: ast::TranslateUnit) -> Rc<Linkage> {
 pub fn parse(fname: String, src: String) -> Rc<Linkage> {
   let mut tokenizer = lexer::Lexer::new(src);
   let ast = parser::parse_program(&mut tokenizer, fname).unwrap();
-  inject_builtins(ast)
+  println!("parsed");
+  let res = inject_builtins(ast);
+  println!("inject");
+  return res
 }
 
 pub fn semantic_check(ast: &Rc<Linkage>) -> Rc<Linkage> {
