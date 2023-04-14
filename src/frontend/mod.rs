@@ -14,7 +14,7 @@ pub fn inject_builtins(ast: ast::TranslateUnit) -> Rc<Linkage> {
   let mut tokenizer = lexer::Lexer::new(builtins.to_string());
   let parsed_builtins = parser::parse_program(&mut tokenizer, "builtin.ecc".to_string()).unwrap();
   Rc::new(Linkage{
-    tus: vec![Rc::new(ast), Rc::new(parsed_builtins)],
+    tus: vec![Rc::new(parsed_builtins), Rc::new(ast)],
     symbols: Rc::new(sema::SymbolTable::new())
   })
 }
@@ -22,15 +22,13 @@ pub fn inject_builtins(ast: ast::TranslateUnit) -> Rc<Linkage> {
 pub fn parse(fname: String, src: String) -> Rc<Linkage> {
   let mut tokenizer = lexer::Lexer::new(src);
   let ast = parser::parse_program(&mut tokenizer, fname).unwrap();
-  println!("parsed");
   let res = inject_builtins(ast);
-  println!("inject");
   return res
 }
 
 pub fn semantic_check(ast: &Rc<Linkage>) -> Rc<Linkage> {
   let hoisted = sema::hoist_methods(ast);
+  println!("{}", hoisted);
   let type_resolved = sema::resolve_symbols(&hoisted, false);
-  println!("{}", type_resolved);
   sema::resolve_symbols(&type_resolved, true)
 }

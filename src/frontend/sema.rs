@@ -110,9 +110,8 @@ impl Visitor for MethodHoister {
         }
       }
     }
-    for hoisted in self.to_add.iter() {
-      new_decls.push(hoisted.clone());
-    }
+    new_decls.extend(self.to_add.clone());
+    self.to_add.clear();
     Rc::new(TranslateUnit{
       fname: tu.fname.clone(),
       decls: new_decls,

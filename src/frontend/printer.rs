@@ -7,10 +7,15 @@ use super::ast::{
 };
 
 fn print_linkage(linkage: &Linkage, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
+  write!(f, "Linkage\n").unwrap();
   for (i, tu) in linkage.tus.iter().enumerate() {
-    print_tu(tu, f, indent).unwrap();
     if i != linkage.tus.len() - 1 {
+      write!(f, "{}|->", indent).unwrap();
+      print_tu(tu, f, &format!("{}|  ", indent)).unwrap();
       write!(f, "\n").unwrap();
+    } else {
+      write!(f, "{}`->", indent).unwrap();
+      print_tu(tu, f, &format!("{}   ", indent)).unwrap();
     }
   }
   Ok(())
