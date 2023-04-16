@@ -4,12 +4,11 @@ use crate::find_in_scope;
 use crate::frontend::sema::WithID;
 
 use super::lexer::{Token, TokenType};
-use super::sema::{SymbolTable, ScopeStack};
+use super::sema::ScopeStack;
 
 #[derive(Clone)]
 pub struct Linkage {
   pub tus: Vec<Rc<TranslateUnit>>,
-  pub symbols: Rc<SymbolTable>
 }
 
 #[derive(Clone)]
@@ -116,7 +115,6 @@ pub struct CompoundStmt {
   pub left: Token, // Left braces
   pub right: Token, // Right braces
   pub stmts: Vec<Stmt>,
-  pub symbols: Rc<SymbolTable>
 }
 
 #[derive(Clone)]

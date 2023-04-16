@@ -7,8 +7,6 @@ use super::ast::{
   InlineAsm, BinaryOp, ArrayType, AttrAccess
 };
 
-use super::sema::SymbolTable;
-
 #[macro_export]
 macro_rules! mutated {
   ($a:expr, $b:expr) => {
@@ -109,7 +107,6 @@ pub trait Visitor {
     if mutated!(tus, linkage.tus) {
       return Rc::new(Linkage {
         tus,
-        symbols: linkage.symbols.clone()
       })
     }
     linkage.clone()
@@ -172,7 +169,7 @@ pub trait Visitor {
       return Rc::new(CompoundStmt{
         left: block.left.clone(),
         right: block.right.clone(),
-        stmts, symbols: Rc::new(SymbolTable::new())
+        stmts,
       })
     }
     block.clone()

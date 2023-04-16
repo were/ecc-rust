@@ -8,6 +8,7 @@ mod parser;
 mod printer;
 mod visitor;
 mod sema;
+mod codegen;
 
 pub fn inject_builtins(ast: ast::TranslateUnit) -> Rc<Linkage> {
   let builtins = include_str!("../../builtins/builtins.ecc");
@@ -15,7 +16,6 @@ pub fn inject_builtins(ast: ast::TranslateUnit) -> Rc<Linkage> {
   let parsed_builtins = parser::parse_program(&mut tokenizer, "builtin.ecc".to_string()).unwrap();
   Rc::new(Linkage{
     tus: vec![Rc::new(parsed_builtins), Rc::new(ast)],
-    symbols: Rc::new(sema::SymbolTable::new())
   })
 }
 
@@ -31,4 +31,8 @@ pub fn semantic_check(ast: &Rc<Linkage>) -> Rc<Linkage> {
   println!("{}", hoisted);
   let type_resolved = sema::resolve_symbols(&hoisted, false);
   sema::resolve_symbols(&type_resolved, true)
+}
+
+pub fn codegen(ast: &Rc<Linkage>) {
+  codegen::codegen(ast);
 }

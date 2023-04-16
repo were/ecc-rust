@@ -20,7 +20,7 @@ fn main() {
       f.read_to_string(&mut src).unwrap();
       let mut ast = parse(args[1].clone(), src);
       ast = semantic_check(&ast);
-      println!("{}", ast);
+      frontend::codegen(&ast);
     }
     Err(error) => {
       eprintln!("Failed to open file: {}", error)

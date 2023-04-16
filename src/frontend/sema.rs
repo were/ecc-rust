@@ -200,10 +200,10 @@ impl Visitor for SymbolResolver {
     }
     self.scopes.push(Rc::new(symbols));
     let tus:Vec<Rc<TranslateUnit>> = linkage.tus.iter().map(|tu| self.visit_tu(tu)).collect();
+    self.scopes.pop().unwrap();
     if mutated!(tus, linkage.tus) {
       return Rc::new(Linkage {
         tus,
-        symbols: self.scopes.pop().unwrap(),
       })
     }
     return linkage.clone();
@@ -212,11 +212,12 @@ impl Visitor for SymbolResolver {
   fn visit_func(&mut self, func: &Rc<FuncDecl>) -> Rc<FuncDecl> {
     self.var_decls = func.args.iter().map(|arg| self.visit_var_decl(arg)).collect();
     let body = self.visit_compound_stmt(&func.body);
-    if Rc::ptr_eq(&body, &func.body) && !mutated!(self.var_decls, func.args) {
+    let new_ty = self.visit_type(&func.ty);
+    if Rc::ptr_eq(&body, &func.body) && !mutated!(self.var_decls, func.args) && type_eq(&new_ty, &func.ty) {
       return func.clone();
     }
     Rc::new(FuncDecl{
-      ty: func.ty.clone(),
+      ty: new_ty,
       id: func.id.clone(),
       args: self.var_decls.clone(),
       body,
@@ -233,10 +234,11 @@ impl Visitor for SymbolResolver {
     if !mutated!(stmts, block.stmts, stmt_eq) {
       return block.clone();
     }
+    self.scopes.pop().unwrap();
     Rc::new(CompoundStmt {
       left: block.left.clone(),
       right: block.right.clone(),
-      stmts, symbols: self.scopes.pop().unwrap()
+      stmts
     })
   }
 

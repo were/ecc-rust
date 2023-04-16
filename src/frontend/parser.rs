@@ -1,6 +1,5 @@
 use quote::quote;
 use std::rc::Rc;
-use crate::frontend::sema::SymbolTable;
 
 use super::lexer::{Lexer, TokenType, Token};
 use super::ast::{BuiltinType, BuiltinTypeCode, Type, TranslateUnit, CompoundStmt, ReturnStmt, IntImm, Decl, InlineAsm};
@@ -212,7 +211,7 @@ fn parse_compound_stmt(tokenizer: &mut Lexer) -> Result<CompoundStmt, String> {
   }
   let right = required_token!(tokenizer, TokenType::RBrace, true);
 
-  return Ok(CompoundStmt{ left, right, stmts, symbols: Rc::new(SymbolTable::new()) })
+  return Ok(CompoundStmt{ left, right, stmts })
 }
 
 pub fn parse_args(tokenizer: &mut Lexer) -> Result<Vec<Rc<VarDecl>>, String> {
