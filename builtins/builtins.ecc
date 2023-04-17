@@ -11,12 +11,12 @@ func print(string s) -> void {
   // );
 
   // riscv
-  asm(
-    "addi a0, x0, 1\nla a1, $0\naddi a2, x0, $1\naddi a7, x0, 64\necall",
-    s.data_, // data
-    s.length_, // length
-    "r,r,~{a0},~{a1},~{a2},~{a7}"
-  );
+  // asm(
+  //   "addi a0, x0, 1\nla a1, $0\naddi a2, x0, $1\naddi a7, x0, 64\necall",
+  //   s.data_, // data
+  //   s.length_, // length
+  //   "r,r,~{a0},~{a1},~{a2},~{a7}"
+  // );
   return;
 }
 

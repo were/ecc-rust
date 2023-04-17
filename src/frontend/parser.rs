@@ -109,7 +109,7 @@ fn parse_rvalue(tokenizer: &mut Lexer, terminator: fn(&Token)->bool) -> Result<E
 
 fn parse_strimm(tokenizer: &mut Lexer) -> Result<Expr, String> {
   let token = required_token!(tokenizer, TokenType::StringLiteral, true);
-  let value = snailquote::unescape(&token.literal[1..token.literal.len()-1]).unwrap();
+  let value = snailquote::unescape(&token.literal).unwrap();
   Ok(Expr::StrImm(Rc::new(StrImm{token, value})))
 }
 

@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::Read;
 
 mod frontend;
+mod backend;
 
 use inkwell::context::Context;
 
@@ -11,8 +12,18 @@ pub use crate::frontend::semantic_check;
 
 fn main() {
   let args: Vec<String> = env::args().collect();
+  let mut ofile: String = "a.wat".to_string();
+  let mut print_ast : i32 = 0;
   if args.len() < 2 {
     println!("Usage: ./ecc [file-name]");
+  }
+  for i in 2..args.len() {
+    match args[i].as_str() {
+      "-o" => { ofile = args[i + 1].clone(); }
+      "--output" => { ofile = args[i + 1].clone(); }
+      "--print-ast" => { print_ast = args[i + 1].parse().unwrap(); }
+      _ => ()
+    }
   }
 
   let file = File::open(&args[1]);
@@ -21,10 +32,13 @@ fn main() {
     Ok(mut f) => {
       f.read_to_string(&mut src).unwrap();
       let mut ast = parse(args[1].clone(), src);
-      ast = semantic_check(&ast);
-      println!("{}", ast);
+      if print_ast == 1 {
+        println!("{}", ast);
+      }
+      ast = semantic_check(&ast, print_ast);
       let ctx = Context::create();
-      frontend::codegen(&ast, &ctx);
+      let mut module = frontend::codegen(&ast, &ctx);
+      backend::codegen(&module, &ofile);
     }
     Err(error) => {
       eprintln!("Failed to open file: {}", error)

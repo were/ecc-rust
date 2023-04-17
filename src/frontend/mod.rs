@@ -26,10 +26,17 @@ pub fn parse(fname: String, src: String) -> Rc<Linkage> {
   return res
 }
 
-pub fn semantic_check(ast: &Rc<Linkage>) -> Rc<Linkage> {
+pub fn semantic_check(ast: &Rc<Linkage>, print_ast: i32) -> Rc<Linkage> {
   let hoisted = sema::hoist_methods(ast);
+  if print_ast == 2 {
+    println!("{}", &hoisted);
+  }
   let type_resolved = sema::resolve_symbols(&hoisted, false);
-  sema::resolve_symbols(&type_resolved, true)
+  let res = sema::resolve_symbols(&type_resolved, true);
+  if print_ast == 3 {
+    println!("{}", res);
+  }
+  res
 }
 
 pub fn codegen<'ctx>(ast: &Rc<Linkage>, ctx: &'ctx inkwell::context::Context) -> inkwell::module::Module<'ctx> {
