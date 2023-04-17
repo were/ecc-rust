@@ -4,6 +4,8 @@ use std::io::Read;
 
 mod frontend;
 
+use inkwell::context::Context;
+
 pub use crate::frontend::parse;
 pub use crate::frontend::semantic_check;
 
@@ -20,7 +22,9 @@ fn main() {
       f.read_to_string(&mut src).unwrap();
       let mut ast = parse(args[1].clone(), src);
       ast = semantic_check(&ast);
-      frontend::codegen(&ast);
+      println!("{}", ast);
+      let ctx = Context::create();
+      frontend::codegen(&ast, &ctx);
     }
     Err(error) => {
       eprintln!("Failed to open file: {}", error)

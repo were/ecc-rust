@@ -144,7 +144,7 @@ impl Visitor for MethodHoister {
         id: Token{
           row: ty.id.row,
           col: ty.id.col,
-          literal: "this".to_string(),
+          literal: "self".to_string(),
           value: TokenType::Identifier,
         },
       }));

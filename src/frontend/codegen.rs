@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::collections::HashMap;
 
-use inkwell::values::{BasicValueEnum, BasicMetadataValueEnum, AnyValue};
+use inkwell::values::{BasicValueEnum, BasicMetadataValueEnum, AnyValue, AnyValueEnum};
 
 use inkwell::{
   context::{Context, ContextRef},
@@ -51,7 +51,7 @@ impl<'ctx> TypeGen<'ctx> {
               let res : AnyTypeEnum = t.ptr_type(AddressSpace::from(0)).into();
               return res;
             }
-            _ => { panic!("Unknown type"); }
+            _ => { panic!("Unsupported type {}", ty); }
           }
         }
       }
@@ -70,14 +70,14 @@ impl<'ctx> TypeGen<'ctx> {
           match self.type_to_llvm(&attr.ty) {
             AnyTypeEnum::IntType(t) => t.into(),
             AnyTypeEnum::PointerType(t) => t.into(),
-            _ => { panic!("Unknown type"); }
+            _ => { panic!("Unknown type {}", attr.ty); }
           }
         }).collect();
       match self.ty_cache.get_mut(&class.id.literal).unwrap() {
         AnyTypeEnum::StructType(t) => {
           t.set_body(&attrs, false);
         }
-        _ => { panic!("Unknown type"); }
+        _ => { panic!("Unknown type {}", class.id.literal); }
       }
     }
   }
@@ -155,14 +155,14 @@ impl<'ctx> CacheStack<'ctx> {
 
 struct CodeGen<'ctx> {
   module: Module<'ctx>,
-  types: &'ctx mut TypeGen<'ctx>,
+  types: TypeGen<'ctx>,
   builder: Builder<'ctx>,
   cache_stack: CacheStack<'ctx>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
 
-  fn context(&self) -> ContextRef {
+  fn context(&self) -> ContextRef<'ctx> {
     return self.module.get_context();
   }
 
@@ -239,7 +239,7 @@ impl<'ctx> CodeGen<'ctx> {
     match stmt {
       Stmt::Ret(ret) => {
         if let Some(expr) = &ret.value {
-          let val = self.generate_expr(&expr);
+          let val = self.generate_expr(&expr, false);
           self.builder.build_return(Some(&val));
         } else {
           self.builder.build_return(None);
@@ -252,7 +252,7 @@ impl<'ctx> CodeGen<'ctx> {
     }
   }
 
-  fn generate_expr(&mut self, expr: &Expr) -> BasicValueEnum<'ctx> {
+  fn generate_expr(&mut self, expr: &Expr, is_lval: bool) -> BasicValueEnum<'ctx> {
     match expr {
       Expr::FuncCall(call) => {
         match self.generate_func_call(&call) {
@@ -268,16 +268,47 @@ impl<'ctx> CodeGen<'ctx> {
         let ty = self.types.ty_cache.get(&"string".to_string()).unwrap();
         let alloca = self.builder.build_alloca(ty.into_struct_type(), "");
         let zero = self.context().i32_type().const_int(0, false);
-        let gep = unsafe { self.builder.build_gep(alloca, &[zero.clone(), zero.clone()], "") };
-        self.builder.build_store(gep, gv_str);
+        let one = self.context().i32_type().const_int(1, false);
+        let len_gep = unsafe { self.builder.build_in_bounds_gep(alloca, &[zero.clone(), zero.clone()], "") };
+        self.builder.build_store(len_gep, self.context().i32_type().const_int((value.value.len() - 1) as u64, false));
+        let data_gep = unsafe { self.builder.build_in_bounds_gep(alloca, &[zero.clone(), one.clone()], "") };
+        let gv_gep = unsafe { self.builder.build_in_bounds_gep(gv_str.as_pointer_value(), &[zero, zero], "") };
+        self.builder.build_store(data_gep, gv_gep);
         return alloca.into()
       }
       Expr::Variable(var) => {
         let value = self.cache_stack.get(&var.id.literal).unwrap();
-        return *value;
+        if let Type::Class(_) = &var.decl.ty {
+          return *value;
+        }
+        if is_lval {
+          return *value;
+        } else {
+          return if let BasicValueEnum::PointerValue(ptr) = value {
+            self.builder.build_load(*ptr, "").into()
+          } else {
+            *value
+          }
+        }
         // panic!("{} is not a pointer!", value.print_to_string().to_string());
       }
-      _ => { panic!("Unknown expr"); }
+      Expr::AttrAccess(aa) => {
+        let this = self.generate_expr(&aa.this, false);
+        if let BasicValueEnum::PointerValue(pv) = this {
+          let zero = self.module.get_context().i32_type().const_int(0, false);
+          let idx = self.context().i32_type().const_int(aa.idx as u64, false);
+          let args = vec![zero, idx];
+          let ptr = unsafe { self.builder.build_in_bounds_gep(pv, &args, "") };
+          if is_lval {
+            return ptr.into()
+          } else {
+            return self.builder.build_load(ptr, "").into()
+          }
+        } else {
+          panic!("{} is not a pointer!", this.print_to_string().to_string());
+        }
+      }
+      _ => { panic!("Unknown expr {}", expr); }
     }
   }
 
@@ -287,7 +318,7 @@ impl<'ctx> CodeGen<'ctx> {
 
   fn generate_func_call(&mut self, call: &Rc<FuncCall>) -> Option<BasicValueEnum<'ctx>> {
     let params : Vec<BasicMetadataValueEnum> = call.params.iter().map(|arg| {
-      let expr = self.generate_expr(&arg);
+      let expr = self.generate_expr(&arg, false);
       match expr {
         BasicValueEnum::IntValue(t) => t.into(),
         BasicValueEnum::PointerValue(t) => t.into(),
@@ -295,15 +326,13 @@ impl<'ctx> CodeGen<'ctx> {
       }
     }).collect();
     let llvm_call = self.builder.build_call(self.module.get_function(&call.fname.literal).unwrap(), &params, "calltmp");
-    println!("{}", llvm_call.print_to_string().to_str().unwrap());
     llvm_call.try_as_basic_value().left()
   }
 
 }
 
-pub fn codegen(ast: &Rc<Linkage>) {
+pub fn codegen<'ctx>(ast: &Rc<Linkage>, ctx: &'ctx Context) -> Module<'ctx> {
   let fname = ast.tus[ast.tus.len() - 1].fname.clone();
-  let ctx = Context::create();
   ctx.i8_type();
   let mut tg = TypeGen{
     ty_cache: HashMap::new(),
@@ -319,13 +348,15 @@ pub fn codegen(ast: &Rc<Linkage>) {
 
   let mut cg = CodeGen{
     module: ctx.create_module(&fname),
-    types: &mut tg,
+    types: tg,
     builder: ctx.create_builder(),
     cache_stack: CacheStack {
       stack: Vec::new(),
     }
   };
   cg.generate_linkage(ast);
-  println!("{}", cg.module.to_string());
+  cg.module.verify().unwrap();
+
+  return cg.module;
 }
 

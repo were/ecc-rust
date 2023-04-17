@@ -26,14 +26,14 @@ func println(string s) -> void {
   return;
 }
 
-func toString(int x) -> string {
-  return;
-}
+// func toString(int x) -> string {
+//   return;
+// }
 
 class string {
 
   func length() -> int {
-    return 0;
+    return self.length_;
   }
 
   func parseInt() -> int {

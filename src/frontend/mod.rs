@@ -28,11 +28,10 @@ pub fn parse(fname: String, src: String) -> Rc<Linkage> {
 
 pub fn semantic_check(ast: &Rc<Linkage>) -> Rc<Linkage> {
   let hoisted = sema::hoist_methods(ast);
-  println!("{}", hoisted);
   let type_resolved = sema::resolve_symbols(&hoisted, false);
   sema::resolve_symbols(&type_resolved, true)
 }
 
-pub fn codegen(ast: &Rc<Linkage>) {
-  codegen::codegen(ast);
+pub fn codegen<'ctx>(ast: &Rc<Linkage>, ctx: &'ctx inkwell::context::Context) -> inkwell::module::Module<'ctx> {
+  codegen::codegen(ast, ctx)
 }
