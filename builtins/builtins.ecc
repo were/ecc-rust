@@ -17,6 +17,14 @@ func print(string s) -> void {
   //   s.length_, // length
   //   "r,r,~{a0},~{a1},~{a2},~{a7}"
   // );
+
+  // wasm
+  asm(
+    "(call $print_str $0 $1)",
+    s.data,
+    s.length_,
+    "r,r"
+  );
   return;
 }
 

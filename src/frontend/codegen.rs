@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::collections::HashMap;
 
-use inkwell::values::{BasicValueEnum, BasicMetadataValueEnum, AnyValue};
+use inkwell::values::{BasicValueEnum, BasicMetadataValueEnum, AnyValue, AsValueRef};
 
 use inkwell::{
   context::{Context, ContextRef},
@@ -158,6 +158,7 @@ struct CodeGen<'ctx> {
   types: TypeGen<'ctx>,
   builder: Builder<'ctx>,
   cache_stack: CacheStack<'ctx>,
+  gv_ptr2str: HashMap<usize, usize>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -270,10 +271,16 @@ impl<'ctx> CodeGen<'ctx> {
         let zero = self.context().i32_type().const_int(0, false);
         let one = self.context().i32_type().const_int(1, false);
         let len_gep = unsafe { self.builder.build_in_bounds_gep(alloca, &[zero.clone(), zero.clone()], "") };
-        self.builder.build_store(len_gep, self.context().i32_type().const_int((value.value.len() - 1) as u64, false));
+        self.builder.build_store(len_gep, self.context().i32_type().const_int(value.value.len() as u64, false));
         let data_gep = unsafe { self.builder.build_in_bounds_gep(alloca, &[zero.clone(), one.clone()], "") };
         let gv_gep = unsafe { self.builder.build_in_bounds_gep(gv_str.as_pointer_value(), &[zero, zero], "") };
         self.builder.build_store(data_gep, gv_gep);
+
+        // A hack for not accessing constant GEP for now.
+        let gv_key = gv_gep.as_value_ref() as *const _ as usize;
+        let gv_value = gv_str.as_value_ref() as *const _ as usize;
+        self.gv_ptr2str.insert(gv_key, gv_value);
+
         return alloca.into()
       }
       Expr::Variable(var) => {
@@ -331,7 +338,7 @@ impl<'ctx> CodeGen<'ctx> {
 
 }
 
-pub fn codegen<'ctx>(ast: &Rc<Linkage>, ctx: &'ctx Context) -> Module<'ctx> {
+pub fn codegen<'ctx>(ast: &Rc<Linkage>, ctx: &'ctx Context) -> (Module<'ctx>, HashMap<usize, usize>) {
   let fname = ast.tus[ast.tus.len() - 1].fname.clone();
   ctx.i8_type();
   let mut tg = TypeGen{
@@ -350,6 +357,7 @@ pub fn codegen<'ctx>(ast: &Rc<Linkage>, ctx: &'ctx Context) -> Module<'ctx> {
     module: ctx.create_module(&fname),
     types: tg,
     builder: ctx.create_builder(),
+    gv_ptr2str: HashMap::new(),
     cache_stack: CacheStack {
       stack: Vec::new(),
     }
@@ -357,6 +365,6 @@ pub fn codegen<'ctx>(ast: &Rc<Linkage>, ctx: &'ctx Context) -> Module<'ctx> {
   cg.generate_linkage(ast);
   cg.module.verify().unwrap();
 
-  return cg.module;
+  return (cg.module, cg.gv_ptr2str);
 }
 
