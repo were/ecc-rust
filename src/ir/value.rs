@@ -13,12 +13,12 @@ macro_rules! value_impl_as_ref_and_mut {
       }
     }
     impl<'ctx> FindInstance<'ctx, $ty_name> for $ty_name {
-      fn find_instance(module: &Module, value: &ValueRef) -> &'ctx $ty_name {
+      fn find_instance(module: &'ctx Module, value: &'ctx ValueRef) -> &'ctx $ty_name {
         &module.$buffer[value.skey]
       }
     }
     impl<'ctx> FindInstanceMut<'ctx, $ty_name> for $ty_name {
-      fn find_instance(module: &mut Module, value: &ValueRef) -> &'ctx mut $ty_name {
+      fn find_instance(module: &'ctx mut Module, value: &'ctx ValueRef) -> &'ctx mut $ty_name {
         &mut module.$buffer[value.skey]
       }
     }
@@ -41,7 +41,7 @@ pub struct ValueRef {
 
 impl<'ctx> ValueRef {
 
-  pub fn as_typed_ref<T: WithVKindCode + FindInstance<'ctx, T>>(&'ctx self, module: &Module) -> Option<&'ctx T> {
+  pub fn as_typed_ref<T: WithVKindCode + FindInstance<'ctx, T>>(&'ctx self, module: &'ctx Module) -> Option<&'ctx T> {
     if self.v_kind == T::kind_code() {
       Some(T::find_instance(module, self))
     } else {
@@ -68,20 +68,20 @@ pub enum VKindCode {
   Unknown
 }
 
-pub(super) trait WithVKindCode {
+pub trait WithVKindCode {
   fn kind_code() -> VKindCode;
 }
 
-pub(super) trait FindInstance<'ctx, T> {
-  fn find_instance(module: &'ctx Module, value: &ValueRef) -> &'ctx T;
+pub trait FindInstance<'ctx, T> {
+  fn find_instance(module: &'ctx Module, value: &'ctx ValueRef) -> &'ctx T;
 }
 
-pub(super) trait TypedValueRef {
+pub trait TypedValueRef {
   fn get_type() -> Type;
 }
 
-pub(super) trait FindInstanceMut<'ctx, T> {
-  fn find_instance(module: &'ctx mut Module, value: &ValueRef) -> &'ctx mut T;
+pub trait FindInstanceMut<'ctx, T> {
+  fn find_instance(module: &'ctx mut Module, value: &'ctx ValueRef) -> &'ctx mut T;
 }
 
 

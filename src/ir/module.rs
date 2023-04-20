@@ -134,14 +134,16 @@ impl fmt::Display for Module {
         if i != 0 {
           write!(f, ", ").unwrap();
         }
-        let arg = func.get_arg(i).as_typed_ref::<Argument>(self).unwrap();
-        write!(f, "{} %{}", arg.ty, &arg.name()).unwrap();
+        let arg_ref = func.get_arg(i);
+        let arg = arg_ref.as_typed_ref::<Argument>(self).unwrap();
+        write!(f, "{} {}", arg.ty, &arg.name()).unwrap();
       }
       write!(f, ")").unwrap();
       if func.blocks.len() != 0 {
         write!(f, " {{\n").unwrap();
         for i in 0..func.get_num_blocks() {
-          let block = func.get_block(i).as_typed_ref::<block::Block>(self).unwrap();
+          let block_ref = func.get_block(i);
+          let block = block_ref.as_typed_ref::<block::Block>(self).unwrap();
           write!(f, "{}:\n", block.name).unwrap();
         }
         write!(f, "}}").unwrap();
