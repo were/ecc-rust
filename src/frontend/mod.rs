@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::ir::module::Module;
+use trinity::ir::module::Module;
 
 use self::ast::Linkage;
 

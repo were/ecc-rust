@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::collections::HashMap;
 
-use crate::ir::{
+use trinity::ir::{
   self,
   value::{ValueRef, VKindCode},
   types::{StructType, StructTypeRef, Type}, function::Function,
@@ -37,7 +37,7 @@ impl TypeGen {
       ast::Type::Class(class) => {
         let module = &self.builder.module;
         let sty = module.get_struct(&class.id.literal).unwrap();
-        return ir::types::Type::StructTypeRef(Rc::new(StructTypeRef{ name: sty.name.clone() })).ptr_type();
+        return ir::types::Type::StructTypeRef(Rc::new(sty.as_ref())).ptr_type();
       }
       ast::Type::Builtin(builtin) => self.builtin_to_llvm(builtin.as_ref()),
       ast::Type::Array(array) => self.array_to_llvm(array),
