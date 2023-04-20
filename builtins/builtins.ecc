@@ -21,7 +21,7 @@ func print(string s) -> void {
   // wasm
   asm(
     "(call $print_str $0 $1)",
-    s.data,
+    s.data_,
     s.length_,
     "r,r"
   );

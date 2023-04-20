@@ -1,7 +1,6 @@
 use std::rc::Rc;
-use std::collections::HashMap;
 
-use inkwell::module::Module;
+use crate::ir::module::Module;
 
 use self::ast::Linkage;
 
@@ -42,6 +41,6 @@ pub fn semantic_check(ast: &Rc<Linkage>, print_ast: i32) -> Rc<Linkage> {
   res
 }
 
-pub fn codegen<'ctx>(ast: &Rc<Linkage>, ctx: &'ctx inkwell::context::Context) -> (Module<'ctx>, HashMap<usize, usize>) {
-  codegen::codegen(ast, ctx)
+pub fn codegen_llvm(ast: &Rc<Linkage>) -> Module {
+  codegen::codegen(ast)
 }

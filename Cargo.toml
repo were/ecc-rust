@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "ecc"
+name = "ecc-frontend"
 path = "src/main.rs"
 
 [dependencies]
 regex = "1"
 snailquote = "0.3.0"
 quote = "1.0"
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm12-0"] }
+slab = "0.4.8"
 
