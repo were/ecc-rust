@@ -4,12 +4,13 @@ use std::collections::HashMap;
 use trinity::ir::{
   self,
   value::{ValueRef, VKindCode},
-  types::{StructType, StructTypeRef, Type}, function::Function,
+  types::{StructType, StructTypeRef, Type}, function::Function
 };
+use trinity::builder::Builder;
 use super::ast;
 
 struct TypeGen {
-  pub builder: ir::builder::Builder,
+  pub builder: Builder,
 }
 
 impl TypeGen {
@@ -139,7 +140,7 @@ impl CodeGen {
     &self.tg.builder.module
   }
 
-  fn builder_mut(&mut self) -> &mut ir::builder::Builder {
+  fn builder_mut(&mut self) -> &mut Builder {
     &mut self.tg.builder
   }
 
@@ -329,7 +330,7 @@ pub fn codegen(ast: &Rc<ast::Linkage>) -> ir::module::Module {
     }
   }
 
-  let builder = ir::builder::Builder::new(module);
+  let builder = Builder::new(module);
 
   let mut tg = TypeGen{ builder };
   tg.enter_linkage(ast);
