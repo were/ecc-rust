@@ -30,6 +30,14 @@ pub struct ClassDecl {
   pub attrs: Vec<Rc<VarDecl>>,
 }
 
+impl ClassDecl {
+
+  pub fn id(&self) -> &String {
+    &self.id.literal
+  }
+
+}
+
 #[derive(Clone)]
 pub enum BuiltinTypeCode {
   Int,

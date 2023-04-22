@@ -11,5 +11,5 @@ path = "src/main.rs"
 regex = "1"
 snailquote = "0.3.0"
 quote = "1.0"
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm12-0"] }
+trinity = { git = "https://github.com/were/trinity", branch = "master" }
 

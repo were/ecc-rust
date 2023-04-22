@@ -1,5 +1,7 @@
 use std::rc::Rc;
 
+use trinity::ir::module::Module;
+
 use self::ast::Linkage;
 
 mod lexer;
@@ -39,6 +41,6 @@ pub fn semantic_check(ast: &Rc<Linkage>, print_ast: i32) -> Rc<Linkage> {
   res
 }
 
-pub fn codegen<'ctx>(ast: &Rc<Linkage>, ctx: &'ctx inkwell::context::Context) -> inkwell::module::Module<'ctx> {
-  codegen::codegen(ast, ctx)
+pub fn codegen_llvm(ast: &Rc<Linkage>) -> Module {
+  codegen::codegen(ast)
 }

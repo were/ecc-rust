@@ -1,26 +1,22 @@
+#![feature(strict_provenance)]
+
 use std::env;
 use std::fs::File;
 use std::io::Read;
 
 mod frontend;
-mod backend;
-
-use inkwell::context::Context;
 
 pub use crate::frontend::parse;
 pub use crate::frontend::semantic_check;
 
 fn main() {
   let args: Vec<String> = env::args().collect();
-  let mut ofile: String = "a.wat".to_string();
   let mut print_ast : i32 = 0;
   if args.len() < 2 {
     println!("Usage: ./ecc [file-name]");
   }
   for i in 2..args.len() {
     match args[i].as_str() {
-      "-o" => { ofile = args[i + 1].clone(); }
-      "--output" => { ofile = args[i + 1].clone(); }
       "--print-ast" => { print_ast = args[i + 1].parse().unwrap(); }
       _ => ()
     }
@@ -36,13 +32,14 @@ fn main() {
         println!("{}", ast);
       }
       ast = semantic_check(&ast, print_ast);
-      let ctx = Context::create();
-      let mut module = frontend::codegen(&ast, &ctx);
-      backend::codegen(&module, &ofile);
+      let module = frontend::codegen_llvm(&ast);
+      println!("{}", module);
+      // print!("{}", module.print_to_string().to_string());
     }
     Err(error) => {
       eprintln!("Failed to open file: {}", error)
     }
   }
+  ()
 }
 
