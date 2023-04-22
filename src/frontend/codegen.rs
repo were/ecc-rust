@@ -49,7 +49,7 @@ impl TypeGen {
     let attrs : Vec<ir::types::TypeRef> = class.attrs.iter().map(
       |attr| { self.type_to_llvm(&attr.ty) }).collect();
     if let Some(sty) = self.class_cache.get(&class.id.literal) {
-      let sty_mut = sty.as_mut::<StructType>(&mut self.builder.module).unwrap();
+      let sty_mut = sty.as_mut::<StructType>(self.builder.context()).unwrap();
       sty_mut.set_body(attrs);
     }
   }
