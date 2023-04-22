@@ -3,8 +3,9 @@ use std::collections::HashMap;
 
 use trinity::ir::{
   self,
-  value::{ValueRef, VKindCode},
-  types::{StructType, TypeRef, FunctionType, AsTypeRef}, function::Function
+  value::ValueRef,
+  types::{StructType, TypeRef},
+  function::Function
 };
 use trinity::builder::Builder;
 use super::ast;
@@ -166,25 +167,29 @@ impl CodeGen {
     for decl in tu.decls.iter() {
       if let ast::Decl::Func(func) = decl {
         let func_ref = self.cache_stack.get(&func.id.literal).unwrap();
+        {
+          self.cache_stack.push();
+          let llvm_func = func_ref.as_ref::<Function>(self.tg.builder.context()).unwrap();
+          for i in 0..llvm_func.get_num_args() {
+            self.cache_stack.insert(
+              func.args[i].id.literal.clone(),
+              llvm_func.get_arg(i)
+            );
+          }
+        }
         self.builder_mut().set_current_function(func_ref);
         let block_ref = self.builder_mut().add_block("entry".to_string());
-        self.cache_stack.push();
-        func.args.iter().enumerate().for_each(|arg| {
-          self.cache_stack.insert(
-            arg.1.id.literal.clone(),
-            ValueRef{ skey: arg.0 as usize, v_kind: VKindCode::Argument });
-        });
         self.builder_mut().set_current_block(block_ref);
         self.generate_func(func);
+        // restore the scope
+        self.cache_stack.pop();
       }
     }
   }
 
   fn generate_func(&mut self, func: &Rc<ast::FuncDecl>) {
     // push arguments
-    // self.generate_compound_stmt(&func.body, false);
-    // // restore the scope
-    // self.cache_stack.pop();
+    self.generate_compound_stmt(&func.body, false);
   }
 
 //   fn generate_var_decl(&mut self, var: &Rc<VarDecl>) {
@@ -199,94 +204,99 @@ impl CodeGen {
 // 
 // 
 // 
-//   fn generate_compound_stmt(&mut self, stmt: &Rc<CompoundStmt>, new_scope: bool) {
-//     if new_scope {
-//       self.cache_stack.push();
-//     }
-//     for stmt in &stmt.stmts {
-//       self.generate_stmt(&stmt);
-//     }
-//   }
-// 
-//   fn generate_stmt(&mut self, stmt: &Stmt) {
-//     match stmt {
-//       Stmt::Ret(ret) => {
-//         if let Some(expr) = &ret.value {
-//           let val = self.generate_expr(&expr, false);
-//           self.builder.build_return(Some(&val));
-//         } else {
-//           self.builder.build_return(None);
-//         }
-//       }
-//       Stmt::FuncCall(call) => {
-//         self.generate_func_call(&call);
-//       }
-//       Stmt::InlineAsm(asm) => {
-//         self.generate_inline_asm(&asm);
-//       }
-//       _ => {}
-//     }
-//   }
-// 
-//   fn generate_expr(&mut self, expr: &Expr, is_lval: bool) -> BasicValueEnum<'ctx> {
-//     match expr {
-//       Expr::FuncCall(call) => {
-//         match self.generate_func_call(&call) {
-//           Some(x) => x,
-//           None => { panic!("No return value"); }
-//         }
-//       }
-//       Expr::IntImm(value) => {
-//         self.generate_int_imm(&value)
-//       }
-//       Expr::StrImm(value) => {
-//         let gv_str = unsafe { self.builder.build_global_string(&value.value.to_string(), "") };
-//         let ty = self.types.ty_cache.get(&"string".to_string()).unwrap();
-//         let alloca = self.builder.build_alloca(ty.into_struct_type(), "");
-//         let zero = self.context().i32_type().const_int(0, false);
-//         let one = self.context().i32_type().const_int(1, false);
-//         let len_gep = unsafe { self.builder.build_in_bounds_gep(alloca, &[zero.clone(), zero.clone()], "") };
-//         self.builder.build_store(len_gep, self.context().i32_type().const_int(value.value.len() as u64, false));
-//         let data_gep = unsafe { self.builder.build_in_bounds_gep(alloca, &[zero.clone(), one.clone()], "") };
-//         let gv_gep = unsafe { self.builder.build_in_bounds_gep(gv_str.as_pointer_value(), &[zero, zero], "") };
-//         self.builder.build_store(data_gep, gv_gep);
-//         return alloca.into()
-//       }
-//       Expr::Variable(var) => {
-//         let value = self.cache_stack.get(&var.id.literal).unwrap();
-//         if let Type::Class(_) = &var.decl.ty {
-//           return *value;
-//         }
-//         if is_lval {
-//           return *value;
-//         } else {
-//           return if let BasicValueEnum::PointerValue(ptr) = value {
-//             self.builder.build_load(*ptr, "").into()
-//           } else {
-//             *value
-//           }
-//         }
-//         // panic!("{} is not a pointer!", value.print_to_string().to_string());
-//       }
-//       Expr::AttrAccess(aa) => {
-//         let this = self.generate_expr(&aa.this, false);
-//         if let BasicValueEnum::PointerValue(pv) = this {
-//           let zero = self.module.get_context().i32_type().const_int(0, false);
-//           let idx = self.context().i32_type().const_int(aa.idx as u64, false);
-//           let args = vec![zero, idx];
-//           let ptr = unsafe { self.builder.build_in_bounds_gep(pv, &args, "") };
-//           if is_lval {
-//             return ptr.into()
-//           } else {
-//             return self.builder.build_load(ptr, "").into()
-//           }
-//         } else {
-//           panic!("{} is not a pointer!", this.print_to_string().to_string());
-//         }
-//       }
-//       _ => { panic!("Unknown expr {}", expr); }
-//     }
-//   }
+   fn generate_compound_stmt(&mut self, stmt: &Rc<ast::CompoundStmt>, new_scope: bool) {
+     if new_scope {
+       self.cache_stack.push();
+     }
+     for stmt in &stmt.stmts {
+       self.generate_stmt(&stmt);
+     }
+   }
+
+   fn generate_stmt(&mut self, stmt: &ast::Stmt) {
+     match stmt {
+       ast::Stmt::Ret(ret) => {
+         if let Some(expr) = &ret.value {
+           let val = self.generate_expr(&expr, false);
+           self.tg.builder.create_return(Some(val));
+         } else {
+           self.tg.builder.create_return(None);
+         }
+       }
+       // Stmt::FuncCall(call) => {
+       //   self.generate_func_call(&call);
+       // }
+       // Stmt::InlineAsm(asm) => {
+       //   self.generate_inline_asm(&asm);
+       // }
+       _ => {}
+     }
+   }
+
+   fn generate_expr(&mut self, expr: &ast::Expr, is_lval: bool) -> ValueRef {
+     match expr {
+       // Expr::FuncCall(call) => {
+       //   match self.generate_func_call(&call) {
+       //     Some(x) => x,
+       //     None => { panic!("No return value"); }
+       //   }
+       // }
+       ast::Expr::IntImm(value) => {
+         let ity_ref = self.tg.builder.context().int_type(32);
+         ity_ref.const_value(self.tg.builder.context(), value.value as u64)
+       }
+       // Expr::StrImm(value) => {
+       //   let gv_str = unsafe { self.builder.build_global_string(&value.value.to_string(), "") };
+       //   let ty = self.types.ty_cache.get(&"string".to_string()).unwrap();
+       //   let alloca = self.builder.build_alloca(ty.into_struct_type(), "");
+       //   let zero = self.context().i32_type().const_int(0, false);
+       //   let one = self.context().i32_type().const_int(1, false);
+       //   let len_gep = unsafe { self.builder.build_in_bounds_gep(alloca, &[zero.clone(), zero.clone()], "") };
+       //   self.builder.build_store(len_gep, self.context().i32_type().const_int(value.value.len() as u64, false));
+       //   let data_gep = unsafe { self.builder.build_in_bounds_gep(alloca, &[zero.clone(), one.clone()], "") };
+       //   let gv_gep = unsafe { self.builder.build_in_bounds_gep(gv_str.as_pointer_value(), &[zero, zero], "") };
+       //   self.builder.build_store(data_gep, gv_gep);
+       //   return alloca.into()
+       // }
+       // Expr::Variable(var) => {
+       //   let value = self.cache_stack.get(&var.id.literal).unwrap();
+       //   if let Type::Class(_) = &var.decl.ty {
+       //     return *value;
+       //   }
+       //   if is_lval {
+       //     return *value;
+       //   } else {
+       //     return if let BasicValueEnum::PointerValue(ptr) = value {
+       //       self.builder.build_load(*ptr, "").into()
+       //     } else {
+       //       *value
+       //     }
+       //   }
+       //   // panic!("{} is not a pointer!", value.print_to_string().to_string());
+       // }
+       // Expr::AttrAccess(aa) => {
+       //   let this = self.generate_expr(&aa.this, false);
+       //   if let BasicValueEnum::PointerValue(pv) = this {
+       //     let zero = self.module.get_context().i32_type().const_int(0, false);
+       //     let idx = self.context().i32_type().const_int(aa.idx as u64, false);
+       //     let args = vec![zero, idx];
+       //     let ptr = unsafe { self.builder.build_in_bounds_gep(pv, &args, "") };
+       //     if is_lval {
+       //       return ptr.into()
+       //     } else {
+       //       return self.builder.build_load(ptr, "").into()
+       //     }
+       //   } else {
+       //     panic!("{} is not a pointer!", this.print_to_string().to_string());
+       //   }
+       // }
+       _ => {
+         let ity_ref = self.tg.builder.context().int_type(32);
+         ity_ref.const_value(self.tg.builder.context(), 0)
+       }
+       // _ => { panic!("Unknown expr {}", expr); }
+     }
+   }
 // 
 //   fn generate_inline_asm(&mut self, asm: &InlineAsm) {
 //     let params : Vec<BasicValueEnum> = asm.args.iter().map(|arg| {
