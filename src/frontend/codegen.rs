@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use trinity::ir::{
   self,
   value::{ValueRef, VKindCode},
-  types::{StructType, TypeRef, FunctionType}, function::Function
+  types::{StructType, TypeRef, FunctionType, AsTypeRef}, function::Function
 };
 use trinity::builder::Builder;
 use super::ast;
@@ -37,7 +37,6 @@ impl TypeGen {
   fn type_to_llvm(&mut self, ty: &ast::Type) -> ir::types::TypeRef {
     match ty {
       ast::Type::Class(class) => {
-        let class_id = class.id.literal.clone();
         let res = self.class_cache.get(&class.id.literal).unwrap();
         return res.clone();
       }
@@ -52,7 +51,6 @@ impl TypeGen {
     if let Some(sty) = self.class_cache.get(&class.id.literal) {
       let sty_mut = sty.as_mut::<StructType>(&mut self.builder.module).unwrap();
       sty_mut.set_body(attrs);
-      return;
     }
   }
 
@@ -152,9 +150,14 @@ impl CodeGen {
     for decl in &tu.decls {
       if let ast::Decl::Func(func) = decl {
         let ret_ty = self.tg.type_to_llvm(&func.ty);
-        let args_ty :Vec<TypeRef> = func.args.iter().map(|arg|
-          self.tg.type_to_llvm(&arg.ty)
-        ).collect();
+        let args_ty :Vec<TypeRef> = func.args.iter().map(|arg| {
+          let res = self.tg.type_to_llvm(&arg.ty);
+          if *res.kind() == ir::types::TypeKind::StructType {
+            res.ptr_type(self.tg.builder.context())
+          } else {
+            res
+          }
+        }).collect();
         let fty = ret_ty.fn_type(self.tg.builder.context(), args_ty);
         let func_ref = self.tg.builder.add_function(func.id.literal.clone(), fty);
         self.cache_stack.insert(func.id.literal.clone(), func_ref.clone());
@@ -325,17 +328,19 @@ pub fn codegen(ast: &Rc<ast::Linkage>) -> ir::module::Module {
   let fname = ast.tus[ast.tus.len() - 1].fname.clone();
   let module = ir::module::Module::new(fname.clone(), fname.clone());
   let mut builder = Builder::new(module);
+  let mut class_cache: HashMap<String, TypeRef> = HashMap::new();
 
-  // Declare all classes
+  // Declare all classes for potential cross references.
   for tu in ast.tus.iter() {
     for decl in &tu.decls {
       if let ast::Decl::Class(class) = decl {
-        builder.create_struct(class.id().clone());
+        let sty_ref = builder.create_struct(class.id().clone());
+        class_cache.insert(class.id().clone(), sty_ref);
       }
     }
   }
 
-  let mut tg = TypeGen{ builder, class_cache: HashMap::new() };
+  let mut tg = TypeGen{ builder, class_cache };
   tg.enter_linkage(ast);
 
   let mut cg = CodeGen{
