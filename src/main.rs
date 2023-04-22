@@ -5,7 +5,6 @@ use std::fs::File;
 use std::io::Read;
 
 mod frontend;
-mod ir;
 
 pub use crate::frontend::parse;
 pub use crate::frontend::semantic_check;
