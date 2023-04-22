@@ -4,13 +4,14 @@ use std::collections::HashMap;
 use trinity::ir::{
   self,
   value::{ValueRef, VKindCode},
-  types::{StructType, StructTypeRef, Type}, function::Function
+  types::{StructType, TypeRef, FunctionType}, function::Function
 };
 use trinity::builder::Builder;
 use super::ast;
 
 struct TypeGen {
   pub builder: Builder,
+  pub class_cache: HashMap<String, TypeRef>,
 }
 
 impl TypeGen {
@@ -33,12 +34,12 @@ impl TypeGen {
     }
   }
 
-  fn type_to_llvm(&mut self, ty: &ast::Type) -> ir::types::Type {
+  fn type_to_llvm(&mut self, ty: &ast::Type) -> ir::types::TypeRef {
     match ty {
       ast::Type::Class(class) => {
-        let module = &self.builder.module;
-        let sty = module.get_struct(&class.id.literal).unwrap();
-        return ir::types::Type::StructTypeRef(Rc::new(sty.as_ref())).ptr_type();
+        let class_id = class.id.literal.clone();
+        let res = self.class_cache.get(&class.id.literal).unwrap();
+        return res.clone();
       }
       ast::Type::Builtin(builtin) => self.builtin_to_llvm(builtin.as_ref()),
       ast::Type::Array(array) => self.array_to_llvm(array),
@@ -46,26 +47,29 @@ impl TypeGen {
   }
 
   fn class_to_struct(&mut self, class: &Rc<ast::ClassDecl>) {
-    let attrs : Vec<ir::types::Type> = class.attrs.iter().map(
+    let attrs : Vec<ir::types::TypeRef> = class.attrs.iter().map(
       |attr| { self.type_to_llvm(&attr.ty) }).collect();
-    let sty = self.builder.module.get_struct_mut(class.id()).unwrap();
-    sty.set_body(attrs);
+    if let Some(sty) = self.class_cache.get(&class.id.literal) {
+      let sty_mut = sty.as_mut::<StructType>(&mut self.builder.module).unwrap();
+      sty_mut.set_body(attrs);
+      return;
+    }
   }
 
-  fn builtin_to_llvm(&mut self, builtin : &ast::BuiltinType) -> ir::types::Type {
+  fn builtin_to_llvm(&mut self, builtin : &ast::BuiltinType) -> ir::types::TypeRef {
     match builtin.code {
-      ast::BuiltinTypeCode::Int => self.builder.int_type(32),
-      ast::BuiltinTypeCode::Char => self.builder.int_type(8),
-      ast::BuiltinTypeCode::Void => self.builder.void_type(),
-      ast::BuiltinTypeCode::Bool => self.builder.int_type(1),
+      ast::BuiltinTypeCode::Int => self.builder.context().int_type(32),
+      ast::BuiltinTypeCode::Char => self.builder.context().int_type(8),
+      ast::BuiltinTypeCode::Void => self.builder.context().void_type(),
+      ast::BuiltinTypeCode::Bool => self.builder.context().int_type(1),
       _ => { panic!("Unknown builtin type {}", builtin.token.literal); }
     }
   }
 
-  fn array_to_llvm(&mut self, array: &ast::ArrayType) -> ir::types::Type {
+  fn array_to_llvm(&mut self, array: &ast::ArrayType) -> ir::types::TypeRef {
     let mut res = self.type_to_llvm(&array.scalar_ty);
     for _ in 0..array.dims {
-      res = res.ptr_type();
+      res = res.ptr_type(self.builder.context());
     }
     return res
   }
@@ -148,10 +152,10 @@ impl CodeGen {
     for decl in &tu.decls {
       if let ast::Decl::Func(func) = decl {
         let ret_ty = self.tg.type_to_llvm(&func.ty);
-        let args_ty :Vec<Type> = func.args.iter().map(|arg|
+        let args_ty :Vec<TypeRef> = func.args.iter().map(|arg|
           self.tg.type_to_llvm(&arg.ty)
         ).collect();
-        let fty = ret_ty.fn_type(&args_ty);
+        let fty = ret_ty.fn_type(self.tg.builder.context(), args_ty);
         let func_ref = self.tg.builder.add_function(func.id.literal.clone(), fty);
         self.cache_stack.insert(func.id.literal.clone(), func_ref.clone());
       }
@@ -319,20 +323,19 @@ impl CodeGen {
 
 pub fn codegen(ast: &Rc<ast::Linkage>) -> ir::module::Module {
   let fname = ast.tus[ast.tus.len() - 1].fname.clone();
-  let mut module = ir::module::Module::new(fname.clone(), fname.clone());
+  let module = ir::module::Module::new(fname.clone(), fname.clone());
+  let mut builder = Builder::new(module);
 
   // Declare all classes
   for tu in ast.tus.iter() {
     for decl in &tu.decls {
       if let ast::Decl::Class(class) = decl {
-        module.add_struct_decl(class.id().clone())
+        builder.create_struct(class.id().clone());
       }
     }
   }
 
-  let builder = Builder::new(module);
-
-  let mut tg = TypeGen{ builder };
+  let mut tg = TypeGen{ builder, class_cache: HashMap::new() };
   tg.enter_linkage(ast);
 
   let mut cg = CodeGen{
