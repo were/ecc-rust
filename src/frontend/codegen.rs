@@ -139,10 +139,6 @@ impl CodeGen {
     }
   }
 
-  fn module(&self) -> &ir::module::Module {
-    &self.tg.builder.module
-  }
-
   fn builder_mut(&mut self) -> &mut Builder {
     &mut self.tg.builder
   }
@@ -204,99 +200,95 @@ impl CodeGen {
 // 
 // 
 // 
-   fn generate_compound_stmt(&mut self, stmt: &Rc<ast::CompoundStmt>, new_scope: bool) {
-     if new_scope {
-       self.cache_stack.push();
-     }
-     for stmt in &stmt.stmts {
-       self.generate_stmt(&stmt);
-     }
-   }
+  fn generate_compound_stmt(&mut self, stmt: &Rc<ast::CompoundStmt>, new_scope: bool) {
+    if new_scope {
+      self.cache_stack.push();
+    }
+    for stmt in &stmt.stmts {
+      self.generate_stmt(&stmt);
+    }
+  }
 
-   fn generate_stmt(&mut self, stmt: &ast::Stmt) {
-     match stmt {
-       ast::Stmt::Ret(ret) => {
-         if let Some(expr) = &ret.value {
-           let val = self.generate_expr(&expr, false);
-           self.tg.builder.create_return(Some(val));
-         } else {
-           self.tg.builder.create_return(None);
-         }
-       }
-       // Stmt::FuncCall(call) => {
-       //   self.generate_func_call(&call);
-       // }
-       // Stmt::InlineAsm(asm) => {
-       //   self.generate_inline_asm(&asm);
-       // }
-       _ => {}
-     }
-   }
+  fn generate_stmt(&mut self, stmt: &ast::Stmt) {
+    match stmt {
+      ast::Stmt::Ret(ret) => {
+        if let Some(expr) = &ret.value {
+          let val = self.generate_expr(&expr, false);
+          self.tg.builder.create_return(Some(val));
+        } else {
+          self.tg.builder.create_return(None);
+        }
+      }
+      ast::Stmt::FuncCall(call) => {
+        self.generate_func_call(&call);
+      }
+      // Stmt::InlineAsm(asm) => {
+      //   self.generate_inline_asm(&asm);
+      // }
+      _ => {}
+    }
+  }
 
-   fn generate_expr(&mut self, expr: &ast::Expr, is_lval: bool) -> ValueRef {
-     match expr {
-       // Expr::FuncCall(call) => {
-       //   match self.generate_func_call(&call) {
-       //     Some(x) => x,
-       //     None => { panic!("No return value"); }
-       //   }
-       // }
-       ast::Expr::IntImm(value) => {
-         let ity_ref = self.tg.builder.context().int_type(32);
-         ity_ref.const_value(self.tg.builder.context(), value.value as u64)
-       }
-       // Expr::StrImm(value) => {
-       //   let gv_str = unsafe { self.builder.build_global_string(&value.value.to_string(), "") };
-       //   let ty = self.types.ty_cache.get(&"string".to_string()).unwrap();
-       //   let alloca = self.builder.build_alloca(ty.into_struct_type(), "");
-       //   let zero = self.context().i32_type().const_int(0, false);
-       //   let one = self.context().i32_type().const_int(1, false);
-       //   let len_gep = unsafe { self.builder.build_in_bounds_gep(alloca, &[zero.clone(), zero.clone()], "") };
-       //   self.builder.build_store(len_gep, self.context().i32_type().const_int(value.value.len() as u64, false));
-       //   let data_gep = unsafe { self.builder.build_in_bounds_gep(alloca, &[zero.clone(), one.clone()], "") };
-       //   let gv_gep = unsafe { self.builder.build_in_bounds_gep(gv_str.as_pointer_value(), &[zero, zero], "") };
-       //   self.builder.build_store(data_gep, gv_gep);
-       //   return alloca.into()
-       // }
-       // Expr::Variable(var) => {
-       //   let value = self.cache_stack.get(&var.id.literal).unwrap();
-       //   if let Type::Class(_) = &var.decl.ty {
-       //     return *value;
-       //   }
-       //   if is_lval {
-       //     return *value;
-       //   } else {
-       //     return if let BasicValueEnum::PointerValue(ptr) = value {
-       //       self.builder.build_load(*ptr, "").into()
-       //     } else {
-       //       *value
-       //     }
-       //   }
-       //   // panic!("{} is not a pointer!", value.print_to_string().to_string());
-       // }
-       // Expr::AttrAccess(aa) => {
-       //   let this = self.generate_expr(&aa.this, false);
-       //   if let BasicValueEnum::PointerValue(pv) = this {
-       //     let zero = self.module.get_context().i32_type().const_int(0, false);
-       //     let idx = self.context().i32_type().const_int(aa.idx as u64, false);
-       //     let args = vec![zero, idx];
-       //     let ptr = unsafe { self.builder.build_in_bounds_gep(pv, &args, "") };
-       //     if is_lval {
-       //       return ptr.into()
-       //     } else {
-       //       return self.builder.build_load(ptr, "").into()
-       //     }
-       //   } else {
-       //     panic!("{} is not a pointer!", this.print_to_string().to_string());
-       //   }
-       // }
-       _ => {
+  fn generate_expr(&mut self, expr: &ast::Expr, is_lval: bool) -> ValueRef {
+    match expr {
+      // Expr::FuncCall(call) => {
+      //   match self.generate_func_call(&call) {
+      //     Some(x) => x,
+      //     None => { panic!("No return value"); }
+      //   }
+      // }
+      ast::Expr::IntImm(value) => {
+        let ity_ref = self.tg.builder.context().int_type(32);
+        ity_ref.const_value(self.tg.builder.context(), value.value as u64)
+      }
+      ast::Expr::StrImm(value) => {
+        let const_str = self.tg.builder.create_string(value.value.clone());
+        let zero = {
          let ity_ref = self.tg.builder.context().int_type(32);
          ity_ref.const_value(self.tg.builder.context(), 0)
-       }
-       // _ => { panic!("Unknown expr {}", expr); }
-     }
-   }
+        };
+        self.tg.builder.create_inbounds_gep(const_str, vec![zero.clone(), zero.clone()])
+        // return alloca.into()
+      }
+      // Expr::Variable(var) => {
+      //   let value = self.cache_stack.get(&var.id.literal).unwrap();
+      //   if let Type::Class(_) = &var.decl.ty {
+      //     return *value;
+      //   }
+      //   if is_lval {
+      //     return *value;
+      //   } else {
+      //     return if let BasicValueEnum::PointerValue(ptr) = value {
+      //       self.builder.build_load(*ptr, "").into()
+      //     } else {
+      //       *value
+      //     }
+      //   }
+      //   // panic!("{} is not a pointer!", value.print_to_string().to_string());
+      // }
+      // Expr::AttrAccess(aa) => {
+      //   let this = self.generate_expr(&aa.this, false);
+      //   if let BasicValueEnum::PointerValue(pv) = this {
+      //     let zero = self.module.get_context().i32_type().const_int(0, false);
+      //     let idx = self.context().i32_type().const_int(aa.idx as u64, false);
+      //     let args = vec![zero, idx];
+      //     let ptr = unsafe { self.builder.build_in_bounds_gep(pv, &args, "") };
+      //     if is_lval {
+      //       return ptr.into()
+      //     } else {
+      //       return self.builder.build_load(ptr, "").into()
+      //     }
+      //   } else {
+      //     panic!("{} is not a pointer!", this.print_to_string().to_string());
+      //   }
+      // }
+      _ => {
+        let ity_ref = self.tg.builder.context().int_type(32);
+        ity_ref.const_value(self.tg.builder.context(), 0)
+      }
+      // _ => { panic!("Unknown expr {}", expr); }
+    }
+  }
 // 
 //   fn generate_inline_asm(&mut self, asm: &InlineAsm) {
 //     let params : Vec<BasicValueEnum> = asm.args.iter().map(|arg| {
@@ -319,19 +311,15 @@ impl CodeGen {
 //     self.module.get_context().i32_type().const_int(value.value as u64, false).into()
 //   }
 // 
-//   fn generate_func_call(&mut self, call: &Rc<FuncCall>) -> Option<BasicValueEnum<'ctx>> {
-//     let params : Vec<BasicMetadataValueEnum> = call.params.iter().map(|arg| {
-//       let expr = self.generate_expr(&arg, false);
-//       match expr {
-//         BasicValueEnum::IntValue(t) => t.into(),
-//         BasicValueEnum::PointerValue(t) => t.into(),
-//         _ => { panic!("Unknown type {}", expr.print_to_string().to_string()); }
-//       }
-//     }).collect();
-//     let llvm_call = self.builder.build_call(self.module.get_function(&call.fname.literal).unwrap(), &params, "calltmp");
-//     llvm_call.try_as_basic_value().left()
-//   }
-// 
+   fn generate_func_call(&mut self, call: &Rc<ast::FuncCall>) -> ValueRef {
+     let params : Vec<ValueRef> = call.params.iter().map(|arg| {
+       let expr = self.generate_expr(&arg, false);
+       expr
+     }).collect();
+     let ity_ref = self.tg.builder.context().int_type(32);
+     ity_ref.const_value(self.tg.builder.context(), 0)
+   }
+ 
 }
 
 pub fn codegen(ast: &Rc<ast::Linkage>) -> ir::module::Module {
