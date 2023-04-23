@@ -5,7 +5,7 @@ use trinity::ir::{
   self,
   value::ValueRef,
   types::{StructType, TypeRef},
-  function::Function
+  value::Function
 };
 use trinity::builder::Builder;
 use super::ast;
@@ -248,7 +248,9 @@ impl CodeGen {
         let i32ty = self.tg.builder.context().int_type(32);
         let zero = self.tg.builder.context().const_value(i32ty.clone(), 0);
         let str_len = self.tg.builder.context().const_value(i32ty.clone(), len as u64);
-        let str_ptr = self.tg.builder.create_gep(str_value, vec![zero.clone(), zero.clone()], true);
+        let i8ty = self.tg.builder.context().int_type(8);
+        let i8ptr = i8ty.ptr_type(self.tg.builder.context());
+        let str_ptr = self.tg.builder.create_gep(i8ptr, str_value, vec![zero.clone(), zero.clone()], true);
         self.tg.builder.create_global_struct(str_ref, vec![str_len, str_ptr])
       }
       // Expr::Variable(var) => {
