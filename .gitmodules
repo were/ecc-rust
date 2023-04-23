@@ -1,0 +1,3 @@
+[submodule "trinity"]
+	path = trinity
+	url = https://github.com/were/trinity

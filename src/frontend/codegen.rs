@@ -149,7 +149,7 @@ impl CodeGen {
         let ret_ty = self.tg.type_to_llvm(&func.ty);
         let args_ty :Vec<TypeRef> = func.args.iter().map(|arg| {
           let res = self.tg.type_to_llvm(&arg.ty);
-          if *res.kind() == ir::types::TypeKind::StructType {
+          if *res.kind() == ir::types::TKindCode::StructType {
             res.ptr_type(self.tg.builder.context())
           } else {
             res
@@ -229,7 +229,7 @@ impl CodeGen {
     }
   }
 
-  fn generate_expr(&mut self, expr: &ast::Expr, is_lval: bool) -> ValueRef {
+  fn generate_expr(&mut self, expr: &ast::Expr, _is_lval: bool) -> ValueRef {
     match expr {
       // Expr::FuncCall(call) => {
       //   match self.generate_func_call(&call) {
@@ -238,17 +238,18 @@ impl CodeGen {
       //   }
       // }
       ast::Expr::IntImm(value) => {
-        let ity_ref = self.tg.builder.context().int_type(32);
-        ity_ref.const_value(self.tg.builder.context(), value.value as u64)
+        let i32ty = self.tg.builder.context().int_type(32);
+        self.tg.builder.context().const_value(i32ty, value.value as u64)
       }
       ast::Expr::StrImm(value) => {
-        let const_str = self.tg.builder.create_string(value.value.clone());
-        let zero = {
-         let ity_ref = self.tg.builder.context().int_type(32);
-         ity_ref.const_value(self.tg.builder.context(), 0)
-        };
-        self.tg.builder.create_inbounds_gep(const_str, vec![zero.clone(), zero.clone()])
-        // return alloca.into()
+        let len = value.value.len();
+        let str_value = self.tg.builder.create_string(value.value.clone());
+        let str_ref = self.tg.class_cache.get("string").unwrap().clone();
+        let i32ty = self.tg.builder.context().int_type(32);
+        let zero = self.tg.builder.context().const_value(i32ty.clone(), 0);
+        let str_len = self.tg.builder.context().const_value(i32ty.clone(), len as u64);
+        let str_ptr = self.tg.builder.create_gep(str_value, vec![zero.clone(), zero.clone()], true);
+        self.tg.builder.create_global_struct(str_ref, vec![str_len, str_ptr])
       }
       // Expr::Variable(var) => {
       //   let value = self.cache_stack.get(&var.id.literal).unwrap();
@@ -283,8 +284,8 @@ impl CodeGen {
       //   }
       // }
       _ => {
-        let ity_ref = self.tg.builder.context().int_type(32);
-        ity_ref.const_value(self.tg.builder.context(), 0)
+        let i32ty = self.tg.builder.context().int_type(32);
+        self.tg.builder.context().const_value(i32ty, 0)
       }
       // _ => { panic!("Unknown expr {}", expr); }
     }
@@ -312,12 +313,12 @@ impl CodeGen {
 //   }
 // 
    fn generate_func_call(&mut self, call: &Rc<ast::FuncCall>) -> ValueRef {
-     let params : Vec<ValueRef> = call.params.iter().map(|arg| {
+     let _params : Vec<ValueRef> = call.params.iter().map(|arg| {
        let expr = self.generate_expr(&arg, false);
        expr
      }).collect();
-     let ity_ref = self.tg.builder.context().int_type(32);
-     ity_ref.const_value(self.tg.builder.context(), 0)
+     let i32ty = self.tg.builder.context().int_type(32);
+     self.tg.builder.context().const_value(i32ty, 0)
    }
  
 }

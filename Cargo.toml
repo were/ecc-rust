@@ -11,5 +11,5 @@ path = "src/main.rs"
 regex = "1"
 snailquote = "0.3.0"
 quote = "1.0"
-trinity = { git = "https://github.com/were/trinity", branch = "dev-230422" }
+trinity = { path = "./trinity" }
 
