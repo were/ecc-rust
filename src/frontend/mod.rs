@@ -14,10 +14,14 @@ mod codegen;
 
 pub fn inject_builtins(ast: ast::TranslateUnit) -> Rc<Linkage> {
   #[cfg(feature = "x86")]
-  let builtins = include_str!("../../builtins/x86.ecc");
+  let asm = include_str!("../../builtins/x86.ecc");
   #[cfg(feature = "wasm")]
-  let builtins = include_str!("../../builtins/wasm.ecc");
-  let mut tokenizer = lexer::Lexer::new(builtins.to_string());
+  let asm = include_str!("../../builtins/wasm.ecc");
+  #[cfg(feature = "riscv")]
+  let asm = include_str!("../../builtins/riscv.ecc");
+  let mut builtins = include_str!("../../builtins/builtin.ecc").to_string();
+  builtins.push_str(asm);
+  let mut tokenizer = lexer::Lexer::new(builtins);
   let parsed_builtins = parser::parse_program(&mut tokenizer, "builtin.ecc".to_string()).unwrap();
   Rc::new(Linkage{
     tus: vec![Rc::new(parsed_builtins), Rc::new(ast)],

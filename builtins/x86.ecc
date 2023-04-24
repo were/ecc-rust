@@ -10,28 +10,6 @@ func print(string s) -> void {
     "i,i,r,r,~{eax},~{edi},~{rsi},~{edx}" // operands
   );
 
-}
-
-func println(string s) -> void {
-  print(s);
-  print("\n");
   return;
 }
 
-// func toString(int x) -> string {
-//   return;
-// }
-
-class string {
-
-  func length() -> int {
-    return self.length_;
-  }
-
-  func parseInt() -> int {
-    return 0;
-  }
-
-  int length_;
-  char[] data_;
-}

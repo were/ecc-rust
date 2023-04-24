@@ -1,5 +1,7 @@
 [features]
 x86 = []
+riscv = []
+wasm = []
 
 [package]
 name = "ecc-rust"
