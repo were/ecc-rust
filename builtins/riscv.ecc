@@ -1,0 +1,36 @@
+func print(string s) -> void {
+
+  // riscv
+  asm(
+    "addi a0, x0, 1\nla a1, $0\naddi a2, x0, $1\naddi a7, x0, 64\necall",
+    s.data_, // data
+    s.length_, // length
+    "r,r,~{a0},~{a1},~{a2},~{a7}"
+  );
+
+  return;
+}
+
+func println(string s) -> void {
+  print(s);
+  print("\n");
+  return;
+}
+
+// func toString(int x) -> string {
+//   return;
+// }
+
+class string {
+
+  func length() -> int {
+    return self.length_;
+  }
+
+  func parseInt() -> int {
+    return 0;
+  }
+
+  int length_;
+  char[] data_;
+}

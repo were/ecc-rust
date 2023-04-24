@@ -1,0 +1,37 @@
+func print(string s) -> void {
+
+  // x86
+  asm(
+    "movl $0, %eax\nmovl $1, %edi\nmovq $2, %rsi\nmovl $3, %edx\nsyscall", // mnemonic
+    1, // write,
+    1, // stdout,
+    s.data_, // data
+    s.length_, // length
+    "i,i,r,r,~{eax},~{edi},~{rsi},~{edx}" // operands
+  );
+
+}
+
+func println(string s) -> void {
+  print(s);
+  print("\n");
+  return;
+}
+
+// func toString(int x) -> string {
+//   return;
+// }
+
+class string {
+
+  func length() -> int {
+    return self.length_;
+  }
+
+  func parseInt() -> int {
+    return 0;
+  }
+
+  int length_;
+  char[] data_;
+}

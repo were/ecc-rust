@@ -13,7 +13,10 @@ mod sema;
 mod codegen;
 
 pub fn inject_builtins(ast: ast::TranslateUnit) -> Rc<Linkage> {
-  let builtins = include_str!("../../builtins/builtins.ecc");
+  #[cfg(feature = "x86")]
+  let builtins = include_str!("../../builtins/x86.ecc");
+  #[cfg(feature = "wasm")]
+  let builtins = include_str!("../../builtins/wasm.ecc");
   let mut tokenizer = lexer::Lexer::new(builtins.to_string());
   let parsed_builtins = parser::parse_program(&mut tokenizer, "builtin.ecc".to_string()).unwrap();
   Rc::new(Linkage{

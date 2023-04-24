@@ -1,3 +1,6 @@
+[features]
+x86 = []
+
 [package]
 name = "ecc-rust"
 version = "0.1.0"

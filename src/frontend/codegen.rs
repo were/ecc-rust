@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use trinity::ir::{
   self,
   value::ValueRef,
-  types::{StructType, TypeRef},
-  value::Function
+  types::{StructType, TypeRef },
+  value::Function, PointerType
 };
 use trinity::builder::Builder;
 use super::ast;
@@ -222,21 +222,17 @@ impl CodeGen {
       ast::Stmt::FuncCall(call) => {
         self.generate_func_call(&call);
       }
-      // Stmt::InlineAsm(asm) => {
-      //   self.generate_inline_asm(&asm);
-      // }
-      _ => {}
+      ast::Stmt::InlineAsm(asm) => {
+        self.generate_inline_asm(&asm);
+      }
     }
   }
 
-  fn generate_expr(&mut self, expr: &ast::Expr, _is_lval: bool) -> ValueRef {
+  fn generate_expr(&mut self, expr: &ast::Expr, is_lval: bool) -> ValueRef {
     match expr {
-      // Expr::FuncCall(call) => {
-      //   match self.generate_func_call(&call) {
-      //     Some(x) => x,
-      //     None => { panic!("No return value"); }
-      //   }
-      // }
+      ast::Expr::FuncCall(call) => {
+        self.generate_func_call(&call)
+      }
       ast::Expr::IntImm(value) => {
         let i32ty = self.tg.builder.context().int_type(32);
         self.tg.builder.context().const_value(i32ty, value.value as u64)
@@ -253,38 +249,34 @@ impl CodeGen {
         let str_ptr = self.tg.builder.create_gep(i8ptr, str_value, vec![zero.clone(), zero.clone()], true);
         self.tg.builder.create_global_struct(str_ref, vec![str_len, str_ptr])
       }
-      // Expr::Variable(var) => {
-      //   let value = self.cache_stack.get(&var.id.literal).unwrap();
-      //   if let Type::Class(_) = &var.decl.ty {
-      //     return *value;
-      //   }
-      //   if is_lval {
-      //     return *value;
-      //   } else {
-      //     return if let BasicValueEnum::PointerValue(ptr) = value {
-      //       self.builder.build_load(*ptr, "").into()
-      //     } else {
-      //       *value
-      //     }
-      //   }
-      //   // panic!("{} is not a pointer!", value.print_to_string().to_string());
-      // }
-      // Expr::AttrAccess(aa) => {
-      //   let this = self.generate_expr(&aa.this, false);
-      //   if let BasicValueEnum::PointerValue(pv) = this {
-      //     let zero = self.module.get_context().i32_type().const_int(0, false);
-      //     let idx = self.context().i32_type().const_int(aa.idx as u64, false);
-      //     let args = vec![zero, idx];
-      //     let ptr = unsafe { self.builder.build_in_bounds_gep(pv, &args, "") };
-      //     if is_lval {
-      //       return ptr.into()
-      //     } else {
-      //       return self.builder.build_load(ptr, "").into()
-      //     }
-      //   } else {
-      //     panic!("{} is not a pointer!", this.print_to_string().to_string());
-      //   }
-      // }
+      ast::Expr::Variable(var) => {
+        let value = self.cache_stack.get(&var.id.literal).unwrap();
+        value
+        // panic!("{} is not a pointer!", value.print_to_string().to_string());
+      }
+      ast::Expr::AttrAccess(aa) => {
+        // Generate this.
+        let this = self.generate_expr(&aa.this, false);
+        // This is expected to be a pointer.
+        let ptr_ref = this.get_type(self.tg.builder.context());
+        let ptr_ty = ptr_ref.as_ref::<PointerType>(self.tg.builder.context()).unwrap();
+        // This pointer points to a struct.
+        let sty_ref = ptr_ty.get_pointee_ty();
+        let sty = sty_ref.as_ref::<StructType>(self.tg.builder.context()).unwrap();
+        // Get the type of corresponding struct attr.
+        let attr_ty = sty.get_attr(aa.idx);
+        let attr_ptr = attr_ty.ptr_type(self.tg.builder.context());
+        // Compute the pointer.
+        let i32ty = self.tg.builder.context().int_type(32);
+        let zero = self.tg.builder.context().const_value(i32ty.clone(), 0);
+        let idx = self.tg.builder.context().const_value(i32ty.clone(), aa.idx as u64);
+        let res = self.tg.builder.create_gep(attr_ptr, this, vec![zero, idx], true);
+        if is_lval {
+          res
+        } else {
+          self.tg.builder.create_load(res)
+        }
+      }
       _ => {
         let i32ty = self.tg.builder.context().int_type(32);
         self.tg.builder.context().const_value(i32ty, 0)
@@ -292,37 +284,25 @@ impl CodeGen {
       // _ => { panic!("Unknown expr {}", expr); }
     }
   }
-// 
-//   fn generate_inline_asm(&mut self, asm: &InlineAsm) {
-//     let params : Vec<BasicValueEnum> = asm.args.iter().map(|arg| {
-//       self.generate_expr(&arg, false).into()
-//     }).collect();
-//     let types : Vec<BasicMetadataTypeEnum> = params.iter().map(|arg| {
-//       arg.get_type().into()
-//     }).collect();
-//     let meta_params: Vec<BasicMetadataValueEnum> =
-//       params.iter().map(|arg| BasicMetadataValueEnum::try_from(*arg).unwrap()).collect();
-//     let asm_fty = self.context().void_type().fn_type(&types, false);
-//     let asm_callee =
-//       self.context().create_inline_asm(
-//         asm_fty, asm.code.value.clone(), asm.operands.value.clone(), true, true, None);
-//     let callable_value = CallableValue::try_from(asm_callee).unwrap();
-//     self.builder.build_call(callable_value, &meta_params, "");
-//   }
-// 
-//   fn generate_int_imm(&mut self, value: &IntImm) -> BasicValueEnum<'ctx> {
-//     self.module.get_context().i32_type().const_int(value.value as u64, false).into()
-//   }
-// 
-   fn generate_func_call(&mut self, call: &Rc<ast::FuncCall>) -> ValueRef {
-     let _params : Vec<ValueRef> = call.params.iter().map(|arg| {
-       let expr = self.generate_expr(&arg, false);
-       expr
-     }).collect();
-     let i32ty = self.tg.builder.context().int_type(32);
-     self.tg.builder.context().const_value(i32ty, 0)
-   }
- 
+
+  fn generate_inline_asm(&mut self, asm: &ast::InlineAsm) -> ValueRef {
+    let params : Vec<ValueRef> = asm.args.iter().map(|arg| {
+      self.generate_expr(&arg, false).into()
+    }).collect();
+    let vty = self.tg.builder.context().void_type();
+    let callee = self.tg.builder.create_inline_asm(vty.clone(), asm.code.value.clone(), asm.operands.value.clone(), true);
+    self.tg.builder.create_typed_call(vty.clone(), callee, params)
+  }
+
+  fn generate_func_call(&mut self, call: &Rc<ast::FuncCall>) -> ValueRef {
+    let params : Vec<ValueRef> = call.params.iter().map(|arg| {
+      let expr = self.generate_expr(&arg, false);
+      expr
+    }).collect();
+    let callee = self.cache_stack.get(&call.fname.literal).unwrap().clone();
+    self.tg.builder.create_func_call(callee, params)
+  }
+
 }
 
 pub fn codegen(ast: &Rc<ast::Linkage>) -> ir::module::Module {
