@@ -163,16 +163,6 @@ impl CodeGen {
     for decl in tu.decls.iter() {
       if let ast::Decl::Func(func) = decl {
         let func_ref = self.cache_stack.get(&func.id.literal).unwrap();
-        {
-          self.cache_stack.push();
-          let llvm_func = func_ref.as_ref::<Function>(self.tg.builder.context()).unwrap();
-          for i in 0..llvm_func.get_num_args() {
-            self.cache_stack.insert(
-              func.args[i].id.literal.clone(),
-              llvm_func.get_arg(i)
-            );
-          }
-        }
         self.builder_mut().set_current_function(func_ref);
         let block_ref = self.builder_mut().add_block("entry".to_string());
         self.builder_mut().set_current_block(block_ref);
@@ -184,6 +174,26 @@ impl CodeGen {
   }
 
   fn generate_func(&mut self, func: &Rc<ast::FuncDecl>) {
+    {
+      self.cache_stack.push();
+      let func_ref = self.cache_stack.get(&func.id.literal).unwrap();
+      let args = {
+        let llvm_func = func_ref.as_ref::<Function>(self.tg.builder.context()).unwrap();
+        (0..llvm_func.get_num_args()).map(|i| {
+          llvm_func.get_arg(i)
+        }).collect::<Vec<ValueRef>>()
+      };
+      for (i, arg) in args.iter().enumerate() {
+        let ty = arg.get_type(self.tg.builder.context());
+        let ptr = self.builder_mut().create_alloca(ty);
+        self.builder_mut().create_store(arg.clone(), ptr.clone());
+        self.cache_stack.insert(
+          func.args[i].id.literal.clone(),
+          ptr
+        );
+      }
+    }
+
     // push arguments
     self.generate_compound_stmt(&func.body, false);
   }
@@ -251,19 +261,23 @@ impl CodeGen {
       }
       ast::Expr::Variable(var) => {
         let value = self.cache_stack.get(&var.id.literal).unwrap();
-        value
+        if is_lval {
+          value
+        } else {
+          // TODO(@were): Check if it is a pointer.
+          self.tg.builder.create_load(value)
+        }
         // panic!("{} is not a pointer!", value.print_to_string().to_string());
       }
       ast::Expr::AttrAccess(aa) => {
-        // Generate this.
+        // "This" is expected to be a pointer to a struct.
         let this = self.generate_expr(&aa.this, false);
-        // This is expected to be a pointer.
-        let ptr_ref = this.get_type(self.tg.builder.context());
-        let ptr_ty = ptr_ref.as_ref::<PointerType>(self.tg.builder.context()).unwrap();
-        // This pointer points to a struct.
+        // Get the pointer's underlying struct type.
+        let ptr_ty_ref = this.get_type(self.tg.builder.context());
+        let ptr_ty = ptr_ty_ref.as_ref::<PointerType>(self.tg.builder.context()).unwrap();
         let sty_ref = ptr_ty.get_pointee_ty();
         let sty = sty_ref.as_ref::<StructType>(self.tg.builder.context()).unwrap();
-        // Get the type of corresponding struct attr.
+        // Get the struct type for the corresponding struct attr.
         let attr_ty = sty.get_attr(aa.idx);
         let attr_ptr = attr_ty.ptr_type(self.tg.builder.context());
         // Compute the pointer.
