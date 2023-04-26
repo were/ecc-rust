@@ -21,3 +21,4 @@ class string {
   int length_;
   char[] data_;
 }
+
