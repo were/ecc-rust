@@ -156,12 +156,15 @@ impl CodeGen {
           }
         }).collect();
         let fty = ret_ty.fn_type(self.tg.builder.context(), args_ty);
-        let func_ref = self.tg.builder.add_function(func.id.literal.clone(), fty);
+        let func_ref = self.tg.builder.create_function(func.id.literal.clone(), fty);
         self.cache_stack.insert(func.id.literal.clone(), func_ref.clone());
       }
     }
     for decl in tu.decls.iter() {
       if let ast::Decl::Func(func) = decl {
+        if func.body.stmts.len() == 0 {
+          continue;
+        }
         let func_ref = self.cache_stack.get(&func.id.literal).unwrap();
         self.builder_mut().set_current_function(func_ref);
         let block_ref = self.builder_mut().add_block("entry".to_string());

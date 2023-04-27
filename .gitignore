@@ -5,3 +5,4 @@ Cargo.lock
 *.ll
 *.out
 *.o
+.vim/*

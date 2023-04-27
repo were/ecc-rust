@@ -113,7 +113,7 @@ impl TokenHandle {
         (Regex::new(r"^class"), valueless_token!(TokenType::KeywordClass)),
         (Regex::new(r"^func"), valueless_token!(TokenType::KeywordFunc)),
         (Regex::new(r"^\->"), valueless_token!(TokenType::FuncMap)),
-        (Regex::new(r"^[[:alpha:]]+[[:alpha:]_\d]*"), valueless_token!(TokenType::Identifier)),
+        (Regex::new(r"^[[:alpha:]_]+[[:alpha:]_\d]*"), valueless_token!(TokenType::Identifier)),
         (Regex::new(r"^\("), valueless_token!(TokenType::LPran)),
         (Regex::new(r"^\)"), valueless_token!(TokenType::RPran)),
         (Regex::new(r"^\{"), valueless_token!(TokenType::LBrace)),
@@ -216,7 +216,7 @@ impl Lexer {
     }
     match res.value {
       TokenType::Unknown => {
-        panic!("Unknown token at row {}, col {}", res.row, res.col);
+        panic!("Unknown token at row {}, col {}: {}", res.row, res.col, &src[*head..]);
       }
       _ => {}
     }

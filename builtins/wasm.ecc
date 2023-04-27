@@ -1,13 +1,7 @@
+func __print_str__(char[] s, int len) -> void;
+
 func print(string s) -> void {
-
-  // wasm
-  asm(
-    "(call $print_str $0 $1)",
-    s.data_,
-    s.length_,
-    "r,r"
-  );
-
+  __print_str__(s.data_, s.length_);
   return;
 }
 

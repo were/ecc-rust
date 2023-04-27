@@ -235,7 +235,17 @@ pub fn parse_function(tokenizer: &mut Lexer) -> Result<FuncDecl, String> {
   required_token!(tokenizer, TokenType::RPran, true);
   required_token!(tokenizer, TokenType::FuncMap, true);
   let dtype = parse_dtype(tokenizer).unwrap();
-  let parsed_body = parse_compound_stmt(tokenizer);
+  let parsed_body = if lookahead_tokens!(tokenizer, TokenType::Semicolon) {
+    let tok = tokenizer.lookahead(0);
+    tokenizer.consume().unwrap();
+    Ok(CompoundStmt{
+      left: tok.clone(),
+      right: tok.clone(),
+      stmts: Vec::new(),
+    })
+  } else {
+    parse_compound_stmt(tokenizer)
+  };
   match parsed_body {
     Ok(body) => {
       Ok(FuncDecl{
