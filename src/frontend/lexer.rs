@@ -6,7 +6,7 @@ pub struct Lexer {
   tokens : Vec<Token>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum TokenType {
   Identifier,
   KeywordAsm,
@@ -28,6 +28,9 @@ pub enum TokenType {
   LBracket,
   RBracket,
   Semicolon,
+  AssignEq,
+  Add,
+  Sub,
   Comma,
   IntLiteral,
   StringLiteral,
@@ -38,27 +41,30 @@ pub enum TokenType {
 impl fmt::Display for TokenType {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
-      TokenType::AttrAccess => write!(f, "AttrAccess"),
+      TokenType::AttrAccess => write!(f, "AttrAccess ."),
       TokenType::Identifier => write!(f, "Identifier"),
-      TokenType::KeywordAsm => write!(f, "KeywordAsm"),
-      TokenType::KeywordNew => write!(f, "KeywordNew"),
-      TokenType::KeywordBool => write!(f, "KeywordBool"),
-      TokenType::KeywordChar => write!(f, "KeywordChar"),
-      TokenType::KeywordVoid => write!(f, "KeywordVoid"),
-      TokenType::KeywordInt => write!(f, "KeywordInt"),
-      TokenType::KeywordReturn => write!(f, "KeywordReturn"),
-      TokenType::KeywordClass => write!(f, "KeywordClass"),
-      TokenType::KeywordFunc => write!(f, "KeywordFunc"),
-      TokenType::KeywordLet => write!(f, "KeywordLet"),
-      TokenType::FuncMap => write!(f, "FuncMap"),
-      TokenType::LPran => write!(f, "LPran"),
-      TokenType::RPran => write!(f, "RPran"),
+      TokenType::KeywordAsm => write!(f, "KeywordAsm asm"),
+      TokenType::KeywordNew => write!(f, "KeywordNew new"),
+      TokenType::KeywordBool => write!(f, "KeywordBool bool"),
+      TokenType::KeywordChar => write!(f, "KeywordChar char"),
+      TokenType::KeywordVoid => write!(f, "KeywordVoid void"),
+      TokenType::KeywordInt => write!(f, "KeywordInt int"),
+      TokenType::KeywordReturn => write!(f, "KeywordReturn return"),
+      TokenType::KeywordClass => write!(f, "KeywordClass class"),
+      TokenType::KeywordFunc => write!(f, "KeywordFunc func"),
+      TokenType::KeywordLet => write!(f, "KeywordLet let"),
+      TokenType::FuncMap => write!(f, "FuncMap ->"),
+      TokenType::LPran => write!(f, "LPran ("),
+      TokenType::RPran => write!(f, "RPran )"),
       TokenType::LBrace => write!(f, "LBrace"),
       TokenType::RBrace => write!(f, "RBrace"),
-      TokenType::LBracket => write!(f, "LBracket"),
-      TokenType::RBracket => write!(f, "RBracket"),
-      TokenType::Semicolon => write!(f, "Semicolon"),
-      TokenType::Comma => write!(f, "Comma"),
+      TokenType::LBracket => write!(f, "LBracket ["),
+      TokenType::RBracket => write!(f, "RBracket ]"),
+      TokenType::Semicolon => write!(f, "Semicolon ;"),
+      TokenType::Comma => write!(f, "Comma ,"),
+      TokenType::AssignEq => write!(f, "AssignEq ="),
+      TokenType::Add => write!(f, "Add +"),
+      TokenType::Sub => write!(f, "Sub -"),
       TokenType::IntLiteral => write!(f, "IntLiteral"),
       TokenType::StringLiteral => write!(f, "StringLiteral"),
       TokenType::Eof => write!(f, "Eof"),
@@ -89,8 +95,18 @@ impl fmt::Display for Token {
 }
 
 impl Token {
+
   fn len(&self) -> usize {
     return self.literal.len();
+  }
+
+  pub fn is_one_of(&self, types: &[TokenType]) -> bool {
+    for t in types {
+      if self.value == *t {
+        return true;
+      }
+    }
+    return false;
   }
 }
 
@@ -112,6 +128,7 @@ impl TokenHandle {
         (Regex::new(r"^return"), valueless_token!(TokenType::KeywordReturn)),
         (Regex::new(r"^class"), valueless_token!(TokenType::KeywordClass)),
         (Regex::new(r"^func"), valueless_token!(TokenType::KeywordFunc)),
+        (Regex::new(r"^let"), valueless_token!(TokenType::KeywordLet)),
         (Regex::new(r"^\->"), valueless_token!(TokenType::FuncMap)),
         (Regex::new(r"^[[:alpha:]_]+[[:alpha:]_\d]*"), valueless_token!(TokenType::Identifier)),
         (Regex::new(r"^\("), valueless_token!(TokenType::LPran)),
@@ -122,6 +139,9 @@ impl TokenHandle {
         (Regex::new(r"^\]"), valueless_token!(TokenType::RBracket)),
         (Regex::new(r"^;"), valueless_token!(TokenType::Semicolon)),
         (Regex::new(r"^,"), valueless_token!(TokenType::Comma)),
+        (Regex::new(r"^="), valueless_token!(TokenType::AssignEq)),
+        (Regex::new(r"^\+"), valueless_token!(TokenType::Add)),
+        (Regex::new(r"^\-"), valueless_token!(TokenType::Sub)),
         (Regex::new(r"^\d+"), valueless_token!(TokenType::IntLiteral)),
         (Regex::new(r"^\."), valueless_token!(TokenType::AttrAccess)),
         (Regex::new("^\".*\""), valueless_token!(TokenType::StringLiteral)),
@@ -247,32 +267,38 @@ impl Lexer {
     //   println!("{} {}", token.value, token);
     // }
 
-    Lexer { i : 0, tokens }
+    Lexer { i : 0, tokens, }
   }
 
-  pub fn lookahead(&self, i : usize) -> Token {
-    if self.has_next() {
-      self.tokens[self.i + i].clone()
-    } else {
-      Token {
-        row: 0, col: 0,
-        literal: "".to_string(),
-        value: TokenType::Eof
+  pub fn tok(&self) -> &Token {
+    self.tokens.get(self.i).unwrap()
+  }
+
+  pub fn lookahead(&self, ty: TokenType) -> bool {
+    self.tok().is_one_of(&[ty])
+  }
+
+  pub fn look_n_ahead(&self, types : &[TokenType]) -> bool {
+    for (i, ty) in types.iter().enumerate() {
+      let tok = self.tokens.get(i + self.i).unwrap();
+      if tok.value != *ty {
+        return false;
       }
     }
+    true
   }
 
-  pub fn consume(&mut self) -> Result<(), String> {
-    if self.has_next() {
-      self.i += 1;
-      Ok(())
-    } else {
-      Err("Token consume overflow".to_string())
+  pub fn consume(&mut self, ty: TokenType) -> Token {
+    if self.lookahead(ty.clone()) {
+      return self.consume_any()
     }
+    panic!("Expect {:} but found {:}", ty, self.tok());
   }
 
-  pub fn has_next(&self) -> bool {
-    self.i + 1 < self.tokens.len()
+  pub fn consume_any(&mut self) -> Token {
+    let res = self.tok().clone();
+    self.i += 1;
+    return res;
   }
 
 }

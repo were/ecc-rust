@@ -4,7 +4,7 @@ use super::ast::{
   Type, TranslateUnit, BuiltinType, Variable,
   FuncDecl, CompoundStmt, Stmt, ReturnStmt, IntImm,
   Decl, Expr, FuncCall, Linkage, VarDecl, ClassDecl,
-  InlineAsm, BinaryOp, ArrayType, AttrAccess
+  InlineAsm, BinaryOp, ArrayType, AttrAccess, ArrayIndex
 };
 
 #[macro_export]
@@ -37,7 +37,7 @@ pub fn expr_eq(a:&Expr, b:&Expr) -> bool {
 pub fn stmt_eq(a:&Stmt, b:&Stmt) -> bool {
   match (a, b) {
     (Stmt::Ret(v0),Stmt::Ret(v1)) => Rc::ptr_eq(v0, v1),
-    (Stmt::FuncCall(v0),Stmt::FuncCall(v1)) => Rc::ptr_eq(v0, v1),
+    (Stmt::Evaluate(v0),Stmt::Evaluate(v1)) => expr_eq(v0, v1),
     (Stmt::InlineAsm(v0),Stmt::InlineAsm(v1)) => Rc::ptr_eq(v0, v1),
     _ => { false }
   }
@@ -81,8 +81,21 @@ pub trait Visitor {
       Expr::Variable(var) => self.visit_var(var),
       Expr::BinaryOp(op) => self.visit_binary_op(op),
       Expr::AttrAccess(access) => self.visit_attr_access(access),
+      Expr::ArrayIndex(array_idx) => self.visit_array_index(array_idx),
       Expr::UnknownRef(x) => Expr::UnknownRef(x.clone()),
     }
+  }
+
+  fn visit_array_index(&mut self, array_idx: &Rc<ArrayIndex>) -> Expr {
+    let array = self.visit_expr(&array_idx.array);
+    let indices = array_idx.indices.iter().map(|idx| self.visit_expr(idx)).collect::<Vec<_>>();
+    if expr_eq(&array, &array_idx.array) && !mutated!(indices, array_idx.indices, expr_eq) {
+      return Expr::ArrayIndex(array_idx.clone()).clone();
+    }
+    Expr::ArrayIndex(Rc::new(ArrayIndex {
+      array,
+      indices
+    }))
   }
 
   fn visit_type(&mut self, ty: &Type) -> Type {
@@ -96,8 +109,9 @@ pub trait Visitor {
   fn visit_stmt(&mut self, stmt: &Stmt) -> Stmt {
     match stmt {
       Stmt::Ret(ret) => self.visit_return(&ret),
-      Stmt::FuncCall(call) => Stmt::FuncCall(self.visit_func_call(call)),
-      Stmt::InlineAsm(asm) => self.visit_inline_asm(asm)
+      Stmt::Evaluate(expr) => Stmt::Evaluate(self.visit_expr(expr)),
+      Stmt::InlineAsm(asm) => self.visit_inline_asm(asm),
+      Stmt::VarDecl(decl) => Stmt::VarDecl(self.visit_var_decl(decl))
     }
   }
 
@@ -160,7 +174,19 @@ pub trait Visitor {
     if type_eq(&ty, &var.ty) {
       return var.clone()
     }
-    Rc::new(VarDecl{ ty, id: var.id.clone() })
+    match &var.init {
+      Some(init) => {
+        let new_init = self.visit_expr(init);
+        if expr_eq(&new_init, init) {
+          var.clone()
+        } else {
+          Rc::new(VarDecl{ ty, id: var.id.clone(), init: Some(new_init) })
+        }
+      }
+      None => {
+        Rc::new(VarDecl{ ty, id: var.id.clone(), init: None })
+      }
+    }
   }
 
   fn visit_compound_stmt(&mut self, block: &Rc<CompoundStmt>) -> Rc<CompoundStmt> {

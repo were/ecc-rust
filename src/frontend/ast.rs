@@ -38,7 +38,7 @@ impl ClassDecl {
 
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum BuiltinTypeCode {
   Int,
   Void,
@@ -51,6 +51,14 @@ pub enum BuiltinTypeCode {
 pub struct ClassRef {
   pub id: Token,
   pub class: Option<Rc<ClassDecl>>
+}
+
+impl ClassRef {
+
+  pub fn id(&self) -> &String {
+    &self.id.literal
+  }
+
 }
 
 #[derive(Clone)]
@@ -115,7 +123,14 @@ pub struct FuncDecl {
 #[derive(Clone)]
 pub struct VarDecl {
   pub ty: Type,
-  pub id: Token
+  pub id: Token,
+  pub init: Option<Expr>,
+}
+
+impl VarDecl {
+  pub fn id(&self) -> &String {
+    &self.id.literal
+  }
 }
 
 #[derive(Clone)]
@@ -128,8 +143,9 @@ pub struct CompoundStmt {
 #[derive(Clone)]
 pub enum Stmt {
   Ret(Rc<ReturnStmt>),
-  FuncCall(Rc<FuncCall>),
   InlineAsm(Rc<InlineAsm>),
+  VarDecl(Rc<VarDecl>),
+  Evaluate(Expr)
 }
 
 #[derive(Clone)]
@@ -153,6 +169,7 @@ pub enum Expr {
   Variable(Rc<Variable>),
   BinaryOp(Rc<BinaryOp>),
   AttrAccess(Rc<AttrAccess>),
+  ArrayIndex(Rc<ArrayIndex>),
   UnknownRef(Token)
 }
 
@@ -213,6 +230,16 @@ impl Expr {
           panic!("Cannot access attribute of non-class type");
         }
       }
+      Expr::ArrayIndex(array) => {
+        if let Type::Array(x) = array.array.dtype(symbols) {
+          Type::Array(Rc::new(ArrayType {
+            scalar_ty: x.scalar_ty.clone(),
+            dims: x.dims - array.indices.len() as i32
+          }))
+        } else {
+          panic!("Cannot index non-array type");
+        }
+      }
     }
   }
 
@@ -226,6 +253,12 @@ pub struct BinaryOp {
 }
 
 #[derive(Clone)]
+pub struct ArrayIndex {
+  pub array: Expr,
+  pub indices: Vec<Expr>,
+}
+
+#[derive(Clone)]
 pub struct AttrAccess {
   pub this: Expr,
   pub attr: Token,
@@ -234,13 +267,15 @@ pub struct AttrAccess {
 
 #[derive(Clone)]
 pub struct IntImm {
-  pub token: Token, // The token this value derived
+  /// The token this value derived
+  pub token: Token,
   pub value: i32,
 }
 
 #[derive(Clone)]
 pub struct StrImm {
-  pub token: Token, // The token this value derived
+  /// The token this value derived
+  pub token: Token,
   pub value: String,
 }
 

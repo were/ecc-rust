@@ -37,7 +37,7 @@ fn main() {
       // print!("{}", module.print_to_string().to_string());
     }
     Err(error) => {
-      eprintln!("Failed to open file: {}", error)
+      eprintln!("Failed to open file: {}", error);
     }
   }
   ()

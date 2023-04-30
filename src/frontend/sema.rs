@@ -43,7 +43,7 @@ impl SymbolTable {
 }
 
 pub struct ScopeStack {
-  scopes: Vec<Rc<SymbolTable>>,
+  scopes: Vec<SymbolTable>,
 }
 
 impl ScopeStack {
@@ -52,19 +52,17 @@ impl ScopeStack {
     ScopeStack{ scopes: Vec::new() }
   }
 
-  pub fn push(&mut self, scope: Rc<SymbolTable>) {
+  pub fn push(&mut self, scope: SymbolTable) {
     self.scopes.push(scope);
   }
 
-  // pub fn insert(&mut self, id: String, instance: WithID) {
-  //   if let Some(last) = self.scopes.last_mut() {
-  //     if let Some(scope) = Rc::get_mut(last) {
-  //       scope.insert(id, instance);
-  //     }
-  //   }
-  // }
+  pub fn insert(&mut self, id: String, instance: WithID) {
+    if let Some(last) = self.scopes.last_mut() {
+      last.insert(id, instance);
+    }
+  }
 
-  pub fn pop(&mut self) -> Option<Rc<SymbolTable>> {
+  pub fn pop(&mut self) -> Option<SymbolTable> {
     self.scopes.pop()
   }
 
@@ -147,6 +145,7 @@ impl Visitor for MethodHoister {
           literal: "self".to_string(),
           value: TokenType::Identifier,
         },
+        init: None,
       }));
       let func = FuncDecl{
         ty: method.ty.clone(),
@@ -176,8 +175,8 @@ pub fn hoist_methods(ast: &Rc<Linkage>) -> Rc<Linkage> {
 }
 
 struct SymbolResolver {
-  scopes: ScopeStack,
-  var_decls: Vec<Rc<VarDecl>>,
+  pub(super) scopes: ScopeStack,
+  new_scope: bool,
   check_func_sig: bool,
 }
 
@@ -185,20 +184,19 @@ struct SymbolResolver {
 impl Visitor for SymbolResolver {
 
   fn visit_linkage(&mut self, linkage: &Rc<Linkage>) -> Rc<Linkage> {
-    let mut symbols = SymbolTable::new();
+    self.scopes.push(SymbolTable::new());
     for tu in linkage.tus.iter() {
       tu.decls.iter().for_each(|decl| {
         match decl {
           Decl::Class(class) => {
-            symbols.insert(class.id.literal.clone(), WithID::Class(class.clone()));
+            self.scopes.insert(class.id.literal.clone(), WithID::Class(class.clone()));
           }
           Decl::Func(func) => {
-            symbols.insert(func.id.literal.clone(), WithID::Function(func.clone()));
+            self.scopes.insert(func.id.literal.clone(), WithID::Function(func.clone()));
           }
         }
       });
     }
-    self.scopes.push(Rc::new(symbols));
     let tus:Vec<Rc<TranslateUnit>> = linkage.tus.iter().map(|tu| self.visit_tu(tu)).collect();
     self.scopes.pop().unwrap();
     if mutated!(tus, linkage.tus) {
@@ -210,31 +208,63 @@ impl Visitor for SymbolResolver {
   }
 
   fn visit_func(&mut self, func: &Rc<FuncDecl>) -> Rc<FuncDecl> {
-    self.var_decls = func.args.iter().map(|arg| self.visit_var_decl(arg)).collect();
+    self.scopes.push(SymbolTable::new());
+    self.new_scope = false;
+    let var_decls : Vec<Rc<VarDecl>> = func.args.iter().map(|arg| self.visit_var_decl(arg)).collect();
     let body = self.visit_compound_stmt(&func.body);
     let new_ty = self.visit_type(&func.ty);
-    if Rc::ptr_eq(&body, &func.body) && !mutated!(self.var_decls, func.args) && type_eq(&new_ty, &func.ty) {
+    self.scopes.pop();
+    if Rc::ptr_eq(&body, &func.body) && !mutated!(var_decls, func.args) && type_eq(&new_ty, &func.ty) {
       return func.clone();
     }
     Rc::new(FuncDecl{
       ty: new_ty,
       id: func.id.clone(),
-      args: self.var_decls.clone(),
+      args: var_decls.clone(),
       body,
     })
   }
 
+  fn visit_var_decl(&mut self, var: &Rc<VarDecl>) -> Rc<VarDecl> {
+    let ty = self.visit_type(&var.ty);
+    let init = match &var.init {
+      Some(init) => {
+        let new_init = self.visit_expr(init);
+        let eq = expr_eq(&init, &new_init);
+        (Some(new_init), eq)
+      }
+      None => {
+        (None, true)
+      }
+    };
+    let res = if type_eq(&ty, &var.ty) && init.1 {
+      var.clone()
+    } else {
+      Rc::new(VarDecl{
+        ty,
+        id: var.id.clone(),
+        init: init.0,
+      })
+    };
+    self.scopes.insert(var.id().clone(), WithID::Variable(res.clone()));
+    return res;
+  }
+
   fn visit_compound_stmt(&mut self, block: &Rc<super::ast::CompoundStmt>) -> Rc<super::ast::CompoundStmt> {
-    let mut symbols = SymbolTable::new();
-    self.var_decls.iter().for_each(|decl| {
-      symbols.insert(decl.id.literal.clone(), WithID::Variable(decl.clone()));
-    });
-    self.scopes.push(Rc::new(symbols));
+    let pushed = if self.new_scope {
+      self.scopes.push(SymbolTable::new());
+      self.new_scope = false;
+      true
+    } else {
+      false
+    };
     let stmts:Vec<Stmt> = block.stmts.iter().map(|stmt| { self.visit_stmt(stmt) }).collect();
     if !mutated!(stmts, block.stmts, stmt_eq) {
       return block.clone();
     }
-    self.scopes.pop().unwrap();
+    if pushed {
+      self.scopes.pop().unwrap();
+    }
     Rc::new(CompoundStmt {
       left: block.left.clone(),
       right: block.right.clone(),
@@ -267,6 +297,7 @@ impl Visitor for SymbolResolver {
       Expr::Variable(var) => self.visit_var(var),
       Expr::BinaryOp(op) => self.visit_binary_op(op),
       Expr::AttrAccess(_) => expr.clone(),
+      Expr::ArrayIndex(array_idx) => self.visit_array_index(array_idx),
     }
   }
 
@@ -289,6 +320,24 @@ impl Visitor for SymbolResolver {
               panic!("{} not founded", attr);
             }
             panic!("Expect {} to be a class, but {}", lhs, lhs.dtype(&self.scopes));
+          }
+          Expr::FuncCall(call) => {
+            let ty = lhs.dtype(&self.scopes);
+            if let Type::Class(class) = ty {
+              let callee = format!("{}::{}", class.id(), call.fname.literal);
+              if let WithID::Function(_) = self.scopes.find(&callee).unwrap() {
+                let mut params = call.params.clone();
+                params.insert(0, lhs);
+                let fname = Token{
+                  literal: callee, row:0, col: 0,
+                  value: TokenType::Identifier
+                };
+                return Expr::FuncCall(Rc::new(FuncCall{fname, params}));
+              }
+              panic!("{} not founded as a function", call.fname);
+            } else {
+              panic!("Expect {} to be a class, but {}", lhs, lhs.dtype(&self.scopes));
+            }
           }
           _ => {
             panic!("Expect {} to be an class attribute", op.rhs);
@@ -354,7 +403,7 @@ impl Visitor for SymbolResolver {
 pub fn resolve_symbols(ast: &Rc<Linkage>, check_func_sig:bool) -> Rc<Linkage> {
   SymbolResolver{
     scopes: ScopeStack::new(),
-    var_decls: Vec::new(),
+    new_scope: true,
     check_func_sig
   }.visit_linkage(ast)
 }

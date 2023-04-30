@@ -1,9 +1,10 @@
 use std::fmt;
+
 use super::ast::{
   Decl, FuncDecl, Variable, Type, BuiltinType, CompoundStmt, Stmt,
   ReturnStmt, Expr, TranslateUnit, Linkage, FuncCall, VarDecl,
   ClassDecl, ArrayType, InlineAsm, StrImm, BinaryOp, AttrAccess,
-  BuiltinTypeCode
+  BuiltinTypeCode, ArrayIndex
 };
 
 fn print_linkage(linkage: &Linkage, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
@@ -61,7 +62,7 @@ fn print_decl(decl: &Decl, f: &mut fmt::Formatter, indent: &String) -> fmt::Resu
 
 fn print_class(class: &ClassDecl, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
   write!(f, "ClassDecl 0x{:x}\n", class as *const ClassDecl as usize).unwrap();
-  write!(f, "{}|->Name={}\n", indent, class.id).unwrap();
+  write!(f, "{}|->Name={}", indent, class.id).unwrap();
   let total = class.methods.len() + class.attrs.len();
   for (i, elem) in class.methods.iter().enumerate() {
     if i == total - 1 {
@@ -94,10 +95,16 @@ impl fmt::Display for Decl {
 }
 
 fn print_var_decl(var: &VarDecl, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
-  write!(f, "VarDecl 0x{:x}", var as *const VarDecl as usize).unwrap();
-  write!(f, "\n{}|->Name={}", indent, var.id).unwrap();
-  write!(f, "\n{}`->Type=", indent).unwrap();
-  print_type(&var.ty, f, &format!("{}   ", indent))
+  write!(f, "VarDecl 0x{:x}\n", var as *const VarDecl as usize).unwrap();
+  write!(f, "{}|->Name={}\n", indent, var.id).unwrap();
+  write!(f, "{}|->Type=", indent).unwrap();
+  print_type(&var.ty, f, &format!("{}   ", indent)).unwrap();
+  if let Some(init) = &var.init {
+    write!(f, "\n{}`->Init=", indent).unwrap();
+    print_expr(init, f, &format!("{}   ", indent))
+  } else {
+    write!(f, "\n{}`->Init=None", indent)
+  }
 }
 
 fn print_func(func: &FuncDecl, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
@@ -115,6 +122,12 @@ fn print_func(func: &FuncDecl, f: &mut fmt::Formatter, indent: &String) -> fmt::
   }
   write!(f, "\n{}`->Body=", indent).unwrap();
   print_compound_stmt(&func.body, f, &format!("{}   ", indent))
+}
+
+impl fmt::Display for FuncDecl {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    return print_func(&self, f, &"".to_string());
+  }
 }
 
 fn print_compound_stmt(stmts: &CompoundStmt, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
@@ -139,8 +152,15 @@ fn print_compound_stmt(stmts: &CompoundStmt, f: &mut fmt::Formatter, indent: &St
 fn print_stmt(stmt: &Stmt, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
   match stmt {
     Stmt::Ret(ret) => print_ret(&ret, f, &format!("{}", indent)),
-    Stmt::FuncCall(call) => print_func_call(&call, f, &format!("{}", indent)),
+    Stmt::Evaluate(expr) => print_expr(&expr, f, &format!("{}", indent)),
     Stmt::InlineAsm(asm) => print_inline_asm(&asm, f, &format!("{}", indent)),
+    Stmt::VarDecl(decl) => print_var_decl(&decl, f, &format!("{}", indent)),
+  }
+}
+
+impl fmt::Display for Stmt {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    return print_stmt(&self, f, &"".to_string());
   }
 }
 
@@ -168,11 +188,12 @@ fn print_func_call(call: &FuncCall, f: &mut fmt::Formatter, indent: &String) -> 
   for (i, elem) in call.params.iter().enumerate() {
     if i != call.params.len() - 1 {
       write!(f, "{}|->Param_{}=", new_indent, i).unwrap();
+      print_expr(&elem, f, &format!("{}|  ", new_indent)).unwrap();
       write!(f, "\n").unwrap();
     } else {
       write!(f, "{}`->Param_{}=", new_indent, i).unwrap();
+      print_expr(&elem, f, &format!("{}   ", new_indent)).unwrap();
     }
-    print_expr(&elem, f, &format!("{}   ", new_indent)).unwrap();
   }
   Ok(())
 }
@@ -213,6 +234,9 @@ fn print_expr(expr: &Expr, f: &mut fmt::Formatter, indent: &String) -> fmt::Resu
     Expr::AttrAccess(access) => {
       print_attr_access(access, f, indent)
     }
+    Expr::ArrayIndex(index) => {
+      print_array_index(index, f, indent)
+    }
   }
 }
 
@@ -222,16 +246,32 @@ impl fmt::Display for Expr {
   }
 }
 
+fn print_array_index(index: &ArrayIndex, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
+  write!(f, "ArrayIndex\n").unwrap();
+  write!(f, "{}|->Array=", indent).unwrap();
+  print_expr(&index.array, f, &format!("{}|  ", indent)).unwrap();
+  for (i, elem) in index.indices.iter().enumerate() {
+    if i == index.indices.len() - 1 {
+      write!(f, "\n{}`->Index_{}=", indent, i).unwrap();
+      print_expr(&elem, f, &format!("{}   ", indent)).unwrap();
+    } else {
+      write!(f, "\n{}|->Index_{}=", indent, i).unwrap();
+      print_expr(&elem, f, &format!("{}|  ", indent)).unwrap();
+    }
+  }
+  Ok(())
+}
+
 fn print_attr_access(access: &AttrAccess, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
-  write!(f, "AttrAccess").unwrap();
-  write!(f, "\n{}|->This=", indent).unwrap();
+  write!(f, "AttrAccess\n").unwrap();
+  write!(f, "{}|->This=", indent).unwrap();
   print_expr(&access.this, f, &format!("{}|  ", indent)).unwrap();
   write!(f, "\n{}`->Attr={} ({})", indent, access.attr, access.idx)
 }
 
 fn print_binary_op(op: &BinaryOp, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
-  write!(f, "BinaryOp {}", op.op).unwrap();
-  write!(f, "\n{}|->A=", indent).unwrap();
+  write!(f, "BinaryOp {}\n", op.op).unwrap();
+  write!(f, "{}|->A=", indent).unwrap();
   print_expr(&op.lhs, f, &format!("{}|  ", indent)).unwrap();
   write!(f, "\n{}`->B=", indent).unwrap();
   print_expr(&op.rhs, f, &format!("{}   ", indent))

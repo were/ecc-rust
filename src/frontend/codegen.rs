@@ -201,18 +201,16 @@ impl CodeGen {
     self.generate_compound_stmt(&func.body, false);
   }
 
-//   fn generate_var_decl(&mut self, var: &Rc<VarDecl>) {
-//     let ty = self.types.type_to_llvm(&var.ty);
-//     let res = match ty {
-//       AnyTypeEnum::IntType(t) => self.builder.build_alloca(t, &var.id.literal).into(),
-//       AnyTypeEnum::PointerType(t) => self.builder.build_alloca(t, &var.id.literal).into(),
-//       _ => { panic!("Unknown type {}", ty.print_to_string().to_str().unwrap()); }
-//     };
-//     self.cache_stack.insert(var.id.literal.clone(), res);
-//   }
-// 
-// 
-// 
+  fn generate_var_decl(&mut self, var: &Rc<ast::VarDecl>) {
+    let ty = self.tg.type_to_llvm(&var.ty);
+    let alloca = self.tg.builder.create_alloca(ty);
+    if let Some(init) = &var.init {
+      let init = self.generate_expr(&init, false);
+      self.tg.builder.create_store(init, alloca.clone());
+    }
+    self.cache_stack.insert(var.id().clone(), alloca);
+  }
+
   fn generate_compound_stmt(&mut self, stmt: &Rc<ast::CompoundStmt>, new_scope: bool) {
     if new_scope {
       self.cache_stack.push();
@@ -232,8 +230,11 @@ impl CodeGen {
           self.tg.builder.create_return(None);
         }
       }
-      ast::Stmt::FuncCall(call) => {
-        self.generate_func_call(&call);
+      ast::Stmt::Evaluate(expr) => {
+        self.generate_expr(&expr, false);
+      }
+      ast::Stmt::VarDecl(decl) => {
+        self.generate_var_decl(decl);
       }
       ast::Stmt::InlineAsm(asm) => {
         self.generate_inline_asm(&asm);
@@ -263,7 +264,8 @@ impl CodeGen {
         self.tg.builder.create_global_struct(str_ref, vec![str_len, str_ptr])
       }
       ast::Expr::Variable(var) => {
-        let value = self.cache_stack.get(&var.id.literal).unwrap();
+        println!("var: {}", var.id());
+        let value = self.cache_stack.get(&var.id()).unwrap();
         if is_lval {
           value
         } else {
@@ -292,6 +294,19 @@ impl CodeGen {
           res
         } else {
           self.tg.builder.create_load(res)
+        }
+      }
+      ast::Expr::BinaryOp(binop) => {
+        let lhs = self.generate_expr(&binop.lhs, false);
+        let rhs = self.generate_expr(&binop.rhs, false);
+        match &binop.op.value {
+          super::lexer::TokenType::Add => {
+            self.tg.builder.create_add(lhs, rhs)
+          }
+          super::lexer::TokenType::Sub => {
+            self.tg.builder.create_sub(lhs, rhs)
+          }
+          _ => { panic!("Unknown binary op {}", binop.op); }
         }
       }
       _ => {
