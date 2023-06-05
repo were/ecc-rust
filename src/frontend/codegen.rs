@@ -264,7 +264,6 @@ impl CodeGen {
         self.tg.builder.create_global_struct(str_ref, vec![str_len, str_ptr])
       }
       ast::Expr::Variable(var) => {
-        println!("var: {}", var.id());
         let value = self.cache_stack.get(&var.id()).unwrap();
         if is_lval {
           value
@@ -362,10 +361,12 @@ pub fn codegen(ast: &Rc<ast::Linkage>) -> ir::module::Module {
       stack: Vec::new(),
     }
   };
+
   //   module: ctx.create_module(&fname),
   //   types: tg,
   //   builder: ctx.create_builder(),
   // };
+
   cg.generate_linkage(ast);
 
   return cg.tg.builder.module;

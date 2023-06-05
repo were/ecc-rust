@@ -5,3 +5,10 @@ func print(string s) -> void {
   return;
 }
 
+int heap_pointer = 65536;
+
+func __malloc__(int bytes) -> char[] {
+  heap_pointer = heap_pointer - bytes;
+  return heap_pointer;
+}
+
