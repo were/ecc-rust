@@ -1,4 +1,5 @@
 target/*
+bin-utils
 Cargo.lock
 *.wasm
 *.wat

@@ -4,8 +4,8 @@
 
 ````
 cargo build --features wasm
-#TODO(@were): Is it good to put wasm tools above?
-source ../setup.sh # Set up the wasm tools
+source init.sh # Download the wasm binary tools for the 1st time.
+source setup.sh # Set up the wasm tools' environment variables.
 ````
 
 ## Try it!
