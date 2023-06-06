@@ -16,7 +16,7 @@ Assuming this is a subrepo of the write-up repo.
 ````
 
 Invoke the WebAssembly backend of LLVM. A warning will be generated, but it is ok.
-TODO(@were): Add target triple support in trinity.
+TODO(@were): Add target triple support in [trinity](https://github.com/were/trinity).
 ````
 emcc 01-helloworld.ll -c
 ````
