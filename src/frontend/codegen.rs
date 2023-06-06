@@ -264,7 +264,6 @@ impl CodeGen {
         self.tg.builder.create_global_struct(str_ref, vec![str_len, str_ptr])
       }
       ast::Expr::Variable(var) => {
-        println!("var: {}", var.id());
         let value = self.cache_stack.get(&var.id()).unwrap();
         if is_lval {
           value

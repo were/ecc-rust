@@ -31,13 +31,11 @@ fn main() {
       }
       ast = semantic_check(&ast, print_ast);
       let module = frontend::codegen_llvm(&ast);
-      println!("{}", module);
-      // print!("{}", module.print_to_string().to_string());
+      println!("{}", module)
     }
     Err(error) => {
-      eprintln!("Failed to open file: {}", error);
+      eprintln!("Failed to open file: {}", error)
     }
   }
-  ()
 }
 

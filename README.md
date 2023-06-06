@@ -3,20 +3,32 @@
 ## Getting Started
 
 ````
-export LLVM_SYS_120_PREFIX=/path/to/clang-llvm-12.0.0/
-cargo build
+cargo build --features wasm
+#TODO(@were): Is it good to put wasm tools above?
+source ../setup.sh # Set up the wasm tools
 ````
 
-This project depends on LLVM 12.0.0. I am using Ubuntu 20.04,
-so I downloaded [it](https://github.com/llvm/llvm-project/releases/download/llvmorg-12.0.0/clang+llvm-12.0.0-x86_64-linux-gnu-ubuntu-20.04.tar.xz)
-from [this page](https://github.com/llvm/llvm-project/releases/tag/llvmorg-12.0.0).
-
-After downloading, just point the `LLVM_SYS_120_PREFIX` variable to
-the unzipped folder.
-
-## Try it
+## Try it!
 
 ````
 # Assuming this is a subrepo of the write-up repo.
-./target/debug/ecc ../ecc-tests/function/01-helloworld.ecc
+./target/debug/ecc ../tests/function/01-helloworld.ecc > 01-helloworld.ll
+
+# A warning will be generated, but it is ok.
+emcc 01-helloworld.ll -c
+
+# Expose the main function to js execution.
+wasm2wat 01-helloworld.o | sed "s/func \$main/func (export \"main\")/" > 01-helloworld.wat
+
+# Convert WebAssembly text to binaries back.
+wat2wasm 01-helloworld.wat # 01-helloworld.wasm is generated
+
+# Run it
+# A /dev/null should be redirected to the input.
+# O.w., JS's end-of-file (EOF) will not terminate the program.
+node ../tests/host.js 01-helloworld.wasm < /dev/null
+
+# You can also use a Ctrl-D to manually pass a EOF to JS's listener.
+node ../tests/host.js 01-helloworld.wasm
+<Ctrl-D> # Type it after seeing 'Hello world!'
 ````
