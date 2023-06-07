@@ -1,5 +1,8 @@
 # Rust Impl of ECC Lang
 
+The goal of implementing this compiler is to make it `emcc` compatible
+so that we can directly compare against LLVM optimized performance.
+
 ## Getting Started
 
 ````

@@ -4,9 +4,12 @@ func println(string s) -> void {
   return;
 }
 
-// func toString(int x) -> string {
-//   return;
-// }
+func toString(int x) -> string {
+  let string res = new string;
+  // res.data_ = new char[2];
+  res.length_ = 1;
+  return res;
+}
 
 class string {
 

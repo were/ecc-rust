@@ -39,7 +39,7 @@ impl TypeGen {
     match ty {
       ast::Type::Class(class) => {
         let res = self.class_cache.get(&class.id.literal).unwrap();
-        return res.clone();
+        return res.ptr_type(self.builder.context());
       }
       ast::Type::Builtin(builtin) => self.builtin_to_llvm(builtin.as_ref()),
       ast::Type::Array(array) => self.array_to_llvm(array),
@@ -67,7 +67,7 @@ impl TypeGen {
 
   fn array_to_llvm(&mut self, array: &ast::ArrayType) -> ir::types::TypeRef {
     let mut res = self.type_to_llvm(&array.scalar_ty);
-    for _ in 0..array.dims {
+    for _ in 0..array.dims.len() {
       res = res.ptr_type(self.builder.context());
     }
     return res
@@ -296,7 +296,8 @@ impl CodeGen {
         }
       }
       ast::Expr::BinaryOp(binop) => {
-        let lhs = self.generate_expr(&binop.lhs, false);
+        let is_lval = binop.op.value == super::lexer::TokenType::AssignEq;
+        let lhs = self.generate_expr(&binop.lhs, is_lval);
         let rhs = self.generate_expr(&binop.rhs, false);
         match &binop.op.value {
           super::lexer::TokenType::Add => {
@@ -305,10 +306,22 @@ impl CodeGen {
           super::lexer::TokenType::Sub => {
             self.tg.builder.create_sub(lhs, rhs)
           }
+          super::lexer::TokenType::AssignEq => {
+            self.tg.builder.create_store(rhs, lhs)
+          }
           _ => { panic!("Unknown binary op {}", binop.op); }
         }
       }
+      ast::Expr::NewExpr(ne) => {
+        let malloc = self.cache_stack.get(&"malloc".to_string()).unwrap().clone();
+        let i32ty = self.tg.builder.context().int_type(32);
+        let params = vec![self.tg.builder.context().const_value(i32ty, 8)];
+        let call = self.tg.builder.create_func_call(malloc, params);
+        let dest = self.tg.type_to_llvm(&ne.dtype);
+        self.tg.builder.create_bitcast(call, dest)
+      }
       _ => {
+        eprintln!("Not supported node (use 0 as a placeholder):\n{}", expr);
         let i32ty = self.tg.builder.context().int_type(32);
         self.tg.builder.context().const_value(i32ty, 0)
       }
