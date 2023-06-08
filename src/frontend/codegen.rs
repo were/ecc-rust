@@ -349,9 +349,9 @@ impl CodeGen {
 
 }
 
-pub fn codegen(ast: &Rc<ast::Linkage>) -> ir::module::Module {
+pub fn codegen(ast: &Rc<ast::Linkage>, tt: String, layout: String) -> ir::module::Module {
   let fname = ast.tus[ast.tus.len() - 1].fname.clone();
-  let module = ir::module::Module::new(fname.clone(), fname.clone());
+  let module = ir::module::Module::new(fname.clone(), fname.clone(), tt, layout);
   let mut builder = Builder::new(module);
   let mut class_cache: HashMap<String, TypeRef> = HashMap::new();
 
