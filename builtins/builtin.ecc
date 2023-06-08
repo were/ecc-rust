@@ -6,7 +6,7 @@ func println(string s) -> void {
 
 func toString(int x) -> string {
   let string res = new string;
-  // res.data_ = new char[2];
+  res.data_ = new char[2];
   res.length_ = 1;
   return res;
 }

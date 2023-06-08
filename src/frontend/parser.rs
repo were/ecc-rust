@@ -334,7 +334,7 @@ fn parse_dtype(tokenizer: &mut Lexer, for_new: bool) -> Result<Type, String> {
   let mut dims = Vec::new();
   while tokenizer.lookahead(TokenType::LBracket) {
     tokenizer.consume(TokenType::LBracket);
-    if for_new && tokenizer.lookahead(TokenType::RBracket) {
+    if for_new && !tokenizer.lookahead(TokenType::RBracket) {
       dims.push(parse_rval(tokenizer).unwrap());
     } else {
       dims.push(Expr::UnknownRef(Token::new()));
