@@ -49,5 +49,9 @@ pub fn semantic_check(ast: &Rc<Linkage>, print_ast: i32) -> Rc<Linkage> {
 }
 
 pub fn codegen_llvm(ast: &Rc<Linkage>) -> Module {
-  codegen::codegen(ast)
+  #[cfg(feature = "wasm")]
+  let tt = "wasm32-unknown-emscripten";
+  #[cfg(feature = "wasm")]
+  let layout = "e-m:e-p:32:32";
+  codegen::codegen(ast, tt.to_string(), layout.to_string())
 }

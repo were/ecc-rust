@@ -4,7 +4,7 @@ use super::ast::{
   Decl, FuncDecl, Variable, Type, BuiltinType, CompoundStmt, Stmt,
   ReturnStmt, Expr, TranslateUnit, Linkage, FuncCall, VarDecl,
   ClassDecl, ArrayType, InlineAsm, StrImm, BinaryOp, AttrAccess,
-  BuiltinTypeCode, ArrayIndex
+  BuiltinTypeCode, ArrayIndex, NewExpr, Cast
 };
 
 fn print_linkage(linkage: &Linkage, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
@@ -58,6 +58,12 @@ fn print_decl(decl: &Decl, f: &mut fmt::Formatter, indent: &String) -> fmt::Resu
     Decl::Func(func) => print_func(func, f, indent),
     Decl::Class(class) => print_class(class, f, indent),
   }
+}
+
+fn print_new_expr(ne: &NewExpr, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
+  write!(f, "New 0x{:x}\n", ne as *const NewExpr as usize).unwrap();
+  write!(f, "{}`->Type=", indent).unwrap();
+  print_type(&ne.dtype, f, indent)
 }
 
 fn print_class(class: &ClassDecl, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
@@ -237,7 +243,21 @@ fn print_expr(expr: &Expr, f: &mut fmt::Formatter, indent: &String) -> fmt::Resu
     Expr::ArrayIndex(index) => {
       print_array_index(index, f, indent)
     }
+    Expr::NewExpr(ne) => {
+      print_new_expr(ne, f, indent)
+    }
+    Expr::Cast(cast) => {
+      print_cast(cast, f, indent)
+    }
   }
+}
+
+fn print_cast(cast: &Cast, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
+  write!(f, "TypeCast\n").unwrap();
+  write!(f, "{}|->Value=", indent).unwrap();
+  print_expr(&cast.expr, f, &format!("{}|  ", indent)).unwrap();
+  write!(f, "\n{}`->DestType=", indent).unwrap();
+  print_type(&cast.dtype, f, &format!("{}   ", indent))
 }
 
 impl fmt::Display for Expr {
@@ -304,7 +324,15 @@ fn print_array_type(ty: &ArrayType, f: &mut fmt::Formatter, indent: &String) -> 
   write!(f, "ArrayType").unwrap();
   write!(f, "\n{}|->Scalar=", indent).unwrap();
   print_type(&ty.scalar_ty, f, &format!("{}|  ", indent)).unwrap();
-  write!(f, "\n{}`->Dimension={}", indent, "[]".repeat(ty.dims as usize))
+  for (i, j) in ty.dims.iter().enumerate() {
+    if i == ty.dims.len() - 1 {
+      write!(f, "\n{}`->Dimension_{}=", indent, i).unwrap();
+    } else {
+      write!(f, "\n{}|->Dimension_{}=", indent, i).unwrap();
+    }
+    print_expr(j, f, indent).unwrap();
+  }
+  Ok(())
 }
 
 fn print_builtin_type(ty: &BuiltinType, f: &mut fmt::Formatter, _: &String) -> fmt::Result{

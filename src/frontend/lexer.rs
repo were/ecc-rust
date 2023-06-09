@@ -19,6 +19,7 @@ pub enum TokenType {
   KeywordClass,
   KeywordFunc,
   KeywordLet,
+  KeywordCastAs,
   FuncMap,
   AttrAccess,
   LPran,
@@ -47,6 +48,7 @@ impl fmt::Display for TokenType {
       TokenType::KeywordNew => write!(f, "KeywordNew new"),
       TokenType::KeywordBool => write!(f, "KeywordBool bool"),
       TokenType::KeywordChar => write!(f, "KeywordChar char"),
+      TokenType::KeywordCastAs => write!(f, "KeywordCastAs as"),
       TokenType::KeywordVoid => write!(f, "KeywordVoid void"),
       TokenType::KeywordInt => write!(f, "KeywordInt int"),
       TokenType::KeywordReturn => write!(f, "KeywordReturn return"),
@@ -100,6 +102,10 @@ impl Token {
     return self.literal.len();
   }
 
+  pub fn new() -> Token {
+    Token {row: 0, col: 0, literal: "".to_string(), value: TokenType::Unknown }
+  }
+
   pub fn is_one_of(&self, types: &[TokenType]) -> bool {
     for t in types {
       if self.value == *t {
@@ -119,6 +125,7 @@ impl TokenHandle {
   pub fn new() -> Self {
     TokenHandle {
       handle: vec![
+        (Regex::new(r"^as"), valueless_token!(TokenType::KeywordCastAs)),
         (Regex::new(r"^asm"), valueless_token!(TokenType::KeywordAsm)),
         (Regex::new(r"^new"), valueless_token!(TokenType::KeywordNew)),
         (Regex::new(r"^bool"), valueless_token!(TokenType::KeywordBool)),
@@ -278,15 +285,15 @@ impl Lexer {
     self.tok().is_one_of(&[ty])
   }
 
-  pub fn look_n_ahead(&self, types : &[TokenType]) -> bool {
-    for (i, ty) in types.iter().enumerate() {
-      let tok = self.tokens.get(i + self.i).unwrap();
-      if tok.value != *ty {
-        return false;
-      }
-    }
-    true
-  }
+  // pub fn look_n_ahead(&self, types : &[TokenType]) -> bool {
+  //   for (i, ty) in types.iter().enumerate() {
+  //     let tok = self.tokens.get(i + self.i).unwrap();
+  //     if tok.value != *ty {
+  //       return false;
+  //     }
+  //   }
+  //   true
+  // }
 
   pub fn consume(&mut self, ty: TokenType) -> Token {
     if self.lookahead(ty.clone()) {
