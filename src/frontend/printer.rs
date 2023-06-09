@@ -254,10 +254,10 @@ fn print_expr(expr: &Expr, f: &mut fmt::Formatter, indent: &String) -> fmt::Resu
 
 fn print_cast(cast: &Cast, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
   write!(f, "TypeCast\n").unwrap();
-  write!(f, "{}|->Value=\n", indent).unwrap();
-  print_expr(&cast.expr, f, indent).unwrap();
-  write!(f, "{}`->DestType=\n", indent).unwrap();
-  print_type(&cast.dtype, f, indent)
+  write!(f, "{}|->Value=", indent).unwrap();
+  print_expr(&cast.expr, f, &format!("{}|  ", indent)).unwrap();
+  write!(f, "\n{}`->DestType=", indent).unwrap();
+  print_type(&cast.dtype, f, &format!("{}   ", indent))
 }
 
 impl fmt::Display for Expr {

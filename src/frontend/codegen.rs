@@ -320,6 +320,19 @@ impl CodeGen {
         let dest = self.tg.type_to_llvm(&ne.dtype);
         self.tg.builder.create_bitcast(call, dest)
       }
+      ast::Expr::ArrayIndex(idx) => {
+        let array = self.generate_expr(&idx.array, false);
+        let indices = idx.indices.iter().map(|x| self.generate_expr(x, false)).collect::<Vec<_>>();
+        let array_ty = array.get_type(self.tg.builder.context());
+        // let ptr_ref = array_ty.as_ref::<PointerType>(self.tg.builder.context()).unwrap();
+        // let elem_ty = ptr_ref.get_pointee_ty();
+        self.tg.builder.create_gep(array_ty, array, indices, true)
+      }
+      ast::Expr::Cast(cast) => {
+        let value = self.generate_expr(&cast.expr, false);
+        let ty = self.tg.type_to_llvm(&cast.dtype);
+        self.tg.builder.create_cast(value, ty)
+      }
       _ => {
         eprintln!("Not supported node (use 0 as a placeholder):\n{}", expr);
         let i32ty = self.tg.builder.context().int_type(32);

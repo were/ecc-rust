@@ -1,11 +1,11 @@
-#!/bin/env zsh
+#!/usr/bin/env zsh
 
 source_dir=`pwd`
 script_dir=`dirname ${0}`
 cd $script_dir
 script_dir=`pwd`
 
-mkdir -p $script_dir/bin-utils
+mkdir -p $script_dir/backend
 
 # Download WebAssembly binary tools
 cd $script_dir/bin-utils
@@ -21,7 +21,7 @@ cmake -S . -B build
 make -C build -j
 
 # Download LLVM-WebAssembly backend
-cd $script_dir/bin-utils
+cd $script_dir/backend
 if [ ! -d emsdk ] ; then
   git clone --recursive https://github.com/emscripten-core/emsdk
   cd emsdk
