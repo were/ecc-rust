@@ -4,25 +4,25 @@ func println(string s) -> void {
   return;
 }
 
-func toString(int x) -> string {
+func toString(i32 x) -> string {
   let string res = new string;
-  res.data_ = new char[2];
-  res.data_[0] = (x + 48) as char;
+  res.data_ = new i8[2];
+  res.data_[0] = (x + 48) as i8;
   res.length_ = 1;
   return res;
 }
 
 class string {
 
-  func length() -> int {
+  func length() -> i32 {
     return self.length_;
   }
 
-  func parseInt() -> int {
+  func parseInt() -> i32 {
     return 0;
   }
 
-  int length_;
-  char[] data_;
+  i32 length_;
+  i8[] data_;
 }
 

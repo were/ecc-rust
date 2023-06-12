@@ -145,7 +145,18 @@ pub enum Stmt {
   Ret(Rc<ReturnStmt>),
   InlineAsm(Rc<InlineAsm>),
   VarDecl(Rc<VarDecl>),
+  ForStmt(Rc<ForStmt>),
   Evaluate(Expr),
+}
+
+/// For loop node.
+/// for i in 0..n { ... }
+/// The starting value is stored in the initializer of var.
+#[derive(Clone)]
+pub struct ForStmt {
+  pub var: Rc<VarDecl>,
+  pub end: Expr,
+  pub body: Rc<CompoundStmt>
 }
 
 #[derive(Clone)]

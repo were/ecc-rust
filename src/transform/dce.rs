@@ -15,7 +15,7 @@ fn analysis(module: &Module) -> Vec<usize> {
       for inst_ref in block.iter() {
         let inst = inst_ref.as_ref::<Instruction>(&module.context).unwrap();
         match inst.get_opcode() {
-          InstOpcode::Return | InstOpcode::Call => {
+          InstOpcode::Return | InstOpcode::Call | InstOpcode::Branch => {
             cnt[inst.get_skey()] = 1;
           },
           InstOpcode::Store(align) => {

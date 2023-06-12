@@ -14,12 +14,15 @@ pub enum TokenType {
   KeywordBool,
   KeywordChar,
   KeywordVoid,
-  KeywordInt,
+  KeywordIn,
+  KeywordI32,
   KeywordReturn,
   KeywordClass,
   KeywordFunc,
+  KeywordFor,
   KeywordLet,
   KeywordCastAs,
+  RangeDotdot,
   FuncMap,
   AttrAccess,
   LPran,
@@ -47,15 +50,18 @@ impl fmt::Display for TokenType {
       TokenType::KeywordAsm => write!(f, "KeywordAsm asm"),
       TokenType::KeywordNew => write!(f, "KeywordNew new"),
       TokenType::KeywordBool => write!(f, "KeywordBool bool"),
-      TokenType::KeywordChar => write!(f, "KeywordChar char"),
+      TokenType::KeywordChar => write!(f, "KeywordChar i8"),
       TokenType::KeywordCastAs => write!(f, "KeywordCastAs as"),
       TokenType::KeywordVoid => write!(f, "KeywordVoid void"),
-      TokenType::KeywordInt => write!(f, "KeywordInt int"),
+      TokenType::KeywordI32 => write!(f, "KeywordI32 i32"),
+      TokenType::KeywordIn => write!(f, "KeywordIn in"),
       TokenType::KeywordReturn => write!(f, "KeywordReturn return"),
       TokenType::KeywordClass => write!(f, "KeywordClass class"),
       TokenType::KeywordFunc => write!(f, "KeywordFunc func"),
+      TokenType::KeywordFor => write!(f, "KeywordFor for"),
       TokenType::KeywordLet => write!(f, "KeywordLet let"),
       TokenType::FuncMap => write!(f, "FuncMap ->"),
+      TokenType::RangeDotdot => write!(f, "RangeDotdot .."),
       TokenType::LPran => write!(f, "LPran ("),
       TokenType::RPran => write!(f, "RPran )"),
       TokenType::LBrace => write!(f, "LBrace"),
@@ -129,14 +135,17 @@ impl TokenHandle {
         (Regex::new(r"^asm"), valueless_token!(TokenType::KeywordAsm)),
         (Regex::new(r"^new"), valueless_token!(TokenType::KeywordNew)),
         (Regex::new(r"^bool"), valueless_token!(TokenType::KeywordBool)),
-        (Regex::new(r"^char"), valueless_token!(TokenType::KeywordChar)),
-        (Regex::new(r"^int"), valueless_token!(TokenType::KeywordInt)),
+        (Regex::new(r"^i8"), valueless_token!(TokenType::KeywordChar)),
+        (Regex::new(r"^i32"), valueless_token!(TokenType::KeywordI32)),
+        (Regex::new(r"^in"), valueless_token!(TokenType::KeywordIn)),
         (Regex::new(r"^void"), valueless_token!(TokenType::KeywordVoid)),
         (Regex::new(r"^return"), valueless_token!(TokenType::KeywordReturn)),
         (Regex::new(r"^class"), valueless_token!(TokenType::KeywordClass)),
         (Regex::new(r"^func"), valueless_token!(TokenType::KeywordFunc)),
+        (Regex::new(r"^for"), valueless_token!(TokenType::KeywordFor)),
         (Regex::new(r"^let"), valueless_token!(TokenType::KeywordLet)),
         (Regex::new(r"^\->"), valueless_token!(TokenType::FuncMap)),
+        (Regex::new(r"^\.\."), valueless_token!(TokenType::RangeDotdot)),
         (Regex::new(r"^[[:alpha:]_]+[[:alpha:]_\d]*"), valueless_token!(TokenType::Identifier)),
         (Regex::new(r"^\("), valueless_token!(TokenType::LPran)),
         (Regex::new(r"^\)"), valueless_token!(TokenType::RPran)),
@@ -306,6 +315,11 @@ impl Lexer {
     let res = self.tok().clone();
     self.i += 1;
     return res;
+  }
+
+  /// Insert a token right before the token stream.
+  pub fn push_token(&mut self, t: Token) {
+    self.tokens.insert(self.i, t)
   }
 
 }
