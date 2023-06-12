@@ -262,7 +262,7 @@ impl CodeGen {
     let i32ty = self.tg.builder.context().int_type(32);
     let one = self.tg.builder.context().const_value(i32ty.clone(), 1);
     let added = self.builder_mut().create_add(loop_var_value, one);
-    self.builder_mut().create_store(loop_var_addr, added);
+    self.builder_mut().create_store(added, loop_var_addr);
     self.builder_mut().create_unconditional_branch(cond_block.clone());
     self.cache_stack.pop();
     self.builder_mut().set_current_block(end_block)
@@ -331,6 +331,15 @@ impl CodeGen {
           }
           super::lexer::TokenType::Sub => {
             self.tg.builder.create_sub(lhs, rhs)
+          }
+          super::lexer::TokenType::Mul => {
+            self.tg.builder.create_mul(lhs, rhs)
+          }
+          super::lexer::TokenType::Mod => {
+            self.tg.builder.create_srem(lhs, rhs)
+          }
+          super::lexer::TokenType::Div => {
+            self.tg.builder.create_sdiv(lhs, rhs)
           }
           super::lexer::TokenType::AssignEq => {
             self.tg.builder.create_store(rhs, lhs)

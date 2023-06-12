@@ -135,7 +135,9 @@ fn parse_rval(tokenizer: &mut Lexer) -> Result<Expr, String> {
     tokenizer.consume(TokenType::RPran);
     res
   } else {
-    parse_operator_expr(tokenizer, &[(2, &[TokenType::Add, TokenType::Sub])])
+    parse_operator_expr(tokenizer,
+      &[(2, &[TokenType::Add, TokenType::Sub]),
+        (2, &[TokenType::Mod, TokenType::Div, TokenType::Mul])])
   };
   if tokenizer.lookahead(TokenType::KeywordCastAs) {
     let token = tokenizer.consume(TokenType::KeywordCastAs);

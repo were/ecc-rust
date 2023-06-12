@@ -6,9 +6,15 @@ func println(string s) -> void {
 
 func toString(i32 x) -> string {
   let string res = new string;
-  res.data_ = new i8[2];
-  res.data_[0] = (x + 48) as i8;
-  res.length_ = 1;
+  res.data_ = new i8[5];
+  res.data_[3] = (x % 10 + 48) as i8;
+  x = x / 10;
+  res.data_[2] = (x % 10 + 48) as i8;
+  x = x / 10;
+  res.data_[1] = (x % 10 + 48) as i8;
+  x = x / 10;
+  res.data_[0] = (x % 10 + 48) as i8;
+  res.length_ = 4;
   return res;
 }
 

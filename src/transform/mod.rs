@@ -4,7 +4,8 @@ mod dealias;
 mod dce;
 
 pub fn optimize(module: Module) -> Module {
-  let dealiased = dealias::transform(module);
-  let dceed = dce::transform(dealiased);
-  return dceed;
+  return module;
+  // let dealiased = dealias::transform(module);
+  // let dceed = dce::transform(dealiased);
+  // return dceed;
 }
