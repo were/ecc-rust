@@ -68,10 +68,7 @@ pub fn transform(mut module: Module) -> Module {
     }
     iterative = to_remove.len() != 0;
     for elem in to_remove {
-      let inst = elem.as_ref::<Instruction>(&module.context).unwrap();
-      let block = inst.get_parent().clone();
-      let block = block.as_mut::<Block>(&mut module.context).unwrap();
-      block.remove(elem);
+      module.remove_inst(elem)
     }
   }
   return module;
