@@ -15,7 +15,7 @@ fn analysis(module: &Module) -> Vec<usize> {
       for inst_ref in block.iter() {
         let inst = inst_ref.as_ref::<Instruction>(&module.context).unwrap();
         match inst.get_opcode() {
-          InstOpcode::Return | InstOpcode::Call => {
+          InstOpcode::Return | InstOpcode::Call | InstOpcode::Branch => {
             cnt[inst.get_skey()] = 1;
           },
           InstOpcode::Store(align) => {
@@ -68,10 +68,7 @@ pub fn transform(mut module: Module) -> Module {
     }
     iterative = to_remove.len() != 0;
     for elem in to_remove {
-      let inst = elem.as_ref::<Instruction>(&module.context).unwrap();
-      let block = inst.get_parent().clone();
-      let block = block.as_mut::<Block>(&mut module.context).unwrap();
-      block.remove(elem);
+      module.remove_inst(elem)
     }
   }
   return module;

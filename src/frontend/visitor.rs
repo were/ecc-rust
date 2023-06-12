@@ -4,7 +4,7 @@ use super::ast::{
   Type, TranslateUnit, BuiltinType, Variable,
   FuncDecl, CompoundStmt, Stmt, ReturnStmt, IntImm,
   Decl, Expr, FuncCall, Linkage, VarDecl, ClassDecl,
-  InlineAsm, BinaryOp, ArrayType, AttrAccess, ArrayIndex, NewExpr, Cast
+  InlineAsm, BinaryOp, ArrayType, AttrAccess, ArrayIndex, NewExpr, Cast, ForStmt
 };
 
 #[macro_export]
@@ -118,7 +118,8 @@ pub trait Visitor {
       Stmt::Ret(ret) => self.visit_return(&ret),
       Stmt::Evaluate(expr) => Stmt::Evaluate(self.visit_expr(expr)),
       Stmt::InlineAsm(asm) => self.visit_inline_asm(asm),
-      Stmt::VarDecl(decl) => Stmt::VarDecl(self.visit_var_decl(decl))
+      Stmt::VarDecl(decl) => Stmt::VarDecl(self.visit_var_decl(decl)),
+      Stmt::ForStmt(for_loop) => Stmt::ForStmt(self.visit_for_stmt(for_loop))
     }
   }
 
@@ -292,6 +293,17 @@ pub trait Visitor {
       return Expr::Cast(x.clone());
     }
     return Expr::Cast(Rc::new(Cast{token: x.token.clone(), expr, dtype}))
+  }
+
+  fn visit_for_stmt(&mut self, x: &Rc<ForStmt>) -> Rc<ForStmt> {
+    let end = self.visit_expr(&x.end);
+    let var = self.visit_var_decl(&x.var);
+    let body = self.visit_compound_stmt(&x.body);
+    if expr_eq(&end, &x.end) && Rc::ptr_eq(&var, &x.var) && Rc::ptr_eq(&body, &x.body) {
+      x.clone()
+    } else {
+      Rc::new(ForStmt { var, end, body })
+    }
   }
 
 }

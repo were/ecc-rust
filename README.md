@@ -14,32 +14,35 @@ source setup.sh # Set up the wasm tools' environment variables.
 ## Try it!
 
 Assuming this is a subrepo of the write-up repo.
+You can try this compiler by simply typing:
 ````
-./target/debug/ecc ../tests/function/01-helloworld.ecc > 01-helloworld.ll
+./compile.sh ../tests/function/01-helloworld.ecc
+node ./builtins/host.js a.wasm < /dev/null
 ````
 
-Invoke the WebAssembly backend of LLVM. A warning will be generated, but it is ok.
-TODO(@were): Add target triple support in [trinity](https://github.com/were/trinity).
+
+*TL;DR* To understand what happens in this `compile.sh` script,
+the file is first compiled into LLVM intermediate representation.
+
 ````
-emcc 01-helloworld.ll -c
+./target/debug/ecc ../tests/function/01-helloworld.ecc > a.ll
+````
+
+Then we use `emcc` as our LLVM backend to generate wasm binaries.
+    
+````
+emcc a.ll -c
 ````
 
 Expose the main function to js execution. This is back-and-forth.
 The generated binary object is converted to text and then converted back.
 ````
-wasm2wat 01-helloworld.o | sed "s/func \$main/func (export \"main\")/" > 01-helloworld.wat
-wat2wasm 01-helloworld.wat # 01-helloworld.wasm is generated
-````
-
-
-Run it by invoking a node.js host. A `/dev/null` should be redirected to the input.
-Otherwise, JS's end-of-file (EOF) will not terminate the program.
-````
-node ../tests/host.js 01-helloworld.wasm < /dev/null
+wasm2wat a.o | sed "s/func \$main/func (export \"main\")/" > a.wat
+wat2wasm a.wat # a.wasm is generated
 ````
 
 You can also use a Ctrl-D to manually pass a EOF to JS's listener, if you do not want a redirection.
 ````
-node ../tests/host.js 01-helloworld.wasm
+node ../tests/host.js a.wasm
 <Ctrl-D> # Type it after seeing 'Hello world!'
 ````
