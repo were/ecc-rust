@@ -97,7 +97,7 @@ pub struct BuiltinType {
 #[derive(Clone)]
 pub struct ArrayType {
   pub scalar_ty: Type,
-  pub dims: i32
+  pub dims: Vec<Expr>
 }
 
 #[derive(Clone)]
@@ -145,7 +145,7 @@ pub enum Stmt {
   Ret(Rc<ReturnStmt>),
   InlineAsm(Rc<InlineAsm>),
   VarDecl(Rc<VarDecl>),
-  Evaluate(Expr)
+  Evaluate(Expr),
 }
 
 #[derive(Clone)]
@@ -162,6 +162,19 @@ pub struct ReturnStmt {
 }
 
 #[derive(Clone)]
+pub struct NewExpr {
+  pub token: Token,
+  pub dtype: Type
+}
+
+#[derive(Clone)]
+pub struct Cast {
+  pub token: Token,
+  pub dtype: Type,
+  pub expr: Expr
+}
+
+#[derive(Clone)]
 pub enum Expr {
   StrImm(Rc<StrImm>),
   IntImm(Rc<IntImm>),
@@ -170,6 +183,8 @@ pub enum Expr {
   BinaryOp(Rc<BinaryOp>),
   AttrAccess(Rc<AttrAccess>),
   ArrayIndex(Rc<ArrayIndex>),
+  NewExpr(Rc<NewExpr>),
+  Cast(Rc<Cast>),
   UnknownRef(Token)
 }
 
@@ -234,11 +249,17 @@ impl Expr {
         if let Type::Array(x) = array.array.dtype(symbols) {
           Type::Array(Rc::new(ArrayType {
             scalar_ty: x.scalar_ty.clone(),
-            dims: x.dims - array.indices.len() as i32
+            dims: [0..x.dims.len() - array.indices.len()].iter().map(|_| Expr::UnknownRef(Token::new())).collect::<Vec<Expr>>()
           }))
         } else {
           panic!("Cannot index non-array type");
         }
+      }
+      Expr::NewExpr(ne) => {
+        return ne.dtype.clone()
+      }
+      Expr::Cast(cast) => {
+        return cast.dtype.clone();
       }
     }
   }

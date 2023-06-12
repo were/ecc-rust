@@ -1,22 +1,45 @@
 # Rust Impl of ECC Lang
 
+The goal of implementing this compiler is to make it `emcc` compatible
+so that we can directly compare against LLVM optimized performance.
+
 ## Getting Started
 
 ````
-export LLVM_SYS_120_PREFIX=/path/to/clang-llvm-12.0.0/
-cargo build
+cargo build --features wasm
+source init.sh # Download the wasm binary tools for the 1st time.
+source setup.sh # Set up the wasm tools' environment variables.
 ````
 
-This project depends on LLVM 12.0.0. I am using Ubuntu 20.04,
-so I downloaded [it](https://github.com/llvm/llvm-project/releases/download/llvmorg-12.0.0/clang+llvm-12.0.0-x86_64-linux-gnu-ubuntu-20.04.tar.xz)
-from [this page](https://github.com/llvm/llvm-project/releases/tag/llvmorg-12.0.0).
+## Try it!
 
-After downloading, just point the `LLVM_SYS_120_PREFIX` variable to
-the unzipped folder.
-
-## Try it
-
+Assuming this is a subrepo of the write-up repo.
 ````
-# Assuming this is a subrepo of the write-up repo.
-./target/debug/ecc ../ecc-tests/function/01-helloworld.ecc
+./target/debug/ecc ../tests/function/01-helloworld.ecc > 01-helloworld.ll
+````
+
+Invoke the WebAssembly backend of LLVM. A warning will be generated, but it is ok.
+TODO(@were): Add target triple support in [trinity](https://github.com/were/trinity).
+````
+emcc 01-helloworld.ll -c
+````
+
+Expose the main function to js execution. This is back-and-forth.
+The generated binary object is converted to text and then converted back.
+````
+wasm2wat 01-helloworld.o | sed "s/func \$main/func (export \"main\")/" > 01-helloworld.wat
+wat2wasm 01-helloworld.wat # 01-helloworld.wasm is generated
+````
+
+
+Run it by invoking a node.js host. A `/dev/null` should be redirected to the input.
+Otherwise, JS's end-of-file (EOF) will not terminate the program.
+````
+node ../tests/host.js 01-helloworld.wasm < /dev/null
+````
+
+You can also use a Ctrl-D to manually pass a EOF to JS's listener, if you do not want a redirection.
+````
+node ../tests/host.js 01-helloworld.wasm
+<Ctrl-D> # Type it after seeing 'Hello world!'
 ````

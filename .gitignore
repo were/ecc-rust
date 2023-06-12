@@ -1,4 +1,5 @@
 target/*
+backend
 Cargo.lock
 *.wasm
 *.wat

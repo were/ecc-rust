@@ -4,7 +4,7 @@ use super::ast::{
   Type, TranslateUnit, BuiltinType, Variable,
   FuncDecl, CompoundStmt, Stmt, ReturnStmt, IntImm,
   Decl, Expr, FuncCall, Linkage, VarDecl, ClassDecl,
-  InlineAsm, BinaryOp, ArrayType, AttrAccess, ArrayIndex
+  InlineAsm, BinaryOp, ArrayType, AttrAccess, ArrayIndex, NewExpr, Cast
 };
 
 #[macro_export]
@@ -29,6 +29,7 @@ pub fn expr_eq(a:&Expr, b:&Expr) -> bool {
     (Expr::Variable(v0),Expr::Variable(v1)) => Rc::ptr_eq(v0, v1),
     (Expr::BinaryOp(v0),Expr::BinaryOp(v1)) => Rc::ptr_eq(v0, v1),
     (Expr::AttrAccess(v0),Expr::AttrAccess(v1)) => Rc::ptr_eq(v0, v1),
+    (Expr::NewExpr(v0),Expr::NewExpr(v1)) => Rc::ptr_eq(v0, v1),
     (Expr::UnknownRef(v0),Expr::UnknownRef(v1)) => v0.literal == v1.literal,
     _ => { false }
   }
@@ -49,7 +50,11 @@ pub fn type_eq(a:&Type, b:&Type) -> bool {
       v0.token.literal == v1.token.literal
     }
     (Type::Array(v0), Type::Array(v1)) => {
-      v0.dims == v1.dims && type_eq(&v0.scalar_ty, &v1.scalar_ty)
+      if v0.dims.len() == v1.dims.len() && type_eq(&v0.scalar_ty, &v1.scalar_ty) {
+        v0.dims.iter().zip(v1.dims.iter()).fold(true, |acc, x| acc && expr_eq(&x.0, &x.1))
+      } else {
+        false
+      }
     }
     (Type::Class(v0), Type::Class(v1)) => v0.id.literal == v1.id.literal,
     _ => { false }
@@ -82,6 +87,8 @@ pub trait Visitor {
       Expr::BinaryOp(op) => self.visit_binary_op(op),
       Expr::AttrAccess(access) => self.visit_attr_access(access),
       Expr::ArrayIndex(array_idx) => self.visit_array_index(array_idx),
+      Expr::NewExpr(ne) => self.visit_new_expr(ne),
+      Expr::Cast(cast) => self.visit_cast(cast),
       Expr::UnknownRef(x) => Expr::UnknownRef(x.clone()),
     }
   }
@@ -248,7 +255,18 @@ pub trait Visitor {
     if type_eq(&ty, &x.scalar_ty) {
       return Type::Array(x.clone())
     }
-    Type::Array(Rc::new(ArrayType{ scalar_ty: ty, dims: x.dims }))
+    let new_dims = x.dims.iter().map(|x| {
+      if let Expr::UnknownRef(tok) = x {
+        if tok.literal == "" {
+          x.clone()
+        } else {
+          panic!("What is the token {}", tok.literal);
+        }
+      } else {
+        self.visit_expr(x)
+      }
+    }).collect::<Vec<Expr>>();
+    Type::Array(Rc::new(ArrayType{ scalar_ty: ty, dims: new_dims }))
   }
 
   fn visit_attr_access(&mut self, x: &Rc<AttrAccess>) -> Expr {
@@ -257,6 +275,23 @@ pub trait Visitor {
       return Expr::AttrAccess(x.clone())
     }
     Expr::AttrAccess(Rc::new(AttrAccess{ this, attr: x.attr.clone(), idx: x.idx }))
+  }
+
+  fn visit_new_expr(&mut self, x: &Rc<NewExpr>) -> Expr {
+    let ty = self.visit_type(&x.dtype);
+    if type_eq(&ty, &x.dtype) {
+      return Expr::NewExpr(x.clone());
+    }
+    return Expr::NewExpr(Rc::new(NewExpr { token: x.token.clone(), dtype: ty }))
+  }
+
+  fn visit_cast(&mut self, x: &Rc<Cast>) -> Expr {
+    let expr = self.visit_expr(&x.expr);
+    let dtype = self.visit_type(&x.dtype);
+    if expr_eq(&expr, &x.expr) && type_eq(&dtype, &x.dtype) {
+      return Expr::Cast(x.clone());
+    }
+    return Expr::Cast(Rc::new(Cast{token: x.token.clone(), expr, dtype}))
   }
 
 }

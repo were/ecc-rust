@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
-use super::lexer::{Lexer, TokenType};
+use super::lexer::{Lexer, TokenType, Token};
 use super::ast::{
-  BuiltinType, BuiltinTypeCode, Type, TranslateUnit, CompoundStmt, ReturnStmt, IntImm, Decl, InlineAsm
+  BuiltinType, BuiltinTypeCode, Type, TranslateUnit, CompoundStmt, ReturnStmt, IntImm, Decl, InlineAsm, NewExpr, Cast
 };
 use super::ast::{FuncDecl, Stmt, Expr, StrImm, FuncCall, ClassDecl, VarDecl, ArrayType, BinaryOp, ArrayIndex};
 
@@ -75,21 +75,12 @@ fn parse_possibly_lval(tokenizer: &mut Lexer) -> Result<Expr, String> {
   Ok(expr)
 }
 
-fn parse_binary_expr(tokenizer: &mut Lexer, operators: &[TokenType]) -> Result<Expr, String> {
-  let mut expr = parse_expr_term(tokenizer).unwrap();
-  while tokenizer.tok().is_one_of(operators) {
-    let op = tokenizer.consume_any();
-    let rhs = parse_expr_term(tokenizer).unwrap();
-    expr = Expr::BinaryOp(Rc::new(BinaryOp{op, lhs: expr, rhs}));
-  }
-  Ok(expr)
-}
-
 fn parse_assignment_expr(tokenizer: &mut Lexer) -> Result<Expr, String> {
   let res = parse_possibly_lval(tokenizer);
-  if tokenizer.look_n_ahead(&[TokenType::AssignEq]) {
-    tokenizer.consume_any();
-    return parse_binary_expr(tokenizer, &[TokenType::Add, TokenType::Sub]);
+  if tokenizer.lookahead(TokenType::AssignEq) {
+    let op = tokenizer.consume(TokenType::AssignEq);
+    let rval = parse_rval(tokenizer).unwrap();
+    return Ok(Expr::BinaryOp(Rc::new(BinaryOp { op, lhs: res.unwrap(), rhs: rval })));
   }
   return res;
 }
@@ -112,7 +103,7 @@ fn parse_return(tokenizer: &mut Lexer) -> Result<ReturnStmt, String> {
 /// Precedence from low to high, parse each operator expression.
 fn parse_operator_expr(tokenizer: &mut Lexer, operators: &[(i32, &[TokenType])]) -> Result<Expr, String> {
   if operators.len() == 0 {
-    return parse_expr_term(tokenizer)
+    return parse_expr_term(tokenizer);
   } else if operators[0].0 == 1 {
     if tokenizer.tok().is_one_of(operators[0].1) {
       parse_operator_expr(tokenizer, &operators[1..]).unwrap();
@@ -129,8 +120,29 @@ fn parse_operator_expr(tokenizer: &mut Lexer, operators: &[(i32, &[TokenType])])
   panic!("Invalid operator precedence")
 }
 
+fn parse_new_expr(tokenizer: &mut Lexer) -> Result<Expr, String> {
+  let token = tokenizer.consume(TokenType::KeywordNew);
+  let dtype = parse_dtype(tokenizer, true).unwrap();
+  Ok(Expr::NewExpr(Rc::new(NewExpr{token, dtype})))
+}
+
 fn parse_rval(tokenizer: &mut Lexer) -> Result<Expr, String> {
-  return parse_operator_expr(tokenizer, &[(2, &[TokenType::Add, TokenType::Sub])]);
+  let res = if tokenizer.lookahead(TokenType::KeywordNew) {
+    parse_new_expr(tokenizer)
+  } else if tokenizer.lookahead(TokenType::LPran) {
+    tokenizer.consume(TokenType::LPran);
+    let res = parse_rval(tokenizer);
+    tokenizer.consume(TokenType::RPran);
+    res
+  } else {
+    parse_operator_expr(tokenizer, &[(2, &[TokenType::Add, TokenType::Sub])])
+  };
+  if tokenizer.lookahead(TokenType::KeywordCastAs) {
+    let token = tokenizer.consume(TokenType::KeywordCastAs);
+    let dtype = parse_dtype(tokenizer, false).unwrap();
+    return Ok(Expr::Cast(Rc::new(Cast{token, expr: res.unwrap(), dtype})));
+  }
+  return res;
 }
 
 fn parse_params(tokenizer: &mut Lexer) -> Result<Vec<Expr>, String> {
@@ -185,7 +197,7 @@ fn parse_statement(tokenizer: &mut Lexer) -> Result<Stmt, String> {
 /// Declare a variable in a compound statement.
 fn parse_decl_stmt(tokenizer: &mut Lexer) -> Result<Stmt, String> {
   tokenizer.consume(TokenType::KeywordLet);
-  let ty = parse_dtype(tokenizer).unwrap();
+  let ty = parse_dtype(tokenizer, false).unwrap();
   let id = tokenizer.consume(TokenType::Identifier);
   let mut rhs = None;
   if tokenizer.lookahead(TokenType::AssignEq) {
@@ -215,7 +227,7 @@ fn parse_compound_stmt(tokenizer: &mut Lexer) -> Result<CompoundStmt, String> {
 pub fn parse_args(tokenizer: &mut Lexer) -> Result<Vec<Rc<VarDecl>>, String> {
   let mut res : Vec<Rc<VarDecl>> = Vec::new();
   while !tokenizer.lookahead(TokenType::RPran) {
-    let dtype = parse_dtype(tokenizer).unwrap();
+    let dtype = parse_dtype(tokenizer, false).unwrap();
     let id = tokenizer.consume(TokenType::Identifier);
     res.push(Rc::new(VarDecl{ty: dtype, id, init: None}));
     if tokenizer.lookahead(TokenType::Comma) {
@@ -232,7 +244,7 @@ pub fn parse_function(tokenizer: &mut Lexer) -> Result<FuncDecl, String> {
   let args = parse_args(tokenizer).unwrap();
   tokenizer.consume(TokenType::RPran);
   tokenizer.consume(TokenType::FuncMap);
-  let dtype = parse_dtype(tokenizer).unwrap();
+  let dtype = parse_dtype(tokenizer, false).unwrap();
   let parsed_body = if tokenizer.lookahead(TokenType::Semicolon) {
     let tok = tokenizer.consume_any();
     Ok(CompoundStmt{
@@ -256,7 +268,7 @@ pub fn parse_function(tokenizer: &mut Lexer) -> Result<FuncDecl, String> {
 
 /// Variable declarations in class body and function argument list.
 fn parse_var_decl(tokenizer: &mut Lexer) -> Result<VarDecl, String> {
-  let dtype = parse_dtype(tokenizer).unwrap();
+  let dtype = parse_dtype(tokenizer, false).unwrap();
   let id = tokenizer.consume(TokenType::Identifier);
   let var = VarDecl{ty: dtype, id, init: None};
   Ok(var)
@@ -297,7 +309,7 @@ pub fn parse_program(tokenizer: &mut Lexer, fname: String) -> Result<TranslateUn
   Ok(TranslateUnit{fname, decls})
 }
 
-fn parse_dtype(tokenizer: &mut Lexer) -> Result<Type, String> {
+fn parse_dtype(tokenizer: &mut Lexer, for_new: bool) -> Result<Type, String> {
   let token = tokenizer.consume_any();
   let scalar_ty = match token.value {
     TokenType::KeywordInt => {
@@ -319,13 +331,17 @@ fn parse_dtype(tokenizer: &mut Lexer) -> Result<Type, String> {
       Err(format!("Data type parse failure {}", token))
     }
   };
-  let mut dims = 0;
+  let mut dims = Vec::new();
   while tokenizer.lookahead(TokenType::LBracket) {
     tokenizer.consume(TokenType::LBracket);
+    if for_new && !tokenizer.lookahead(TokenType::RBracket) {
+      dims.push(parse_rval(tokenizer).unwrap());
+    } else {
+      dims.push(Expr::UnknownRef(Token::new()));
+    }
     tokenizer.consume(TokenType::RBracket);
-    dims += 1
   }
-  if dims == 0 {
+  if dims.len() == 0 {
     scalar_ty
   } else {
     Ok(Type::Array(Rc::new(ArrayType{scalar_ty: scalar_ty.unwrap(), dims})))

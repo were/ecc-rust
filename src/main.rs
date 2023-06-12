@@ -1,10 +1,9 @@
-#![feature(strict_provenance)]
-
 use std::env;
 use std::fs::File;
 use std::io::Read;
 
 mod frontend;
+mod transform;
 
 pub use crate::frontend::parse;
 pub use crate::frontend::semantic_check;
@@ -33,13 +32,12 @@ fn main() {
       }
       ast = semantic_check(&ast, print_ast);
       let module = frontend::codegen_llvm(&ast);
-      println!("{}", module);
-      // print!("{}", module.print_to_string().to_string());
+      let optimized_module = transform::optimize(module);
+      println!("{}", optimized_module)
     }
     Err(error) => {
-      eprintln!("Failed to open file: {}", error);
+      eprintln!("Failed to open file: {}", error)
     }
   }
-  ()
 }
 
