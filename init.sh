@@ -8,7 +8,7 @@ script_dir=`pwd`
 mkdir -p $script_dir/backend
 
 # Download WebAssembly binary tools
-cd $script_dir/bin-utils
+cd $script_dir/backend
 if [ ! -d wabt ] ; then
   git clone --recursive https://github.com/WebAssembly/wabt
   cd wabt
