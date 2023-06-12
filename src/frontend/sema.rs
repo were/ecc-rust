@@ -5,7 +5,7 @@ use crate::mutated;
 
 use super::ast::{
   FuncDecl, VarDecl, Linkage, TranslateUnit, Decl, ClassDecl, Type, Stmt, CompoundStmt,
-  Expr, Variable, BinaryOp, ClassRef, AttrAccess, BuiltinTypeCode, FuncCall
+  Expr, Variable, BinaryOp, ClassRef, AttrAccess, BuiltinTypeCode, FuncCall, ForStmt
 };
 use super::visitor::{Visitor, expr_eq, stmt_eq, type_eq};
 use super::lexer::{Token, TokenType};
@@ -166,7 +166,7 @@ impl Visitor for MethodHoister {
 
 }
 
-// Hoist methods, and gather global symbols
+/// Hoist methods, and gather global symbols
 pub fn hoist_methods(ast: &Rc<Linkage>) -> Rc<Linkage> {
   MethodHoister {
     to_add: Vec::new(),
@@ -223,6 +223,15 @@ impl Visitor for SymbolResolver {
       args: var_decls.clone(),
       body,
     })
+  }
+
+  fn visit_for_stmt(&mut self, x: &Rc<super::ast::ForStmt>) -> Rc<super::ast::ForStmt> {
+    self.scopes.push(SymbolTable::new());
+    let var = self.visit_var_decl(&x.var);
+    let end = self.visit_expr(&x.end);
+    let body = self.visit_compound_stmt(&x.body);
+    self.scopes.pop();
+    Rc::new(ForStmt{ var, end, body })
   }
 
   fn visit_var_decl(&mut self, var: &Rc<VarDecl>) -> Rc<VarDecl> {

@@ -8,7 +8,7 @@ use trinity::ir::{
   value::Function, PointerType
 };
 use trinity::builder::Builder;
-use super::ast;
+use super::ast::{self, ForStmt};
 
 struct TypeGen {
   pub builder: Builder,
@@ -170,8 +170,6 @@ impl CodeGen {
         let block_ref = self.builder_mut().add_block("entry".to_string());
         self.builder_mut().set_current_block(block_ref);
         self.generate_func(func);
-        // restore the scope
-        self.cache_stack.pop();
       }
     }
   }
@@ -196,9 +194,9 @@ impl CodeGen {
         );
       }
     }
-
     // push arguments
     self.generate_compound_stmt(&func.body, false);
+    self.cache_stack.pop();
   }
 
   fn generate_var_decl(&mut self, var: &Rc<ast::VarDecl>) {
@@ -239,7 +237,35 @@ impl CodeGen {
       ast::Stmt::InlineAsm(asm) => {
         self.generate_inline_asm(&asm);
       }
+      ast::Stmt::ForStmt(for_loop) => {
+        self.generate_for_stmt(&for_loop);
+      }
     }
+  }
+
+  fn generate_for_stmt(&mut self, for_stmt: &ForStmt) {
+    self.cache_stack.push();
+    self.generate_var_decl(&for_stmt.var);
+    let cond_block = self.builder_mut().add_block("cond".to_string());
+    let body_block = self.builder_mut().add_block("body".to_string());
+    let end_block = self.builder_mut().add_block("end".to_string());
+    let extent = self.generate_expr(&for_stmt.end, false);
+    self.builder_mut().create_unconditional_branch(cond_block.clone());
+    self.builder_mut().set_current_block(cond_block.clone());
+    let loop_var_addr = self.cache_stack.get(&for_stmt.var.id.literal).unwrap();
+    let loop_var_value = self.builder_mut().create_load(loop_var_addr.clone());
+    let cond = self.builder_mut().create_slt(loop_var_value, extent);
+    self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone());
+    self.builder_mut().set_current_block(body_block);
+    self.generate_compound_stmt(&for_stmt.body, false);
+    let loop_var_value = self.builder_mut().create_load(loop_var_addr.clone());
+    let i32ty = self.tg.builder.context().int_type(32);
+    let one = self.tg.builder.context().const_value(i32ty.clone(), 1);
+    let added = self.builder_mut().create_add(loop_var_value, one);
+    self.builder_mut().create_store(added, loop_var_addr);
+    self.builder_mut().create_unconditional_branch(cond_block.clone());
+    self.cache_stack.pop();
+    self.builder_mut().set_current_block(end_block)
   }
 
   fn generate_expr(&mut self, expr: &ast::Expr, is_lval: bool) -> ValueRef {
@@ -305,6 +331,15 @@ impl CodeGen {
           }
           super::lexer::TokenType::Sub => {
             self.tg.builder.create_sub(lhs, rhs)
+          }
+          super::lexer::TokenType::Mul => {
+            self.tg.builder.create_mul(lhs, rhs)
+          }
+          super::lexer::TokenType::Mod => {
+            self.tg.builder.create_srem(lhs, rhs)
+          }
+          super::lexer::TokenType::Div => {
+            self.tg.builder.create_sdiv(lhs, rhs)
           }
           super::lexer::TokenType::AssignEq => {
             self.tg.builder.create_store(rhs, lhs)

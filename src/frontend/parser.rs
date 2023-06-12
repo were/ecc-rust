@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use super::lexer::{Lexer, TokenType, Token};
 use super::ast::{
-  BuiltinType, BuiltinTypeCode, Type, TranslateUnit, CompoundStmt, ReturnStmt, IntImm, Decl, InlineAsm, NewExpr, Cast
+  BuiltinType, BuiltinTypeCode, Type, TranslateUnit, CompoundStmt, ReturnStmt, IntImm, Decl, InlineAsm, NewExpr, Cast, ForStmt
 };
 use super::ast::{FuncDecl, Stmt, Expr, StrImm, FuncCall, ClassDecl, VarDecl, ArrayType, BinaryOp, ArrayIndex};
 
@@ -135,7 +135,9 @@ fn parse_rval(tokenizer: &mut Lexer) -> Result<Expr, String> {
     tokenizer.consume(TokenType::RPran);
     res
   } else {
-    parse_operator_expr(tokenizer, &[(2, &[TokenType::Add, TokenType::Sub])])
+    parse_operator_expr(tokenizer,
+      &[(2, &[TokenType::Add, TokenType::Sub]),
+        (2, &[TokenType::Mod, TokenType::Div, TokenType::Mul])])
   };
   if tokenizer.lookahead(TokenType::KeywordCastAs) {
     let token = tokenizer.consume(TokenType::KeywordCastAs);
@@ -178,20 +180,46 @@ fn parse_inline_asm(tokenizer: &mut Lexer) -> Result<InlineAsm, String> {
   }
 }
 
+fn parse_for_stmt(tokenizer: &mut Lexer) -> Result<Stmt, String> {
+  tokenizer.consume(TokenType::KeywordFor);
+  let id = tokenizer.consume(TokenType::Identifier);
+  tokenizer.push_token(Token { row: 0, col: 0, literal: "i32".to_string(), value: TokenType::KeywordI32 });
+  let ty = parse_dtype(tokenizer, false).unwrap();
+  tokenizer.consume(TokenType::KeywordIn);
+  let init = Some(parse_rval(tokenizer).unwrap());
+  let var = VarDecl{ty, id, init };
+  tokenizer.consume(TokenType::RangeDotdot);
+  let end = parse_rval(tokenizer).unwrap();
+  let body = parse_compound_stmt(tokenizer).unwrap();
+  Ok(Stmt::ForStmt(Rc::new(ForStmt { var: Rc::new(var), end, body: Rc::new(body) })))
+}
+
 fn parse_statement(tokenizer: &mut Lexer) -> Result<Stmt, String> {
-  if tokenizer.lookahead(TokenType::KeywordReturn) {
-    let res = parse_return(tokenizer).unwrap();
-    return Ok(Stmt::Ret(Rc::new(res)));
+  match tokenizer.tok().value {
+    TokenType::KeywordReturn => {
+      let res = parse_return(tokenizer).unwrap();
+      tokenizer.consume(TokenType::Semicolon);
+      return Ok(Stmt::Ret(Rc::new(res)));
+    }
+    TokenType::KeywordAsm => {
+      let asm = parse_inline_asm(tokenizer).unwrap();
+      tokenizer.consume(TokenType::Semicolon);
+      return Ok(Stmt::InlineAsm(Rc::new(asm)));
+    }
+    TokenType::KeywordLet => {
+      let res = parse_decl_stmt(tokenizer);
+      tokenizer.consume(TokenType::Semicolon);
+      return res;
+    }
+    TokenType::KeywordFor => {
+      return parse_for_stmt(tokenizer);
+    }
+    _ => {
+      let res = Ok(Stmt::Evaluate(parse_assignment_expr(tokenizer).unwrap()));
+      tokenizer.consume(TokenType::Semicolon);
+      return res;
+    }
   }
-  if tokenizer.lookahead(TokenType::KeywordAsm) {
-    let asm = parse_inline_asm(tokenizer).unwrap();
-    return Ok(Stmt::InlineAsm(Rc::new(asm)));
-  }
-  if tokenizer.lookahead(TokenType::KeywordLet) {
-    return parse_decl_stmt(tokenizer);
-  }
-  let res = Ok(Stmt::Evaluate(parse_assignment_expr(tokenizer).unwrap()));
-  res
 }
 
 /// Declare a variable in a compound statement.
@@ -214,7 +242,6 @@ fn parse_compound_stmt(tokenizer: &mut Lexer) -> Result<CompoundStmt, String> {
     match parse_statement(tokenizer) {
       Ok(stmt) => {
         stmts.push(stmt);
-        tokenizer.consume(TokenType::Semicolon);
       }
       Err(msg) => { return Err(msg); }
     }
@@ -312,7 +339,7 @@ pub fn parse_program(tokenizer: &mut Lexer, fname: String) -> Result<TranslateUn
 fn parse_dtype(tokenizer: &mut Lexer, for_new: bool) -> Result<Type, String> {
   let token = tokenizer.consume_any();
   let scalar_ty = match token.value {
-    TokenType::KeywordInt => {
+    TokenType::KeywordI32 => {
       Ok(Type::Builtin(Rc::new(BuiltinType{token, code: BuiltinTypeCode::Int})))
     }
     TokenType::KeywordVoid => {

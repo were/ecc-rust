@@ -1,6 +1,6 @@
-func __print_str__(char[] s, int len) -> void;
+func __print_str__(i8[] s, i32 len) -> void;
 
-func malloc(int size) -> char[];
+func malloc(i32 size) -> i8[];
 
 func print(string s) -> void {
   __print_str__(s.data_, s.length_);

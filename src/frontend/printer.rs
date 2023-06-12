@@ -4,7 +4,7 @@ use super::ast::{
   Decl, FuncDecl, Variable, Type, BuiltinType, CompoundStmt, Stmt,
   ReturnStmt, Expr, TranslateUnit, Linkage, FuncCall, VarDecl,
   ClassDecl, ArrayType, InlineAsm, StrImm, BinaryOp, AttrAccess,
-  BuiltinTypeCode, ArrayIndex, NewExpr, Cast
+  BuiltinTypeCode, ArrayIndex, NewExpr, Cast, ForStmt
 };
 
 fn print_linkage(linkage: &Linkage, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
@@ -158,9 +158,10 @@ fn print_compound_stmt(stmts: &CompoundStmt, f: &mut fmt::Formatter, indent: &St
 fn print_stmt(stmt: &Stmt, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
   match stmt {
     Stmt::Ret(ret) => print_ret(&ret, f, &format!("{}", indent)),
-    Stmt::Evaluate(expr) => print_expr(&expr, f, &format!("{}", indent)),
-    Stmt::InlineAsm(asm) => print_inline_asm(&asm, f, &format!("{}", indent)),
-    Stmt::VarDecl(decl) => print_var_decl(&decl, f, &format!("{}", indent)),
+    Stmt::Evaluate(expr) => print_expr(&expr, f, indent),
+    Stmt::InlineAsm(asm) => print_inline_asm(&asm, f, indent),
+    Stmt::VarDecl(decl) => print_var_decl(&decl, f, indent),
+    Stmt::ForStmt(for_loop) => print_for_stmt(&for_loop, f, indent)
   }
 }
 
@@ -168,6 +169,17 @@ impl fmt::Display for Stmt {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     return print_stmt(&self, f, &"".to_string());
   }
+}
+
+fn print_for_stmt(for_loop: &ForStmt, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
+  write!(f, "ForLoop").unwrap();
+  write!(f, "\n{}|->VarDecl=", indent).unwrap();
+  print_var_decl(&for_loop.var, f, &format!("{}|  ", indent)).unwrap();
+  write!(f, "\n|->End=").unwrap();
+  print_expr(&for_loop.end, f, &format!("{}|  ", indent)).unwrap();
+  write!(f, "\n`->Body=").unwrap();
+  print_compound_stmt(&for_loop.body, f, &format!("{}   ", indent)).unwrap();
+  Ok(())
 }
 
 fn print_inline_asm(asm: &InlineAsm, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
