@@ -178,6 +178,7 @@ struct SymbolResolver {
   pub(super) scopes: ScopeStack,
   new_scope: bool,
   check_func_sig: bool,
+  main: bool,
 }
 
 
@@ -208,6 +209,7 @@ impl Visitor for SymbolResolver {
   }
 
   fn visit_func(&mut self, func: &Rc<FuncDecl>) -> Rc<FuncDecl> {
+    self.main = self.main || func.id.literal == "main";
     self.scopes.push(SymbolTable::new());
     self.new_scope = false;
     let var_decls : Vec<Rc<VarDecl>> = func.args.iter().map(|arg| self.visit_var_decl(arg)).collect();
@@ -412,11 +414,17 @@ impl Visitor for SymbolResolver {
 }
 
 
-pub fn resolve_symbols(ast: &Rc<Linkage>, check_func_sig:bool) -> Rc<Linkage> {
-  SymbolResolver{
+pub fn resolve_symbols(ast: &Rc<Linkage>, check_func_sig:bool) -> Result<Rc<Linkage>, String> {
+  let mut resolver = SymbolResolver{
     scopes: ScopeStack::new(),
     new_scope: true,
-    check_func_sig
-  }.visit_linkage(ast)
+    check_func_sig,
+    main: false
+  };
+  let res = resolver.visit_linkage(ast);
+  if resolver.main {
+    return Ok(res);
+  }
+  return Err("No main function found".to_string());
 }
 
