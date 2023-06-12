@@ -207,6 +207,7 @@ impl CodeGen {
       self.tg.builder.create_store(init, alloca.clone());
     }
     self.cache_stack.insert(var.id().clone(), alloca);
+    eprintln!("inserting {} into cache 0x{:x}", var.id(), &self.cache_stack.stack.last() as *const _ as usize);
   }
 
   fn generate_compound_stmt(&mut self, stmt: &Rc<ast::CompoundStmt>, new_scope: bool) {
@@ -290,7 +291,12 @@ impl CodeGen {
         self.tg.builder.create_global_struct(str_ref, vec![str_len, str_ptr])
       }
       ast::Expr::Variable(var) => {
-        let value = self.cache_stack.get(&var.id()).unwrap();
+        let value = self.cache_stack.get(&var.id());
+        let value = if let Some(value) = value {
+          value.clone()
+        } else {
+          panic!("{} is not defined! 0x{:x}", var.id(), &self.cache_stack.stack.last() as *const _ as usize);
+        };
         if is_lval {
           value
         } else {

@@ -118,13 +118,15 @@ fn print_func(func: &FuncDecl, f: &mut fmt::Formatter, indent: &String) -> fmt::
   write!(f, "{}|->Name={}", indent, func.id.literal).unwrap();
   write!(f, "\n{}|->Args", indent).unwrap();
   for (i, elem) in func.args.iter().enumerate() {
-    let new_indent = format!("{}|  ", indent);
-    if i != func.args.len() - 1 {
-      write!(f, "\n{}|->Arg_{}=", new_indent, i).unwrap();
+    let arg_indent = format!("{}|  ", indent);
+    let new_indent = if i != func.args.len() - 1 {
+      write!(f, "\n{}|->Arg_{}=", arg_indent, i).unwrap();
+      format!("{}|  ", arg_indent)
     } else {
-      write!(f, "\n{}`->Arg_{}=", new_indent, i).unwrap();
-    }
-    print_var_decl(elem, f, &format!("{}   ", new_indent)).unwrap();
+      write!(f, "\n{}`->Arg_{}=", arg_indent, i).unwrap();
+      format!("{}   ", arg_indent)
+    };
+    print_var_decl(elem, f, &new_indent).unwrap();
   }
   write!(f, "\n{}`->Body=", indent).unwrap();
   print_compound_stmt(&func.body, f, &format!("{}   ", indent))
@@ -201,7 +203,7 @@ fn print_inline_asm(asm: &InlineAsm, f: &mut fmt::Formatter, indent: &String) ->
 }
 
 fn print_func_call(call: &FuncCall, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
-  write!(f, "Call={}\n{}`->Params\n", call.fname.literal, indent).unwrap();
+  write!(f, "Call\n{}|->Func={}\n{}`->Params\n", indent, call.fname.literal, indent).unwrap();
   let new_indent = format!("{}   ", indent);
   for (i, elem) in call.params.iter().enumerate() {
     if i != call.params.len() - 1 {
@@ -221,7 +223,7 @@ fn print_ret(ret: &ReturnStmt, f: &mut fmt::Formatter, indent: &String) -> fmt::
   match &ret.value {
     Some(x) => {
       write!(f, "\n{}`->Value=", indent).unwrap();
-      print_expr(&x, f, indent)
+      print_expr(&x, f, &format!("{}   ", indent))
     }
     None => {
       write!(f, " [No Value]")

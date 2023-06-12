@@ -397,7 +397,12 @@ impl Visitor for SymbolResolver {
   fn visit_builtin(&mut self, x: &Rc<super::ast::BuiltinType>) -> Type {
     match &x.code {
       BuiltinTypeCode::Unknown => {
-        let dtype = self.scopes.find(&x.token.literal).unwrap();
+        let dtype = self.scopes.find(&x.token.literal);
+        let dtype = if let Some(dtype) = dtype {
+          dtype
+        } else {
+          panic!("Unknown type {}", x.token);
+        };
         if let WithID::Class(class) = dtype {
           return Type::Class(Rc::new(ClassRef {
             id: x.token.clone(),
