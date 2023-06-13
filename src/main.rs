@@ -4,6 +4,7 @@ use std::io::Read;
 
 mod frontend;
 mod transform;
+mod compiler;
 
 pub use crate::frontend::parse;
 pub use crate::frontend::semantic_check;
@@ -26,25 +27,7 @@ fn main() -> Result<(), String> {
   match file {
     Ok(mut f) => {
       f.read_to_string(&mut src).unwrap();
-      let ast = parse(args[1].clone(), src);
-      let ast = match ast {
-        Ok(ast) => ast,
-        Err(msg) => return Err(msg)
-      };
-      match semantic_check(&ast, print_ast) {
-        Ok(ast) => {
-          if print_ast == 1 {
-            println!("{}", ast);
-          }
-          let module = frontend::codegen_llvm(&ast);
-          let optimized_module = transform::optimize(module);
-          println!("{}", optimized_module);
-          Ok(())
-        },
-        Err(msg) => {
-          Err(msg)
-        }
-      }
+      compiler::invoke(args[1].clone(), src, print_ast)
     }
     Err(msg) => {
       eprintln!("Failed to open file: {}", msg);
