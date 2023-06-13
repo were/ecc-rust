@@ -187,7 +187,7 @@ impl CodeGen {
       for (i, arg) in args.iter().enumerate() {
         let ty = arg.get_type(self.tg.builder.context());
         let ptr = self.builder_mut().create_alloca(ty);
-        self.builder_mut().create_store(arg.clone(), ptr.clone());
+        self.builder_mut().create_store(arg.clone(), ptr.clone()).unwrap();
         self.cache_stack.insert(
           func.args[i].id.literal.clone(),
           ptr
@@ -204,7 +204,7 @@ impl CodeGen {
     let alloca = self.tg.builder.create_alloca(ty);
     if let Some(init) = &var.init {
       let init = self.generate_expr(&init, false);
-      self.tg.builder.create_store(init, alloca.clone());
+      self.tg.builder.create_store(init, alloca.clone()).unwrap();
     }
     self.cache_stack.insert(var.id().clone(), alloca);
   }
@@ -215,6 +215,9 @@ impl CodeGen {
     }
     for stmt in &stmt.stmts {
       self.generate_stmt(&stmt);
+    }
+    if new_scope {
+      self.cache_stack.pop();
     }
   }
 
@@ -239,13 +242,16 @@ impl CodeGen {
         self.generate_expr(&expr, false);
       }
       ast::Stmt::VarDecl(decl) => {
-        self.generate_var_decl(decl);
+        self.generate_var_decl(&decl);
       }
       ast::Stmt::InlineAsm(asm) => {
         self.generate_inline_asm(&asm);
       }
       ast::Stmt::ForStmt(for_loop) => {
         self.generate_for_stmt(&for_loop);
+      }
+      ast::Stmt::CompoundStmt(stmt) => {
+        self.generate_compound_stmt(&stmt, true)
       }
     }
   }
@@ -269,7 +275,7 @@ impl CodeGen {
     let i32ty = self.tg.builder.context().int_type(32);
     let one = self.tg.builder.context().const_value(i32ty.clone(), 1);
     let added = self.builder_mut().create_add(loop_var_value, one);
-    self.builder_mut().create_store(added, loop_var_addr);
+    self.builder_mut().create_store(added, loop_var_addr).unwrap();
     self.builder_mut().create_unconditional_branch(cond_block.clone());
     self.cache_stack.pop();
     self.builder_mut().set_current_block(end_block)
@@ -354,7 +360,7 @@ impl CodeGen {
             self.tg.builder.create_sdiv(lhs, rhs)
           }
           super::lexer::TokenType::AssignEq => {
-            self.tg.builder.create_store(rhs, lhs)
+            self.tg.builder.create_store(rhs, lhs).unwrap()
           }
           _ => { panic!("Unknown binary op {}", binop.op); }
         }
@@ -434,11 +440,6 @@ pub fn codegen(ast: &Rc<ast::Linkage>, tt: String, layout: String) -> ir::module
       stack: Vec::new(),
     }
   };
-
-  //   module: ctx.create_module(&fname),
-  //   types: tg,
-  //   builder: ctx.create_builder(),
-  // };
 
   cg.generate_linkage(ast);
 

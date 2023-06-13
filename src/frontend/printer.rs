@@ -161,7 +161,8 @@ fn print_stmt(stmt: &Stmt, f: &mut fmt::Formatter, indent: &String) -> fmt::Resu
     Stmt::Evaluate(expr) => print_expr(&expr, f, indent),
     Stmt::InlineAsm(asm) => print_inline_asm(&asm, f, indent),
     Stmt::VarDecl(decl) => print_var_decl(&decl, f, indent),
-    Stmt::ForStmt(for_loop) => print_for_stmt(&for_loop, f, indent)
+    Stmt::ForStmt(for_loop) => print_for_stmt(&for_loop, f, indent),
+    Stmt::CompoundStmt(stmt) => print_compound_stmt(&stmt, f, indent)
   }
 }
 

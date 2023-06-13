@@ -119,7 +119,8 @@ pub trait Visitor {
       Stmt::Evaluate(expr) => Stmt::Evaluate(self.visit_expr(expr)),
       Stmt::InlineAsm(asm) => self.visit_inline_asm(asm),
       Stmt::VarDecl(decl) => Stmt::VarDecl(self.visit_var_decl(decl)),
-      Stmt::ForStmt(for_loop) => Stmt::ForStmt(self.visit_for_stmt(for_loop))
+      Stmt::ForStmt(for_loop) => Stmt::ForStmt(self.visit_for_stmt(for_loop)),
+      Stmt::CompoundStmt(stmt) => Stmt::CompoundStmt(self.visit_compound_stmt(stmt)),
     }
   }
 

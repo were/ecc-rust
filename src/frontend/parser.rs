@@ -214,6 +214,9 @@ fn parse_statement(tokenizer: &mut Lexer) -> Result<Stmt, String> {
     TokenType::KeywordFor => {
       return parse_for_stmt(tokenizer);
     }
+    TokenType::LBrace => {
+      return Ok(Stmt::CompoundStmt(Rc::new(parse_compound_stmt(tokenizer).unwrap())));
+    }
     _ => {
       let res = Ok(Stmt::Evaluate(parse_assignment_expr(tokenizer).unwrap()));
       tokenizer.consume(TokenType::Semicolon);
