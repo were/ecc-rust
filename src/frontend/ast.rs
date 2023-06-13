@@ -146,6 +146,7 @@ pub enum Stmt {
   InlineAsm(Rc<InlineAsm>),
   VarDecl(Rc<VarDecl>),
   ForStmt(Rc<ForStmt>),
+  CompoundStmt(Rc<CompoundStmt>),
   Evaluate(Expr),
 }
 

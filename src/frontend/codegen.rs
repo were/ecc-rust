@@ -179,7 +179,7 @@ impl CodeGen {
       self.cache_stack.push();
       let func_ref = self.cache_stack.get(&func.id.literal).unwrap();
       let args = {
-        let llvm_func = func_ref.as_ref::<Function>(self.tg.builder.context()).unwrap();
+        let llvm_func = func_ref.as_ref::<Function>(&self.tg.builder.module.context).unwrap();
         (0..llvm_func.get_num_args()).map(|i| {
           llvm_func.get_arg(i)
         }).collect::<Vec<ValueRef>>()
@@ -187,7 +187,7 @@ impl CodeGen {
       for (i, arg) in args.iter().enumerate() {
         let ty = arg.get_type(self.tg.builder.context());
         let ptr = self.builder_mut().create_alloca(ty);
-        self.builder_mut().create_store(arg.clone(), ptr.clone());
+        self.builder_mut().create_store(arg.clone(), ptr.clone()).unwrap();
         self.cache_stack.insert(
           func.args[i].id.literal.clone(),
           ptr
@@ -204,7 +204,7 @@ impl CodeGen {
     let alloca = self.tg.builder.create_alloca(ty);
     if let Some(init) = &var.init {
       let init = self.generate_expr(&init, false);
-      self.tg.builder.create_store(init, alloca.clone());
+      self.tg.builder.create_store(init, alloca.clone()).unwrap();
     }
     self.cache_stack.insert(var.id().clone(), alloca);
   }
@@ -216,29 +216,42 @@ impl CodeGen {
     for stmt in &stmt.stmts {
       self.generate_stmt(&stmt);
     }
+    if new_scope {
+      self.cache_stack.pop();
+    }
   }
 
   fn generate_stmt(&mut self, stmt: &ast::Stmt) {
     match stmt {
       ast::Stmt::Ret(ret) => {
-        if let Some(expr) = &ret.value {
+        let func = self.tg.builder.get_current_function().unwrap();
+        let func = func.as_ref::<Function>(&self.tg.builder.module.context).unwrap();
+        let func_ret_ty = func.get_ret_ty(&self.tg.builder.module.context);
+        let expr_ty = if let Some(expr) = &ret.value {
           let val = self.generate_expr(&expr, false);
+          let expr_ty = val.get_type(&self.tg.builder.module.context);
           self.tg.builder.create_return(Some(val));
+          expr_ty
         } else {
           self.tg.builder.create_return(None);
-        }
+          self.tg.builder.module.context.void_type()
+        };
+        assert!(expr_ty == func_ret_ty);
       }
       ast::Stmt::Evaluate(expr) => {
         self.generate_expr(&expr, false);
       }
       ast::Stmt::VarDecl(decl) => {
-        self.generate_var_decl(decl);
+        self.generate_var_decl(&decl);
       }
       ast::Stmt::InlineAsm(asm) => {
         self.generate_inline_asm(&asm);
       }
       ast::Stmt::ForStmt(for_loop) => {
         self.generate_for_stmt(&for_loop);
+      }
+      ast::Stmt::CompoundStmt(stmt) => {
+        self.generate_compound_stmt(&stmt, true)
       }
     }
   }
@@ -262,7 +275,7 @@ impl CodeGen {
     let i32ty = self.tg.builder.context().int_type(32);
     let one = self.tg.builder.context().const_value(i32ty.clone(), 1);
     let added = self.builder_mut().create_add(loop_var_value, one);
-    self.builder_mut().create_store(added, loop_var_addr);
+    self.builder_mut().create_store(added, loop_var_addr).unwrap();
     self.builder_mut().create_unconditional_branch(cond_block.clone());
     self.cache_stack.pop();
     self.builder_mut().set_current_block(end_block)
@@ -290,7 +303,12 @@ impl CodeGen {
         self.tg.builder.create_global_struct(str_ref, vec![str_len, str_ptr])
       }
       ast::Expr::Variable(var) => {
-        let value = self.cache_stack.get(&var.id()).unwrap();
+        let value = self.cache_stack.get(&var.id());
+        let value = if let Some(value) = value {
+          value.clone()
+        } else {
+          panic!("{} is not defined! 0x{:x}", var.id(), &self.cache_stack.stack.last() as *const _ as usize);
+        };
         if is_lval {
           value
         } else {
@@ -342,7 +360,7 @@ impl CodeGen {
             self.tg.builder.create_sdiv(lhs, rhs)
           }
           super::lexer::TokenType::AssignEq => {
-            self.tg.builder.create_store(rhs, lhs)
+            self.tg.builder.create_store(rhs, lhs).unwrap()
           }
           _ => { panic!("Unknown binary op {}", binop.op); }
         }
@@ -422,11 +440,6 @@ pub fn codegen(ast: &Rc<ast::Linkage>, tt: String, layout: String) -> ir::module
       stack: Vec::new(),
     }
   };
-
-  //   module: ctx.create_module(&fname),
-  //   types: tg,
-  //   builder: ctx.create_builder(),
-  // };
 
   cg.generate_linkage(ast);
 

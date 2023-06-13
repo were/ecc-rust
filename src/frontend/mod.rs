@@ -28,24 +28,35 @@ pub fn inject_builtins(ast: ast::TranslateUnit) -> Rc<Linkage> {
   })
 }
 
-pub fn parse(fname: String, src: String) -> Rc<Linkage> {
+pub fn parse(fname: String, src: String) -> Result<Rc<Linkage>, String> {
   let mut tokenizer = lexer::Lexer::new(src);
-  let ast = parser::parse_program(&mut tokenizer, fname).unwrap();
-  let res = inject_builtins(ast);
-  return res
+  match parser::parse_program(&mut tokenizer, fname) {
+    Ok(ast) => {
+      return Ok(inject_builtins(ast));
+    }
+    Err(msg) => {
+      Err(msg)
+    }
+  }
 }
 
-pub fn semantic_check(ast: &Rc<Linkage>, print_ast: i32) -> Rc<Linkage> {
+pub fn semantic_check(ast: &Rc<Linkage>, print_ast: i32) -> Result<Rc<Linkage>, String> {
   let hoisted = sema::hoist_methods(ast);
   if print_ast == 2 {
     println!("{}", &hoisted);
   }
-  let type_resolved = sema::resolve_symbols(&hoisted, false);
-  let res = sema::resolve_symbols(&type_resolved, true);
-  if print_ast == 3 {
-    println!("{}", res);
+  match sema::resolve_symbols(&hoisted, false) {
+    Ok(type_resolved) => {
+      let res = sema::resolve_symbols(&type_resolved, true).unwrap();
+      if print_ast == 3 {
+        println!("{}", res);
+      }
+      Ok(res)
+    },
+    Err(msg) => {
+      Err(msg)
+    }
   }
-  res
 }
 
 pub fn codegen_llvm(ast: &Rc<Linkage>) -> Module {

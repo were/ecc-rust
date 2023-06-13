@@ -178,6 +178,7 @@ struct SymbolResolver {
   pub(super) scopes: ScopeStack,
   new_scope: bool,
   check_func_sig: bool,
+  main: bool,
 }
 
 
@@ -207,7 +208,13 @@ impl Visitor for SymbolResolver {
     return linkage.clone();
   }
 
+  fn visit_class(&mut self, class:&Rc<ClassDecl>) -> Rc<ClassDecl> {
+    assert!(class.methods.len() == 0);
+    class.clone()
+  }
+
   fn visit_func(&mut self, func: &Rc<FuncDecl>) -> Rc<FuncDecl> {
+    self.main = self.main || func.id.literal == "main";
     self.scopes.push(SymbolTable::new());
     self.new_scope = false;
     let var_decls : Vec<Rc<VarDecl>> = func.args.iter().map(|arg| self.visit_var_decl(arg)).collect();
@@ -287,10 +294,7 @@ impl Visitor for SymbolResolver {
         if let Some(with_id) = self.scopes.find(&x.literal) {
           match with_id {
             WithID::Variable(decl) => {
-              return Expr::Variable(Rc::new(Variable{
-                id: x.clone(),
-                decl: decl.clone()
-              }));
+              return Expr::Variable(Rc::new(Variable{ id: x.clone(), decl: decl.clone() }));
             }
             _ => {
               panic!("Expect {} to be a variable", x);
@@ -395,7 +399,12 @@ impl Visitor for SymbolResolver {
   fn visit_builtin(&mut self, x: &Rc<super::ast::BuiltinType>) -> Type {
     match &x.code {
       BuiltinTypeCode::Unknown => {
-        let dtype = self.scopes.find(&x.token.literal).unwrap();
+        let dtype = self.scopes.find(&x.token.literal);
+        let dtype = if let Some(dtype) = dtype {
+          dtype
+        } else {
+          panic!("Unknown type {}", x.token);
+        };
         if let WithID::Class(class) = dtype {
           return Type::Class(Rc::new(ClassRef {
             id: x.token.clone(),
@@ -412,11 +421,17 @@ impl Visitor for SymbolResolver {
 }
 
 
-pub fn resolve_symbols(ast: &Rc<Linkage>, check_func_sig:bool) -> Rc<Linkage> {
-  SymbolResolver{
+pub fn resolve_symbols(ast: &Rc<Linkage>, check_func_sig:bool) -> Result<Rc<Linkage>, String> {
+  let mut resolver = SymbolResolver{
     scopes: ScopeStack::new(),
     new_scope: true,
-    check_func_sig
-  }.visit_linkage(ast)
+    check_func_sig,
+    main: false
+  };
+  let res = resolver.visit_linkage(ast);
+  if resolver.main {
+    return Ok(res);
+  }
+  return Err("No main function found".to_string());
 }
 
