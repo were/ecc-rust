@@ -68,26 +68,24 @@ fn print_new_expr(ne: &NewExpr, f: &mut fmt::Formatter, indent: &String) -> fmt:
 
 fn print_class(class: &ClassDecl, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
   write!(f, "ClassDecl 0x{:x}\n", class as *const ClassDecl as usize).unwrap();
-  write!(f, "{}|->Name={}", indent, class.id).unwrap();
+  write!(f, "{}`->Name={}", indent, class.id).unwrap();
   let total = class.methods.len() + class.attrs.len();
   for (i, elem) in class.methods.iter().enumerate() {
     if i == total - 1 {
-      write!(f, "{}`->Method_{}=", indent, i).unwrap();
+      write!(f, "\n{}`->Method_{}=", indent, i).unwrap();
       print_func(elem, f, &format!("{}   ", indent)).unwrap();
     } else {
-      write!(f, "{}|->Method_{}=", indent, i).unwrap();
+      write!(f, "\n{}|->Method_{}=", indent, i).unwrap();
       print_func(elem, f, &format!("{}|  ", indent)).unwrap();
-      write!(f, "\n").unwrap();
     }
   }
   for (i, elem) in class.attrs.iter().enumerate() {
     if i + class.methods.len() == total - 1 {
-      write!(f, "{}`->Attr_{}=", indent, i).unwrap();
+      write!(f, "\n{}`->Attr_{}=", indent, i).unwrap();
       print_var_decl(elem, f, &format!("{}   ", indent)).unwrap();
     } else {
-      write!(f, "{}|->Attr_{}=", indent, i).unwrap();
+      write!(f, "\n{}|->Attr_{}=", indent, i).unwrap();
       print_var_decl(elem, f, &format!("{}|  ", indent)).unwrap();
-      write!(f, "\n").unwrap();
     }
   }
   Ok(())

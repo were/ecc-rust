@@ -208,6 +208,11 @@ impl Visitor for SymbolResolver {
     return linkage.clone();
   }
 
+  fn visit_class(&mut self, class:&Rc<ClassDecl>) -> Rc<ClassDecl> {
+    assert!(class.methods.len() == 0);
+    class.clone()
+  }
+
   fn visit_func(&mut self, func: &Rc<FuncDecl>) -> Rc<FuncDecl> {
     self.main = self.main || func.id.literal == "main";
     self.scopes.push(SymbolTable::new());
@@ -289,10 +294,7 @@ impl Visitor for SymbolResolver {
         if let Some(with_id) = self.scopes.find(&x.literal) {
           match with_id {
             WithID::Variable(decl) => {
-              return Expr::Variable(Rc::new(Variable{
-                id: x.clone(),
-                decl: decl.clone()
-              }));
+              return Expr::Variable(Rc::new(Variable{ id: x.clone(), decl: decl.clone() }));
             }
             _ => {
               panic!("Expect {} to be a variable", x);

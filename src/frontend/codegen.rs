@@ -179,7 +179,7 @@ impl CodeGen {
       self.cache_stack.push();
       let func_ref = self.cache_stack.get(&func.id.literal).unwrap();
       let args = {
-        let llvm_func = func_ref.as_ref::<Function>(self.tg.builder.context()).unwrap();
+        let llvm_func = func_ref.as_ref::<Function>(&self.tg.builder.module.context).unwrap();
         (0..llvm_func.get_num_args()).map(|i| {
           llvm_func.get_arg(i)
         }).collect::<Vec<ValueRef>>()
@@ -207,7 +207,6 @@ impl CodeGen {
       self.tg.builder.create_store(init, alloca.clone());
     }
     self.cache_stack.insert(var.id().clone(), alloca);
-    eprintln!("inserting {} into cache 0x{:x}", var.id(), &self.cache_stack.stack.last() as *const _ as usize);
   }
 
   fn generate_compound_stmt(&mut self, stmt: &Rc<ast::CompoundStmt>, new_scope: bool) {
@@ -222,12 +221,19 @@ impl CodeGen {
   fn generate_stmt(&mut self, stmt: &ast::Stmt) {
     match stmt {
       ast::Stmt::Ret(ret) => {
-        if let Some(expr) = &ret.value {
+        let func = self.tg.builder.get_current_function().unwrap();
+        let func = func.as_ref::<Function>(&self.tg.builder.module.context).unwrap();
+        let func_ret_ty = func.get_ret_ty(&self.tg.builder.module.context);
+        let expr_ty = if let Some(expr) = &ret.value {
           let val = self.generate_expr(&expr, false);
+          let expr_ty = val.get_type(&self.tg.builder.module.context);
           self.tg.builder.create_return(Some(val));
+          expr_ty
         } else {
           self.tg.builder.create_return(None);
-        }
+          self.tg.builder.module.context.void_type()
+        };
+        assert!(expr_ty == func_ret_ty);
       }
       ast::Stmt::Evaluate(expr) => {
         self.generate_expr(&expr, false);
