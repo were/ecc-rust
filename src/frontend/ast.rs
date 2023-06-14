@@ -148,6 +148,14 @@ pub enum Stmt {
   ForStmt(Rc<ForStmt>),
   CompoundStmt(Rc<CompoundStmt>),
   Evaluate(Expr),
+  IfStmt(Rc<IfStmt>),
+}
+
+#[derive(Clone)]
+pub struct IfStmt {
+  pub cond: Expr,
+  pub then_body: Rc<CompoundStmt>,
+  pub else_body: Option<Rc<CompoundStmt>>,
 }
 
 /// For loop node.

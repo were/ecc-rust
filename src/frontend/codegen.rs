@@ -253,6 +253,22 @@ impl CodeGen {
       ast::Stmt::CompoundStmt(stmt) => {
         self.generate_compound_stmt(&stmt, true)
       }
+      ast::Stmt::IfStmt(if_stmt) => {
+        let cond = self.generate_expr(&if_stmt.cond, false);
+        let then_block = self.builder_mut().add_block(format!("then.{}", cond.skey));
+        let else_block = self.builder_mut().add_block(format!("else.{}", cond.skey));
+        let converge = self.builder_mut().add_block(format!("converge.{}", cond.skey));
+        self.builder_mut().create_conditional_branch(cond, then_block.clone(), else_block.clone());
+        self.builder_mut().set_current_block(then_block.clone());
+        self.generate_compound_stmt(&if_stmt.then_body, true);
+        self.builder_mut().create_unconditional_branch(converge.clone());
+        if let Some(else_body) = &if_stmt.else_body {
+          self.builder_mut().set_current_block(else_block.clone());
+          self.generate_compound_stmt(&else_body, true);
+          self.builder_mut().create_unconditional_branch(converge.clone());
+        }
+        self.builder_mut().set_current_block(converge.clone());
+      }
     }
   }
 
@@ -361,6 +377,12 @@ impl CodeGen {
           }
           super::lexer::TokenType::AssignEq => {
             self.tg.builder.create_store(rhs, lhs).unwrap()
+          }
+          super::lexer::TokenType::LT => {
+            self.tg.builder.create_slt(rhs, lhs)
+          }
+          super::lexer::TokenType::GT => {
+            self.tg.builder.create_sgt(rhs, lhs)
           }
           _ => { panic!("Unknown binary op {}", binop.op); }
         }

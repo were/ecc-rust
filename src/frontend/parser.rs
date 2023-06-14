@@ -4,7 +4,7 @@ use super::lexer::{Lexer, TokenType, Token};
 use super::ast::{
   BuiltinType, BuiltinTypeCode, Type, TranslateUnit, CompoundStmt, ReturnStmt, IntImm, Decl, InlineAsm, NewExpr, Cast, ForStmt
 };
-use super::ast::{FuncDecl, Stmt, Expr, StrImm, FuncCall, ClassDecl, VarDecl, ArrayType, BinaryOp, ArrayIndex};
+use super::ast::{FuncDecl, Stmt, Expr, StrImm, FuncCall, ClassDecl, VarDecl, ArrayType, BinaryOp, ArrayIndex, IfStmt};
 
 fn parse_intimm(tokenizer: &mut Lexer) -> Result<Expr, String> {
   let token = tokenizer.consume(TokenType::IntLiteral);
@@ -136,7 +136,8 @@ fn parse_rval(tokenizer: &mut Lexer) -> Result<Expr, String> {
     res
   } else {
     parse_operator_expr(tokenizer,
-      &[(2, &[TokenType::Add, TokenType::Sub]),
+      &[(2, &[TokenType::LE, TokenType::LT, TokenType::GE, TokenType::GT]),
+        (2, &[TokenType::Add, TokenType::Sub]),
         (2, &[TokenType::Mod, TokenType::Div, TokenType::Mul])])
   };
   if tokenizer.lookahead(TokenType::KeywordCastAs) {
@@ -217,12 +218,28 @@ fn parse_statement(tokenizer: &mut Lexer) -> Result<Stmt, String> {
     TokenType::LBrace => {
       return Ok(Stmt::CompoundStmt(Rc::new(parse_compound_stmt(tokenizer).unwrap())));
     }
+    TokenType::KeywordIf => {
+      return Ok(Stmt::IfStmt(Rc::new(parse_if_stmt(tokenizer).unwrap())));
+    }
     _ => {
       let res = Ok(Stmt::Evaluate(parse_assignment_expr(tokenizer).unwrap()));
       tokenizer.consume(TokenType::Semicolon);
       return res;
     }
   }
+}
+
+fn parse_if_stmt(tokenizer: &mut Lexer) -> Result<IfStmt, String> {
+  tokenizer.consume(TokenType::KeywordIf);
+  let cond = parse_rval(tokenizer);
+  let then_body = Rc::new(parse_compound_stmt(tokenizer).unwrap());
+  let else_body = if tokenizer.lookahead(TokenType::KeywordElse) {
+    tokenizer.consume(TokenType::KeywordElse);
+    Some(Rc::new(parse_compound_stmt(tokenizer).unwrap()))
+  } else {
+    None
+  };
+  Ok(IfStmt{ cond: cond.unwrap(), then_body, else_body })
 }
 
 /// Declare a variable in a compound statement.
