@@ -4,7 +4,8 @@ use super::ast::{
   Type, TranslateUnit, BuiltinType, Variable,
   FuncDecl, CompoundStmt, Stmt, ReturnStmt, IntImm,
   Decl, Expr, FuncCall, Linkage, VarDecl, ClassDecl,
-  InlineAsm, BinaryOp, ArrayType, AttrAccess, ArrayIndex, NewExpr, Cast, ForStmt
+  InlineAsm, BinaryOp, ArrayType, AttrAccess, ArrayIndex,
+  NewExpr, Cast, ForStmt, IfStmt
 };
 
 #[macro_export]
@@ -121,7 +122,23 @@ pub trait Visitor {
       Stmt::VarDecl(decl) => Stmt::VarDecl(self.visit_var_decl(decl)),
       Stmt::ForStmt(for_loop) => Stmt::ForStmt(self.visit_for_stmt(for_loop)),
       Stmt::CompoundStmt(stmt) => Stmt::CompoundStmt(self.visit_compound_stmt(stmt)),
+      Stmt::IfStmt(if_stmt) => Stmt::IfStmt(self.visit_if_stmt(if_stmt)),
     }
+  }
+
+  fn visit_if_stmt(&mut self, if_stmt: &Rc<IfStmt>) -> Rc<IfStmt> {
+    let cond = self.visit_expr(&if_stmt.cond);
+    let then_body = self.visit_compound_stmt(&if_stmt.then_body);
+    let else_body = if let Some(else_body) = &if_stmt.else_body {
+      Some(self.visit_compound_stmt(else_body))
+    } else {
+      None
+    };
+    Rc::new(IfStmt {
+      cond,
+      then_body,
+      else_body,
+    })
   }
 
   fn visit_linkage(&mut self, linkage:&Rc<Linkage>) -> Rc<Linkage> {

@@ -4,7 +4,7 @@ use super::ast::{
   Decl, FuncDecl, Variable, Type, BuiltinType, CompoundStmt, Stmt,
   ReturnStmt, Expr, TranslateUnit, Linkage, FuncCall, VarDecl,
   ClassDecl, ArrayType, InlineAsm, StrImm, BinaryOp, AttrAccess,
-  BuiltinTypeCode, ArrayIndex, NewExpr, Cast, ForStmt
+  BuiltinTypeCode, ArrayIndex, NewExpr, Cast, ForStmt, IfStmt
 };
 
 fn print_linkage(linkage: &Linkage, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
@@ -162,8 +162,25 @@ fn print_stmt(stmt: &Stmt, f: &mut fmt::Formatter, indent: &String) -> fmt::Resu
     Stmt::InlineAsm(asm) => print_inline_asm(&asm, f, indent),
     Stmt::VarDecl(decl) => print_var_decl(&decl, f, indent),
     Stmt::ForStmt(for_loop) => print_for_stmt(&for_loop, f, indent),
-    Stmt::CompoundStmt(stmt) => print_compound_stmt(&stmt, f, indent)
+    Stmt::CompoundStmt(stmt) => print_compound_stmt(&stmt, f, indent),
+    Stmt::IfStmt(if_stmt) => print_if_stmt(&if_stmt, f, indent)
   }
+}
+
+fn print_if_stmt(if_stmt: &IfStmt, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
+  write!(f, "IfStmt").unwrap();
+  write!(f, "\n{}|->Cond=", indent).unwrap();
+  print_expr(&if_stmt.cond, f, &format!("{}   ", indent)).unwrap();
+  if let Some(else_stmt) = &if_stmt.else_body {
+    write!(f, "\n{}|->Then=", indent).unwrap();
+    print_compound_stmt(&if_stmt.then_body, f, &format!("{}   ", indent)).unwrap();
+    write!(f, "\n{}`->Else=", indent).unwrap();
+    print_compound_stmt(&else_stmt, f, &format!("{}   ", indent)).unwrap();
+  } else {
+    write!(f, "\n{}`->Then=", indent).unwrap();
+    print_compound_stmt(&if_stmt.then_body, f, &format!("{}   ", indent)).unwrap();
+  }
+  Ok(())
 }
 
 impl fmt::Display for Stmt {
