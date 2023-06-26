@@ -148,6 +148,11 @@ pub struct WhileStmt {
 }
 
 #[derive(Clone)]
+pub struct LoopJump {
+  pub loc: Token,
+}
+
+#[derive(Clone)]
 pub enum Stmt {
   Ret(Rc<ReturnStmt>),
   InlineAsm(Rc<InlineAsm>),
@@ -157,6 +162,7 @@ pub enum Stmt {
   Evaluate(Expr),
   IfStmt(Rc<IfStmt>),
   WhileStmt(Rc<WhileStmt>),
+  LoopJump(Rc<LoopJump>),
 }
 
 #[derive(Clone)]

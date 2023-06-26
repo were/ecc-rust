@@ -124,6 +124,7 @@ pub trait Visitor {
       Stmt::CompoundStmt(stmt) => Stmt::CompoundStmt(self.visit_compound_stmt(stmt)),
       Stmt::IfStmt(if_stmt) => Stmt::IfStmt(self.visit_if_stmt(if_stmt)),
       Stmt::WhileStmt(while_stmt) => Stmt::WhileStmt(self.visit_while_stmt(while_stmt)),
+      Stmt::LoopJump(jump) => Stmt::LoopJump(jump.clone()),
     }
   }
 

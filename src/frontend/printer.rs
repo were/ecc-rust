@@ -166,6 +166,7 @@ fn print_stmt(stmt: &Stmt, f: &mut fmt::Formatter, indent: &String) -> fmt::Resu
     Stmt::CompoundStmt(stmt) => print_compound_stmt(&stmt, f, indent),
     Stmt::IfStmt(if_stmt) => print_if_stmt(&if_stmt, f, indent),
     Stmt::WhileStmt(while_stmt) => print_while_stmt(&while_stmt, f, indent),
+    Stmt::LoopJump(jump) => write!(f, "LoopJump {}", jump.loc.literal),
   }
 }
 

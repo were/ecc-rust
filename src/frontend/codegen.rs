@@ -8,7 +8,7 @@ use trinity::ir::{
   value::Function, PointerType
 };
 use trinity::builder::Builder;
-use super::ast::{self, ForStmt, WhileStmt, IfStmt};
+use super::ast::{self, ForStmt, WhileStmt, IfStmt, ReturnStmt};
 
 struct TypeGen {
   pub builder: Builder,
@@ -127,6 +127,7 @@ impl CacheStack {
 struct CodeGen {
   tg: TypeGen,
   cache_stack: CacheStack,
+  loop_cond_and_end: Option<(ValueRef, ValueRef)>,
 }
  
 impl CodeGen {
@@ -221,22 +222,26 @@ impl CodeGen {
     }
   }
 
+  fn generate_return_stmt(&mut self, ret: &ReturnStmt) {
+    let func = self.tg.builder.get_current_function().unwrap();
+    let func = func.as_ref::<Function>(&self.tg.builder.module.context).unwrap();
+    let func_ret_ty = func.get_ret_ty(&self.tg.builder.module.context);
+    let expr_ty = if let Some(expr) = &ret.value {
+      let val = self.generate_expr(&expr, false);
+      let expr_ty = val.get_type(&self.tg.builder.module.context);
+      self.tg.builder.create_return(Some(val));
+      expr_ty
+    } else {
+      self.tg.builder.create_return(None);
+      self.tg.builder.module.context.void_type()
+    };
+    assert!(expr_ty == func_ret_ty);
+  }
+
   fn generate_stmt(&mut self, stmt: &ast::Stmt) {
     match stmt {
       ast::Stmt::Ret(ret) => {
-        let func = self.tg.builder.get_current_function().unwrap();
-        let func = func.as_ref::<Function>(&self.tg.builder.module.context).unwrap();
-        let func_ret_ty = func.get_ret_ty(&self.tg.builder.module.context);
-        let expr_ty = if let Some(expr) = &ret.value {
-          let val = self.generate_expr(&expr, false);
-          let expr_ty = val.get_type(&self.tg.builder.module.context);
-          self.tg.builder.create_return(Some(val));
-          expr_ty
-        } else {
-          self.tg.builder.create_return(None);
-          self.tg.builder.module.context.void_type()
-        };
-        assert!(expr_ty == func_ret_ty);
+        self.generate_return_stmt(&ret);
       }
       ast::Stmt::Evaluate(expr) => {
         self.generate_expr(&expr, false);
@@ -259,6 +264,25 @@ impl CodeGen {
       ast::Stmt::WhileStmt(while_stmt) => {
         self.generate_while_stmt(&while_stmt);
       }
+      ast::Stmt::LoopJump(jump) => {
+        self.generate_loop_jump(&jump);
+      }
+    }
+  }
+
+  fn generate_loop_jump(&mut self, jump: &ast::LoopJump) {
+    if let Some((cond, end)) = &self.loop_cond_and_end {
+      match &jump.loc.value {
+        super::lexer::TokenType::KeywordBreak => {
+          self.tg.builder.create_unconditional_branch(end.clone());
+        }
+        super::lexer::TokenType::KeywordContinue => {
+          self.tg.builder.create_unconditional_branch(cond.clone());
+        }
+        _ => {}
+      }
+    } else {
+      panic!("Loop jump continue/break outside of loop");
     }
   }
 
@@ -271,19 +295,23 @@ impl CodeGen {
     self.builder_mut().set_current_block(then_block.clone());
     self.generate_compound_stmt(&if_stmt.then_body, true);
     self.builder_mut().create_unconditional_branch(converge.clone());
+    self.builder_mut().set_current_block(else_block.clone());
     if let Some(else_body) = &if_stmt.else_body {
-      self.builder_mut().set_current_block(else_block.clone());
       self.generate_compound_stmt(&else_body, true);
-      self.builder_mut().create_unconditional_branch(converge.clone());
     }
+    self.builder_mut().create_unconditional_branch(converge.clone());
     self.builder_mut().set_current_block(converge.clone());
   }
 
   fn generate_while_stmt(&mut self, while_stmt: &WhileStmt) {
+    // Save the nested condition and end blocks.
+    let old = self.loop_cond_and_end.clone();
     self.cache_stack.push();
     let cond_block = self.builder_mut().add_block("while.cond".to_string());
     let body_block = self.builder_mut().add_block("while.body".to_string());
     let end_block = self.builder_mut().add_block("while.end".to_string());
+    // Set it to the inner most loop.
+    self.loop_cond_and_end = (cond_block.clone(), end_block.clone()).into();
     self.builder_mut().create_unconditional_branch(cond_block.clone());
     self.builder_mut().set_current_block(cond_block.clone());
     let cond = self.generate_expr(&while_stmt.cond, false);
@@ -292,15 +320,21 @@ impl CodeGen {
     self.generate_compound_stmt(&while_stmt.body, false);
     self.builder_mut().create_unconditional_branch(cond_block.clone());
     self.cache_stack.pop();
+    // Restore the nested condition and end blocks.
+    self.loop_cond_and_end = old;
     self.builder_mut().set_current_block(end_block)
   }
 
   fn generate_for_stmt(&mut self, for_stmt: &ForStmt) {
+    // Save the nested condition and end blocks.
+    let old = self.loop_cond_and_end.clone();
     self.cache_stack.push();
     self.generate_var_decl(&for_stmt.var);
     let cond_block = self.builder_mut().add_block("for.cond".to_string());
     let body_block = self.builder_mut().add_block("for.body".to_string());
     let end_block = self.builder_mut().add_block("for.end".to_string());
+    // Set it to the inner most loop.
+    self.loop_cond_and_end = (cond_block.clone(), end_block.clone()).into();
     let extent = self.generate_expr(&for_stmt.end, false);
     self.builder_mut().create_unconditional_branch(cond_block.clone());
     self.builder_mut().set_current_block(cond_block.clone());
@@ -317,6 +351,8 @@ impl CodeGen {
     self.builder_mut().create_store(added, loop_var_addr).unwrap();
     self.builder_mut().create_unconditional_branch(cond_block.clone());
     self.cache_stack.pop();
+    // Restore the nested condition and end blocks.
+    self.loop_cond_and_end = old;
     self.builder_mut().set_current_block(end_block)
   }
 
@@ -480,7 +516,8 @@ pub fn codegen(ast: &Rc<ast::Linkage>, tt: String, layout: String) -> ir::module
     tg,
     cache_stack: CacheStack {
       stack: Vec::new(),
-    }
+    },
+    loop_cond_and_end: None
   };
 
   cg.generate_linkage(ast);

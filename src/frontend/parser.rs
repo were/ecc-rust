@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use super::lexer::{Lexer, TokenType, Token};
 use super::ast::{
-  BuiltinType, BuiltinTypeCode, Type, TranslateUnit, CompoundStmt, ReturnStmt, IntImm, Decl, InlineAsm, NewExpr, Cast, ForStmt,
-  WhileStmt
+  BuiltinType, BuiltinTypeCode, Type, TranslateUnit, CompoundStmt, ReturnStmt, IntImm,
+  Decl, InlineAsm, NewExpr, Cast, ForStmt, WhileStmt, LoopJump
 };
 use super::ast::{FuncDecl, Stmt, Expr, StrImm, FuncCall, ClassDecl, VarDecl, ArrayType, BinaryOp, ArrayIndex, IfStmt};
 
@@ -231,6 +231,11 @@ fn parse_statement(tokenizer: &mut Lexer) -> Result<Stmt, String> {
     }
     TokenType::KeywordIf => {
       return Ok(Stmt::IfStmt(Rc::new(parse_if_stmt(tokenizer).unwrap())));
+    }
+    TokenType::KeywordBreak | TokenType::KeywordContinue => {
+      let loc = tokenizer.consume_any();
+      tokenizer.consume(TokenType::Semicolon);
+      return Ok(Stmt::LoopJump(Rc::new(LoopJump{loc})));
     }
     _ => {
       let res = Ok(Stmt::Evaluate(parse_assignment_expr(tokenizer).unwrap()));
