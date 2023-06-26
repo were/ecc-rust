@@ -5,7 +5,7 @@ use super::ast::{
   FuncDecl, CompoundStmt, Stmt, ReturnStmt, IntImm,
   Decl, Expr, FuncCall, Linkage, VarDecl, ClassDecl,
   InlineAsm, BinaryOp, ArrayType, AttrAccess, ArrayIndex,
-  NewExpr, Cast, ForStmt, IfStmt
+  NewExpr, Cast, ForStmt, IfStmt, WhileStmt
 };
 
 #[macro_export]
@@ -123,6 +123,21 @@ pub trait Visitor {
       Stmt::ForStmt(for_loop) => Stmt::ForStmt(self.visit_for_stmt(for_loop)),
       Stmt::CompoundStmt(stmt) => Stmt::CompoundStmt(self.visit_compound_stmt(stmt)),
       Stmt::IfStmt(if_stmt) => Stmt::IfStmt(self.visit_if_stmt(if_stmt)),
+      Stmt::WhileStmt(while_stmt) => Stmt::WhileStmt(self.visit_while_stmt(while_stmt)),
+      Stmt::LoopJump(jump) => Stmt::LoopJump(jump.clone()),
+    }
+  }
+
+  fn visit_while_stmt(&mut self, while_stmt: &Rc<WhileStmt>) -> Rc<WhileStmt> {
+    let cond = self.visit_expr(&while_stmt.cond);
+    let body = self.visit_compound_stmt(&while_stmt.body);
+    if expr_eq(&cond, &while_stmt.cond) && !Rc::ptr_eq(&body, &while_stmt.body) {
+      while_stmt.clone()
+    } else {
+      Rc::new(WhileStmt {
+        loc: while_stmt.loc.clone(),
+        cond, body,
+      })
     }
   }
 

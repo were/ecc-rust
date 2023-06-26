@@ -24,6 +24,9 @@ pub enum TokenType {
   KeywordFor,
   KeywordLet,
   KeywordCastAs,
+  KeywordWhile,
+  KeywordBreak,
+  KeywordContinue,
   RangeDotdot,
   FuncMap,
   AttrAccess,
@@ -69,6 +72,9 @@ impl fmt::Display for TokenType {
       TokenType::KeywordClass => write!(f, "KeywordClass class"),
       TokenType::KeywordFunc => write!(f, "KeywordFunc func"),
       TokenType::KeywordFor => write!(f, "KeywordFor for"),
+      TokenType::KeywordWhile => write!(f, "KeywordWhile while"),
+      TokenType::KeywordBreak => write!(f, "KeywordBreak break"),
+      TokenType::KeywordContinue => write!(f, "KeywordContinue continue"),
       TokenType::KeywordElse => write!(f, "KeywordElse else"),
       TokenType::KeywordLet => write!(f, "KeywordLet let"),
       TokenType::FuncMap => write!(f, "FuncMap ->"),
@@ -163,6 +169,9 @@ impl TokenHandle {
         (Regex::new(r"^class"), valueless_token!(TokenType::KeywordClass)),
         (Regex::new(r"^func"), valueless_token!(TokenType::KeywordFunc)),
         (Regex::new(r"^for"), valueless_token!(TokenType::KeywordFor)),
+        (Regex::new(r"^while"), valueless_token!(TokenType::KeywordWhile)),
+        (Regex::new(r"^break"), valueless_token!(TokenType::KeywordBreak)),
+        (Regex::new(r"^continue"), valueless_token!(TokenType::KeywordContinue)),
         (Regex::new(r"^let"), valueless_token!(TokenType::KeywordLet)),
         (Regex::new(r"^\->"), valueless_token!(TokenType::FuncMap)),
         (Regex::new(r"^\.\."), valueless_token!(TokenType::RangeDotdot)),
@@ -230,7 +239,9 @@ impl Lexer {
                 skip_comment = true;
               }
               _ => {
-                break;
+                if !skip_comment {
+                  break;
+                }
               }
             }
           }

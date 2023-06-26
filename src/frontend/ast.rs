@@ -141,6 +141,18 @@ pub struct CompoundStmt {
 }
 
 #[derive(Clone)]
+pub struct WhileStmt {
+  pub loc: Token,
+  pub cond: Expr,
+  pub body: Rc<CompoundStmt>,
+}
+
+#[derive(Clone)]
+pub struct LoopJump {
+  pub loc: Token,
+}
+
+#[derive(Clone)]
 pub enum Stmt {
   Ret(Rc<ReturnStmt>),
   InlineAsm(Rc<InlineAsm>),
@@ -149,6 +161,8 @@ pub enum Stmt {
   CompoundStmt(Rc<CompoundStmt>),
   Evaluate(Expr),
   IfStmt(Rc<IfStmt>),
+  WhileStmt(Rc<WhileStmt>),
+  LoopJump(Rc<LoopJump>),
 }
 
 #[derive(Clone)]

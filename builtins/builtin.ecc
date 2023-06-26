@@ -5,16 +5,20 @@ func println(string s) -> void {
 }
 
 func toString(i32 x) -> string {
+  let i32 cnt = 0;
+  let i32 tmpx = x;
+  while tmpx > 0 {
+    tmpx = tmpx / 10;
+    cnt = cnt + 1;
+  }
   let string res = new string;
-  res.data_ = new i8[5];
-  res.data_[3] = (x % 10 + 48) as i8;
-  x = x / 10;
-  res.data_[2] = (x % 10 + 48) as i8;
-  x = x / 10;
-  res.data_[1] = (x % 10 + 48) as i8;
-  x = x / 10;
-  res.data_[0] = (x % 10 + 48) as i8;
-  res.length_ = 4;
+  res.data_ = new i8[cnt + 1];
+  res.data_[cnt] = 0 as i8;
+  for i in 0..cnt {
+    res.data_[cnt - 1 - i] = (x % 10 + 48) as i8;
+    x = x / 10;
+  }
+  res.length_ = cnt;
   return res;
 }
 

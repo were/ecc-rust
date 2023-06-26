@@ -4,7 +4,8 @@ use super::ast::{
   Decl, FuncDecl, Variable, Type, BuiltinType, CompoundStmt, Stmt,
   ReturnStmt, Expr, TranslateUnit, Linkage, FuncCall, VarDecl,
   ClassDecl, ArrayType, InlineAsm, StrImm, BinaryOp, AttrAccess,
-  BuiltinTypeCode, ArrayIndex, NewExpr, Cast, ForStmt, IfStmt
+  BuiltinTypeCode, ArrayIndex, NewExpr, Cast, ForStmt, IfStmt,
+  WhileStmt
 };
 
 fn print_linkage(linkage: &Linkage, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
@@ -163,8 +164,18 @@ fn print_stmt(stmt: &Stmt, f: &mut fmt::Formatter, indent: &String) -> fmt::Resu
     Stmt::VarDecl(decl) => print_var_decl(&decl, f, indent),
     Stmt::ForStmt(for_loop) => print_for_stmt(&for_loop, f, indent),
     Stmt::CompoundStmt(stmt) => print_compound_stmt(&stmt, f, indent),
-    Stmt::IfStmt(if_stmt) => print_if_stmt(&if_stmt, f, indent)
+    Stmt::IfStmt(if_stmt) => print_if_stmt(&if_stmt, f, indent),
+    Stmt::WhileStmt(while_stmt) => print_while_stmt(&while_stmt, f, indent),
+    Stmt::LoopJump(jump) => write!(f, "LoopJump {}", jump.loc.literal),
   }
+}
+
+fn print_while_stmt(while_stmt: &WhileStmt, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
+  write!(f, "WhileStmt").unwrap();
+  write!(f, "\n{}|->Cond=", indent).unwrap();
+  print_expr(&while_stmt.cond, f, &format!("{}   ", indent)).unwrap();
+  write!(f, "\n{}`->Body=", indent).unwrap();
+  print_compound_stmt(&while_stmt.body, f, &format!("{}   ", indent))
 }
 
 fn print_if_stmt(if_stmt: &IfStmt, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
