@@ -4,11 +4,11 @@ use std::collections::HashMap;
 use trinity::ir::{
   self,
   value::ValueRef,
-  types::{StructType, TypeRef },
+  types::{StructType, TypeRef},
   value::Function, PointerType
 };
 use trinity::builder::Builder;
-use super::ast::{self, ForStmt};
+use super::ast::{self, ForStmt, WhileStmt, IfStmt};
 
 struct TypeGen {
   pub builder: Builder,
@@ -254,30 +254,53 @@ impl CodeGen {
         self.generate_compound_stmt(&stmt, true)
       }
       ast::Stmt::IfStmt(if_stmt) => {
-        let cond = self.generate_expr(&if_stmt.cond, false);
-        let then_block = self.builder_mut().add_block(format!("then.{}", cond.skey));
-        let else_block = self.builder_mut().add_block(format!("else.{}", cond.skey));
-        let converge = self.builder_mut().add_block(format!("converge.{}", cond.skey));
-        self.builder_mut().create_conditional_branch(cond, then_block.clone(), else_block.clone());
-        self.builder_mut().set_current_block(then_block.clone());
-        self.generate_compound_stmt(&if_stmt.then_body, true);
-        self.builder_mut().create_unconditional_branch(converge.clone());
-        if let Some(else_body) = &if_stmt.else_body {
-          self.builder_mut().set_current_block(else_block.clone());
-          self.generate_compound_stmt(&else_body, true);
-          self.builder_mut().create_unconditional_branch(converge.clone());
-        }
-        self.builder_mut().set_current_block(converge.clone());
+        self.generate_if_stmt(&if_stmt);
+      }
+      ast::Stmt::WhileStmt(while_stmt) => {
+        self.generate_while_stmt(&while_stmt);
       }
     }
+  }
+
+  fn generate_if_stmt(&mut self, if_stmt: &IfStmt) {
+    let cond = self.generate_expr(&if_stmt.cond, false);
+    let then_block = self.builder_mut().add_block(format!("then.{}", cond.skey));
+    let else_block = self.builder_mut().add_block(format!("else.{}", cond.skey));
+    let converge = self.builder_mut().add_block(format!("converge.{}", cond.skey));
+    self.builder_mut().create_conditional_branch(cond, then_block.clone(), else_block.clone());
+    self.builder_mut().set_current_block(then_block.clone());
+    self.generate_compound_stmt(&if_stmt.then_body, true);
+    self.builder_mut().create_unconditional_branch(converge.clone());
+    if let Some(else_body) = &if_stmt.else_body {
+      self.builder_mut().set_current_block(else_block.clone());
+      self.generate_compound_stmt(&else_body, true);
+      self.builder_mut().create_unconditional_branch(converge.clone());
+    }
+    self.builder_mut().set_current_block(converge.clone());
+  }
+
+  fn generate_while_stmt(&mut self, while_stmt: &WhileStmt) {
+    self.cache_stack.push();
+    let cond_block = self.builder_mut().add_block("while.cond".to_string());
+    let body_block = self.builder_mut().add_block("while.body".to_string());
+    let end_block = self.builder_mut().add_block("while.end".to_string());
+    self.builder_mut().create_unconditional_branch(cond_block.clone());
+    self.builder_mut().set_current_block(cond_block.clone());
+    let cond = self.generate_expr(&while_stmt.cond, false);
+    self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone());
+    self.builder_mut().set_current_block(body_block);
+    self.generate_compound_stmt(&while_stmt.body, false);
+    self.builder_mut().create_unconditional_branch(cond_block.clone());
+    self.cache_stack.pop();
+    self.builder_mut().set_current_block(end_block)
   }
 
   fn generate_for_stmt(&mut self, for_stmt: &ForStmt) {
     self.cache_stack.push();
     self.generate_var_decl(&for_stmt.var);
-    let cond_block = self.builder_mut().add_block("cond".to_string());
-    let body_block = self.builder_mut().add_block("body".to_string());
-    let end_block = self.builder_mut().add_block("end".to_string());
+    let cond_block = self.builder_mut().add_block("for.cond".to_string());
+    let body_block = self.builder_mut().add_block("for.body".to_string());
+    let end_block = self.builder_mut().add_block("for.end".to_string());
     let extent = self.generate_expr(&for_stmt.end, false);
     self.builder_mut().create_unconditional_branch(cond_block.clone());
     self.builder_mut().set_current_block(cond_block.clone());
@@ -378,18 +401,15 @@ impl CodeGen {
           super::lexer::TokenType::AssignEq => {
             self.tg.builder.create_store(rhs, lhs).unwrap()
           }
-          super::lexer::TokenType::LT => {
-            self.tg.builder.create_slt(rhs, lhs)
-          }
-          super::lexer::TokenType::GT => {
-            self.tg.builder.create_sgt(rhs, lhs)
-          }
+          super::lexer::TokenType::LT => self.tg.builder.create_slt(lhs, rhs),
+          super::lexer::TokenType::GT => self.tg.builder.create_sgt(lhs, rhs),
           _ => { panic!("Unknown binary op {}", binop.op); }
         }
       }
       ast::Expr::NewExpr(ne) => {
         let malloc = self.cache_stack.get(&"malloc".to_string()).unwrap().clone();
         let i32ty = self.tg.builder.context().int_type(32);
+        // TODO(@were): Support the size of malloc.
         let params = vec![self.tg.builder.context().const_value(i32ty, 8)];
         let call = self.tg.builder.create_func_call(malloc, params);
         let dest = self.tg.type_to_llvm(&ne.dtype);

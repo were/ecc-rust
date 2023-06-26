@@ -2,7 +2,8 @@ use std::rc::Rc;
 
 use super::lexer::{Lexer, TokenType, Token};
 use super::ast::{
-  BuiltinType, BuiltinTypeCode, Type, TranslateUnit, CompoundStmt, ReturnStmt, IntImm, Decl, InlineAsm, NewExpr, Cast, ForStmt
+  BuiltinType, BuiltinTypeCode, Type, TranslateUnit, CompoundStmt, ReturnStmt, IntImm, Decl, InlineAsm, NewExpr, Cast, ForStmt,
+  WhileStmt
 };
 use super::ast::{FuncDecl, Stmt, Expr, StrImm, FuncCall, ClassDecl, VarDecl, ArrayType, BinaryOp, ArrayIndex, IfStmt};
 
@@ -195,6 +196,13 @@ fn parse_for_stmt(tokenizer: &mut Lexer) -> Result<Stmt, String> {
   Ok(Stmt::ForStmt(Rc::new(ForStmt { var: Rc::new(var), end, body: Rc::new(body) })))
 }
 
+fn parse_while_stmt(tokenizer: &mut Lexer) -> Result<Stmt, String> {
+  let loc = tokenizer.consume(TokenType::KeywordWhile);
+  let cond = parse_rval(tokenizer).unwrap();
+  let body = parse_compound_stmt(tokenizer).unwrap();
+  Ok(Stmt::WhileStmt(Rc::new(WhileStmt { loc, cond, body: Rc::new(body) })))
+}
+
 fn parse_statement(tokenizer: &mut Lexer) -> Result<Stmt, String> {
   match tokenizer.tok().value {
     TokenType::KeywordReturn => {
@@ -214,6 +222,9 @@ fn parse_statement(tokenizer: &mut Lexer) -> Result<Stmt, String> {
     }
     TokenType::KeywordFor => {
       return parse_for_stmt(tokenizer);
+    }
+    TokenType::KeywordWhile => {
+      return parse_while_stmt(tokenizer);
     }
     TokenType::LBrace => {
       return Ok(Stmt::CompoundStmt(Rc::new(parse_compound_stmt(tokenizer).unwrap())));
