@@ -410,9 +410,9 @@ impl CodeGen {
         let malloc = self.cache_stack.get(&"malloc".to_string()).unwrap().clone();
         let i32ty = self.tg.builder.context().int_type(32);
         // TODO(@were): Support the size of malloc.
+        let dest = self.tg.type_to_llvm(&ne.dtype);
         let params = vec![self.tg.builder.context().const_value(i32ty, 8)];
         let call = self.tg.builder.create_func_call(malloc, params);
-        let dest = self.tg.type_to_llvm(&ne.dtype);
         self.tg.builder.create_bitcast(call, dest)
       }
       ast::Expr::ArrayIndex(idx) => {
