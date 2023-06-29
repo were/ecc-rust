@@ -35,17 +35,29 @@ fn metadata(src: &String) -> E2EMetadata {
 }
 
 #[rstest]
+#[case("00-return0.ecc")]
 #[case("01-helloworld.ecc")]
+#[case("02-crossclasses.ecc")]
+#[case("03-aplusb.ecc")]
+#[case("04-array.ecc")]
+#[case("05-method.ecc")]
+#[case("06-printab.ecc")]
+#[case("07-for.ecc")]
+#[case("08-if.ecc")]
+#[case("09-while.ecc")]
+#[case("10-break.ecc")]
 fn test_e2e(#[case] fname: &str) {
   let src_path = format!("../tests/function/{}", fname);
   let mut file = File::open(&src_path).unwrap();
   let mut src = String::new();
   file.read_to_string(&mut src).unwrap();
   let meta = metadata(&src);
-  invoke(fname.to_string(), src, 0).unwrap();
+  assert!(fname.ends_with(".ecc"));
+  let obj_output = format!("{}.o", fname[0..fname.len()-4].to_string());
+  invoke(&fname.to_string(), &obj_output, src, 0).unwrap();
   let mut exec = std::process::Command::new("node")
     .arg("builtins/host.js")
-    .arg("a.wasm")
+    .arg(&obj_output)
     .stdin(std::process::Stdio::piped())
     .stdout(std::process::Stdio::piped())
     .spawn()
@@ -56,5 +68,9 @@ fn test_e2e(#[case] fname: &str) {
   let status = exec.wait().unwrap();
   assert!(status.success());
   assert_eq!(output, meta.stdout);
+  std::process::Command::new("rm")
+    .arg(obj_output)
+    .spawn()
+    .unwrap();
 }
 

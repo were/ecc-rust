@@ -6,7 +6,7 @@ use crate::frontend::semantic_check;
 use crate::frontend::codegen_llvm;
 use crate::transform::optimize;
 
-fn backend(irname: String) {
+fn backend(irname: &String, output: &String) {
   assert!(irname.ends_with(".ll"));
   let objname = irname[0..irname.len()-3].to_string() + ".o";
   // emcc a.ll -c
@@ -34,14 +34,14 @@ fn backend(irname: String) {
   let assemble = std::process::Command::new("wat2wasm")
     .arg("-")
     .arg("-o")
-    .arg("a.wasm")
+    .arg(output)
     .stdin(hacker.stdout.unwrap())
     .output()
     .expect("failed to execute process");
   assert!(assemble.status.success());
 }
 
-pub fn invoke(fname: String, src: String, print_ast: i32) -> Result<(), String> {
+pub fn invoke(fname: &String, output: &String, src: String, print_ast: i32) -> Result<(), String> {
   let ast = parse(&fname, src);
   let ast = match ast {
     Ok(ast) => ast,
@@ -61,7 +61,7 @@ pub fn invoke(fname: String, src: String, print_ast: i32) -> Result<(), String> 
     let mut fd = std::fs::File::create(&irname).unwrap();
     fd.write(format!("{}", module).as_bytes()).unwrap();
   }
-  backend(irname);
+  backend(&irname, output);
   Ok(())
 }
 
