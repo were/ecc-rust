@@ -28,9 +28,9 @@ pub fn inject_builtins(ast: ast::TranslateUnit) -> Rc<Linkage> {
   })
 }
 
-pub fn parse(fname: String, src: String) -> Result<Rc<Linkage>, String> {
+pub fn parse(fname: &String, src: String) -> Result<Rc<Linkage>, String> {
   let mut tokenizer = lexer::Lexer::new(src);
-  match parser::parse_program(&mut tokenizer, fname) {
+  match parser::parse_program(&mut tokenizer, fname.clone()) {
     Ok(ast) => {
       return Ok(inject_builtins(ast));
     }

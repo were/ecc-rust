@@ -430,8 +430,9 @@ pub fn resolve_symbols(ast: &Rc<Linkage>, check_func_sig:bool) -> Result<Rc<Link
   };
   let res = resolver.visit_linkage(ast);
   if resolver.main {
-    return Ok(res);
+    Ok(res)
+  } else {
+    Err("No main function found".to_string())
   }
-  return Err("No main function found".to_string());
 }
 

@@ -31,12 +31,11 @@ fn analysis(module: &Module) -> Vec<(ValueRef, usize, ValueRef)>{
   return res;
 }
 
-pub fn transform(mut module: Module) -> Module {
+pub fn transform(module: &mut Module) {
   let to_replace = analysis(&module);
   for (inst, idx, new_operand) in to_replace {
     let inst = inst.as_mut::<Instruction>(&mut module.context).unwrap();
     inst.set_operand(idx, new_operand)
   }
-  return module;
 }
 
