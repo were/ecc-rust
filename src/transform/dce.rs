@@ -55,10 +55,10 @@ fn analysis(module: &Module) -> Vec<usize> {
   return cnt;
 }
 
-pub fn transform(mut module: Module) -> Module {
+pub fn transform(module: &mut Module) {
   let mut iterative = true;
   while iterative {
-    let cnt = analysis(&module);
+    let cnt = analysis(module);
     let mut to_remove : Vec<ValueRef> = Vec::new();
     for func in module.iter() {
       for block_ref in func.iter() {
@@ -71,5 +71,4 @@ pub fn transform(mut module: Module) -> Module {
       module.remove_inst(elem)
     }
   }
-  return module;
 }
