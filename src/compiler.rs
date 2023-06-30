@@ -47,10 +47,10 @@ pub fn invoke(fname: &String, output: &String, src: String, print_ast: i32) -> R
     Ok(ast) => ast,
     Err(msg) => return Err(msg)
   };
-  let ast = semantic_check(&ast, print_ast)?;
   if print_ast == 1 {
     println!("{}", ast);
   }
+  let ast = semantic_check(&ast, print_ast)?;
   let mut module = codegen_llvm(&ast);
   optimize(&mut module);
   let mangled = fname.chars().into_iter().map(

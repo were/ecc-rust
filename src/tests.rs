@@ -35,17 +35,17 @@ fn metadata(src: &String) -> E2EMetadata {
 }
 
 #[rstest]
-#[case("00-return0.ecc")]
-#[case("01-helloworld.ecc")]
-#[case("02-crossclasses.ecc")]
-#[case("03-aplusb.ecc")]
-#[case("04-array.ecc")]
-#[case("05-method.ecc")]
-#[case("06-printab.ecc")]
-#[case("07-for.ecc")]
-#[case("08-if.ecc")]
-#[case("09-while.ecc")]
-#[case("10-break.ecc")]
+#[case("01-return0.ecc")]
+#[case("02-helloworld.ecc")]
+#[case("03-crossclasses.ecc")]
+#[case("04-aplusb.ecc")]
+#[case("05-array.ecc")]
+#[case("06-method.ecc")]
+#[case("07-printab.ecc")]
+#[case("08-for.ecc")]
+#[case("09-if.ecc")]
+#[case("10-while.ecc")]
+#[case("11-break.ecc")]
 fn test_e2e(#[case] fname: &str) {
   let src_path = format!("../tests/function/{}", fname);
   let mut file = File::open(&src_path).unwrap();
