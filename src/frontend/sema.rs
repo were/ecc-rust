@@ -210,7 +210,28 @@ impl Visitor for SymbolResolver {
 
   fn visit_class(&mut self, class:&Rc<ClassDecl>) -> Rc<ClassDecl> {
     assert!(class.methods.len() == 0);
-    class.clone()
+    let mut new_attrs = Vec::new();
+    let mut mutated = false;
+    for elem in class.attrs.iter() {
+      let new_ty = self.visit_type(&elem.ty);
+      if !type_eq(&new_ty, &elem.ty) {
+        mutated = true;
+      }
+      new_attrs.push(Rc::new(VarDecl{
+        ty: new_ty,
+        id: elem.id.clone(),
+        init: elem.init.clone(),
+      }));
+    }
+    if mutated {
+      Rc::new(ClassDecl{
+        id: class.id.clone(),
+        attrs: new_attrs,
+        methods: Vec::new(),
+      })
+    } else {
+      class.clone()
+    }
   }
 
   fn visit_func(&mut self, func: &Rc<FuncDecl>) -> Rc<FuncDecl> {

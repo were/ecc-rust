@@ -17,4 +17,5 @@ regex = "1"
 snailquote = "0.3.0"
 quote = "1.0"
 trinity = { path = "./trinity" }
+rstest = "0.17.0"
 
