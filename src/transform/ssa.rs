@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use trinity::ir::{module::Module, Block, value::instruction::{Store, InstOpcode, Load}, Instruction, ValueRef};
+use trinity::ir::{module::Module, Block, value::instruction::{Store, InstOpcode, Load}, Instruction, ValueRef, Function};
 
 fn analysis(module: &Module) -> Vec<(ValueRef, usize, ValueRef)>{
   let mut res : Vec<(ValueRef, usize, ValueRef)> = Vec::new();
@@ -31,11 +31,14 @@ fn analysis(module: &Module) -> Vec<(ValueRef, usize, ValueRef)>{
   return res;
 }
 
+fn graph_dominator(func: &Function, idom: &mut Vec<usize>) {
+
+}
+
 pub fn transform(module: &mut Module) {
-  let to_replace = analysis(&module);
-  for (inst, idx, new_operand) in to_replace {
-    let inst = inst.as_mut::<Instruction>(&mut module.context).unwrap();
-    inst.set_operand(idx, new_operand)
+  let mut idom = Vec::new();
+  for func in module.iter() {
+    let idom = graph_dominator(func, &mut idom);
   }
 }
 
