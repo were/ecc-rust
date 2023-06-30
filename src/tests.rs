@@ -54,7 +54,9 @@ fn test_e2e(#[case] fname: &str) {
   let meta = metadata(&src);
   assert!(fname.ends_with(".ecc"));
   let obj_output = format!("{}.o", fname[0..fname.len()-4].to_string());
+  // Compile it
   invoke(&fname.to_string(), &obj_output, src, 0).unwrap();
+  // Run it
   let mut exec = std::process::Command::new("node")
     .arg("builtins/host.js")
     .arg(&obj_output)
@@ -63,10 +65,12 @@ fn test_e2e(#[case] fname: &str) {
     .spawn()
     .unwrap();
   exec.stdin.take().unwrap().write_all(meta.stdin.as_bytes()).unwrap();
+  // Parse the reference input/output meta info in the source file
   let mut output = String::new();
   exec.stdout.take().unwrap().read_to_string(&mut output).unwrap();
   let status = exec.wait().unwrap();
   assert!(status.success());
+  // Compare the output
   assert_eq!(output, meta.stdout);
   std::process::Command::new("rm")
     .arg(obj_output)
