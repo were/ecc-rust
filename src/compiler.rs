@@ -10,14 +10,16 @@ fn backend(irname: &String, output: &String) {
   assert!(irname.ends_with(".ll"));
   let objname = irname[0..irname.len()-3].to_string() + ".o";
   // emcc a.ll -c
-  let linker = std::process::Command::new("emcc")
+  if let Ok(linker) = std::process::Command::new("emcc")
     .arg("-c")
     .arg("-o")
     .arg(&objname)
     .arg(&irname)
-    .output()
-    .expect("failed to execute process");
-  assert!(linker.status.success());
+    .output() {
+    assert!(linker.status.success());
+  } else {
+    panic!("emcc not found, did you `source setup.sh`?");
+  }
   // wasm2wat a.o | sed "s/func \$main/func (export \"main\")/" > a.wat
   let disassemble = std::process::Command::new("wasm2wat")
     .arg(&objname)
@@ -51,15 +53,16 @@ pub fn invoke(fname: &String, output: &String, src: String, print_ast: i32) -> R
     println!("{}", ast);
   }
   let ast = semantic_check(&ast, print_ast)?;
-  let mut module = codegen_llvm(&ast);
-  optimize(&mut module);
+  let module = codegen_llvm(&ast);
+  let optimized = optimize(module);
   let mangled = fname.chars().into_iter().map(
     |x| if x.is_alphanumeric() { x } else { '_' }).collect::<String>();
   let tmpdir = env::temp_dir().to_str().unwrap().to_string();
   let irname = format!("{}/{}.ll", tmpdir, mangled);
   {
+    eprintln!("IR dumped to: {}", irname);
     let mut fd = std::fs::File::create(&irname).unwrap();
-    fd.write(format!("{}", module).as_bytes()).unwrap();
+    fd.write(format!("{}", optimized).as_bytes()).unwrap();
   }
   backend(&irname, output);
   Ok(())

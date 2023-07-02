@@ -5,7 +5,7 @@ use trinity::ir::{
   self,
   value::ValueRef,
   types::{StructType, TypeRef},
-  value::Function, PointerType
+  value::Function, PointerType, Block
 };
 use trinity::builder::Builder;
 use super::ast::{self, ForStmt, WhileStmt, IfStmt, ReturnStmt};
@@ -202,7 +202,28 @@ impl CodeGen {
 
   fn generate_var_decl(&mut self, var: &Rc<ast::VarDecl>) {
     let ty = self.tg.type_to_llvm(&var.ty);
+    // Save block and instruciton for restoring later
+    let block = self.tg.builder.get_current_block().unwrap();
+    let insert_before = self.tg.builder.get_insert_before();
+    let entry_block = self.tg.builder
+      .get_current_function()
+      .unwrap()
+      .as_ref::<Function>(self.tg.builder.context())
+      .unwrap()
+      .get_block(0);
+    // Insert to the 1st entry block.
+    self.tg.builder.set_current_block(entry_block.clone());
+    let first_inst = entry_block
+      .as_ref::<Block>(self.tg.builder.context())
+      .unwrap()
+      .get_inst(0);
+    self.tg.builder.set_insert_before(first_inst);
     let alloca = self.tg.builder.create_alloca(ty);
+    // Restore block and instruction
+    self.tg.builder.set_current_block(block);
+    if let Some(insert_before) = insert_before {
+      self.tg.builder.set_insert_before(insert_before);
+    }
     if let Some(init) = &var.init {
       let init = self.generate_expr(&init, false);
       self.tg.builder.create_store(init, alloca.clone()).unwrap();
