@@ -18,8 +18,8 @@ fn analysis(module: &Module) -> Vec<usize> {
           InstOpcode::Return | InstOpcode::Call | InstOpcode::Branch => {
             cnt[inst.get_skey()] = 1;
           },
-          InstOpcode::Store(align) => {
-            let store = Store::new(inst, *align);
+          InstOpcode::Store(_) => {
+            let store = Store::new(inst);
             if let Some(inst_addr) = store.get_ptr().as_ref::<Instruction>(&module.context) {
               match inst_addr.get_opcode() {
                 // Record an alloca address is updated by a store.
@@ -30,7 +30,7 @@ fn analysis(module: &Module) -> Vec<usize> {
             }
           }
           InstOpcode::Load(align) => {
-            let load = Load::new(inst, *align);
+            let load = Load::new(inst);
             if let Some(inst_addr) = load.get_ptr().as_ref::<Instruction>(&module.context) {
               match inst_addr.get_opcode() {
                 // Record an alloca address is used by a load.
@@ -47,7 +47,7 @@ fn analysis(module: &Module) -> Vec<usize> {
         }
         let n_operands = inst.get_num_operands();
         for idx in 0..n_operands {
-          cnt[inst.get_operand(idx).skey] += 1;
+          cnt[inst.get_operand(idx).unwrap().skey] += 1;
         }
       }
     }
@@ -68,7 +68,7 @@ pub fn transform(module: &mut Module) {
     }
     iterative = to_remove.len() != 0;
     for elem in to_remove {
-      module.remove_inst(elem)
+      module.remove_inst(elem, true);
     }
   }
 }

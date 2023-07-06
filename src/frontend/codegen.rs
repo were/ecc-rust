@@ -210,14 +210,16 @@ impl CodeGen {
       .unwrap()
       .as_ref::<Function>(self.tg.builder.context())
       .unwrap()
-      .get_block(0);
+      .get_block(0)
+      .unwrap();
     // Insert to the 1st entry block.
     self.tg.builder.set_current_block(entry_block.clone());
-    let first_inst = entry_block
+    if let Some(first_inst) = entry_block
       .as_ref::<Block>(self.tg.builder.context())
       .unwrap()
-      .get_inst(0);
-    self.tg.builder.set_insert_before(first_inst);
+      .get_inst(0) {
+      self.tg.builder.set_insert_before(first_inst);
+    }
     let alloca = self.tg.builder.create_alloca(ty);
     // Restore block and instruction
     self.tg.builder.set_current_block(block);
