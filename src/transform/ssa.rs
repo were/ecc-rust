@@ -366,11 +366,8 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> Module {
     let inst_ref = inst.as_ref::<Instruction>(&builder.module.context).unwrap();
     let block = inst_ref.get_parent();
     let new_value = find_value_dominator(&builder.module.context, inst_ref, &block, workspace, &phi_to_alloc);
-    eprintln!("Replace: {} -> {}", inst.to_string(&builder.module.context, true), new_value.to_string(&builder.module.context, true));
+
     builder.module.replace_all_uses_with(inst.clone(), new_value);
-  }
-  for inst in to_replace.iter() {
-    builder.module.remove_inst(inst.clone(), false);
   }
   builder.module
 }
