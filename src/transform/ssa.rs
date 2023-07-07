@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque, HashMap};
+use std::collections::{HashSet, VecDeque};
 
 use trinity::{
   ir::{
@@ -114,6 +114,33 @@ fn analyze_dominators(ctx: &Context, func: &Function, workspace: &mut Vec<WorkEn
   }
 }
 
+// fn dominates(a: &Instruction, b: &Instruction, workspace: &Vec<WorkEntry>, context: &Context) -> bool {
+//   let a_block = a.get_parent();
+//   let b_block = b.get_parent();
+//   if a_block.skey == b_block.skey {
+//     let block = a_block.as_ref::<Block>(context).unwrap();
+//     let mut idx_a = 0;
+//     let mut idx_b = 0;
+//     let a_skey = a.as_super().skey;
+//     let b_skey = b.as_super().skey;
+//     for i in 0..block.get_num_insts() {
+//       let inst = block.get_inst(i).unwrap();
+//       if inst.skey == a_skey {
+//         idx_a = i;
+//       }
+//       if inst.skey == b_skey {
+//         idx_b = i;
+//       }
+//     }
+//     return idx_a < idx_b;
+//   }
+//   if workspace[b_block.skey].dominators.contains(&a_block.skey) {
+//     true
+//   } else {
+//     false
+//   }
+// }
+
 fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> Module {
   let mut to_remove = HashSet::new();
   let mut to_replace = Vec::new();
@@ -121,111 +148,110 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> Module {
     for block in 0..func.get_num_blocks() {
       let block = func.get_block(block).unwrap();
       let block = block.as_ref::<Block>(&module.context).unwrap();
-      let mut values = HashMap::new();
       for inst in block.iter() {
-        let inst = inst.as_ref::<Instruction>(&module.context).unwrap();
-        match inst.get_opcode() {
-          InstOpcode::Alloca(_) => {
-            // If it is allocate, create the entry.
-            values.insert(inst.get_skey(), Vec::new());
-          },
-          // Store should be checked here.
-          InstOpcode::Store(_) => {
-            let store = Store::new(inst);
-            if let Some(addr) = store.get_ptr().as_ref::<Instruction>(&module.context) {
-              // If it is store, update the value of the entry for allocated addresses.
-              if let InstOpcode::Alloca(_) = addr.get_opcode() {
-                // We are not always in the same block of allocation.
-                // If this entry is not in this block, create the entry.
-                if values.get(&addr.get_skey()).is_none() {
-                  values.insert(addr.get_skey(), Vec::new());
-                }
-                *values.get_mut(&addr.get_skey()).unwrap() = vec![store.get_value().clone()];
-              }
-            }
-            // Remove the store.
-            to_remove.insert(inst.get_skey());
-          },
+        let inst_ref = inst.as_ref::<Instruction>(&module.context).unwrap();
+        match inst_ref.get_opcode() {
           // If it is a load.
           InstOpcode::Load(_) => {
-            let load = Load::new(inst);
+            let load = Load::new(inst_ref);
             // And the pointer of this load is an alloca.
             if let Some(load_addr) = load.get_ptr().as_ref::<Instruction>(&module.context) {
               // If the load is from an allocated address.
               if let InstOpcode::Alloca(_) = load_addr.get_opcode() {
-                let new_value = if let Some(x) = values.get(&load_addr.get_skey()) {
-                  x.clone()
-                } else {
-                  let mut res = Vec::new();
-                  // Remove the load.
-                  to_remove.insert(load_addr.get_skey());
-                  // If it has frontiers, goes to its frontiers.
-                  // Otherwise, goes to its immediate dominator.
-                  for pred_idx in 0..block.get_num_predecessors() {
-                    let pred_br = block.get_predecessor(pred_idx);
-                    let pred_block = {
-                      let pred_br = pred_br.as_ref::<Instruction>(&module.context).unwrap();
-                      pred_br.get_parent()
-                    };
-                    // Find its latest value.
-                    let mut found = false;
-                    // Find the latest value of this alloca.
-                    let mut runner = pred_block.skey;
-                    loop {
-                      let block = ValueRef{ skey: runner, kind: VKindCode::Block };
-                      let block = block.as_ref::<Block>(&module.context).unwrap();
-                      for inst_idx in (0..block.get_num_insts()).into_iter().rev() {
-                        let inst = block.get_inst(inst_idx).unwrap();
-                        let inst = inst.as_ref::<Instruction>(&module.context).unwrap();
-                        match inst.get_opcode() {
-                          // Store instruction.
-                          InstOpcode::Store(_) => {
-                            let store = Store::new(inst);
-                            if let Some(store_addr) = store.get_ptr().as_ref::<Instruction>(&module.context) {
-                              if let InstOpcode::Alloca(_) = store_addr.get_opcode() {
-                                if load_addr.get_skey() == store_addr.get_skey() {
-                                  res.push(store.get_value().clone());
-                                  res.push(pred_block.clone());
-                                  found = true;
-                                  break;
-                                }
-                              }
+                let mut res = Vec::new();
+                // Remove the load.
+                to_remove.insert(inst_ref.get_skey());
+                let mut q = VecDeque::new();
+                let mut visited = HashSet::new();
+                q.push_back((None, block.as_super()));
+                eprintln!("Looking for value for Load: {}", load.to_string(&module.context));
+                while let Some((frontier_info, front)) = q.pop_front() {
+                  eprintln!("Front: {}", front.to_string(&module.context, true));
+                  let front = front.as_ref::<Block>(&module.context).unwrap();
+                  let mut found = false;
+                  let iterate = if front.get_skey() == block.get_skey() {
+                    let pos = (0..block.get_num_insts())
+                      .into_iter()
+                      .position(|x| block.get_inst(x).unwrap().skey == inst.skey);
+                    if visited.contains(&front.get_skey()) {
+                      // Self loop, so from last to this inst.
+                      (pos.unwrap()..block.get_num_insts()).into_iter().rev()
+                    } else {
+                      // First time, so from first to this inst.
+                      (0..pos.unwrap()).into_iter().rev()
+                    }
+                  } else {
+                    (0..front.get_num_insts()).into_iter().rev()
+                  };
+                  for inst_idx in iterate {
+                    let another = front.get_inst(inst_idx).unwrap();
+                    let another_ref = another.as_ref::<Instruction>(&module.context).unwrap();
+                    // Cannot self update.
+                    if another_ref.get_parent().skey == inst_ref.get_parent().skey {
+                      if another_ref.get_skey() == inst_ref.get_skey() {
+                        continue;
+                      }
+                    }
+                    match another_ref.get_opcode() {
+                      // Store instruction.
+                      InstOpcode::Store(_) => {
+                        let store = Store::new(another_ref);
+                        if let Some(store_addr) = store.get_ptr().as_ref::<Instruction>(&module.context) {
+                          if let InstOpcode::Alloca(_) = store_addr.get_opcode() {
+                            if load_addr.get_skey() == store_addr.get_skey() {
+                              res.push(store.get_value().clone());
+                              res.push(front.as_super());
+                              to_remove.insert(another_ref.get_skey());
+                              eprintln!("  found store: {}", store.to_string(&module.context));
+                              found = true;
+                              break;
                             }
                           }
-                          InstOpcode::Load(_) => {
-                            let load = Load::new(inst);
-                            if let Some(upstream_addr) = load.get_ptr().as_ref::<Instruction>(&module.context) {
-                              if let InstOpcode::Alloca(_) = upstream_addr.get_opcode() {
-                                if load_addr.get_skey() == upstream_addr.get_skey() {
-                                  res.push(inst.as_super());
-                                  res.push(pred_block.clone());
-                                  found = true;
-                                  break;
-                                }
-                              }
-                            }
-                          }
-                          _ => {}
                         }
                       }
-                      if found {
-                        break;
+                      InstOpcode::Load(_) => {
+                        let upstream_load = Load::new(another_ref);
+                        if let Some(upstream_addr) = upstream_load.get_ptr().as_ref::<Instruction>(&module.context) {
+                          if let InstOpcode::Alloca(_) = upstream_addr.get_opcode() {
+                            if load_addr.get_skey() == upstream_addr.get_skey() {
+                              res.push(another_ref.as_super());
+                              res.push(front.as_super());
+                              eprintln!("  found load: {}", upstream_load.to_string(&module.context));
+                              found = true;
+                              break;
+                            }
+                          }
+                        }
                       }
-                      if workspace[runner].depth == 1 {
-                        break;
-                      }
-                      runner = workspace[runner].idom;
-                    }
-                    // If not found, there exists a path that makes this value uninitialized.
-                    if !found {
-                      res.push(ValueRef { skey: 0, kind: VKindCode::Unknown });
-                      res.push(pred_block);
+                      _ => {}
                     }
                   }
-                  res
-                };
-                to_replace.push((inst.get_skey(), new_value));
-                to_remove.insert(inst.get_skey());
+                  if !found {
+                    if front.get_num_predecessors() > 1 {
+                      for i in 0..front.get_num_predecessors() {
+                        let to_push = front.
+                          get_predecessor(i)
+                          .as_ref::<Instruction>(&module.context)
+                          .unwrap()
+                          .get_parent();
+                        if visited.get(&to_push.skey).is_none() {
+                          visited.insert(to_push.skey);
+                          let new_frontier_info = Some((front.as_super(), to_push.clone()));
+                          q.push_back((new_frontier_info, to_push));
+                        }
+                      }
+                    } else {
+                      if workspace[front.get_skey()].depth != 1 {
+                        let to_push = ValueRef{ skey: workspace[front.get_skey()].idom, kind: VKindCode::Block };
+                        if visited.get(&to_push.skey).is_none() {
+                          visited.insert(to_push.skey);
+                          q.push_back((frontier_info, to_push));
+                        }
+                      }
+                    }
+                  }
+                }
+                to_replace.push((inst_ref.as_super(), res));
               }
             }
           }
@@ -236,34 +262,37 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> Module {
   }
   // Inject Phi nodes.
   let mut builder = Builder::new(module);
-  let mut phi_replace = HashMap::new();
-  for (inst, new_value) in to_replace.iter() {
-    let inst = ValueRef{skey: *inst, kind: VKindCode::Instruction};
-    {
-      let inst = inst.as_ref::<Instruction>(&builder.module.context).unwrap();
-      eprintln!("Relacing all usage of {}", inst.to_string(&builder.module.context))
+  let mut iterative = true;
+  while iterative {
+    iterative = false;
+    for (inst, new_value) in to_replace.iter_mut() {
+      let replaced_comment = {
+        let inst = inst.as_ref::<Instruction>(&builder.module.context).unwrap();
+        inst.to_string(&builder.module.context)
+      };
+      let replacement = if new_value.len() <= 2 {
+        let res = new_value.get(0).unwrap().clone();
+        res
+      } else {
+        let ty = new_value[0].get_type(&builder.module.context);
+        let block = inst.as_ref::<Instruction>(&builder.module.context).unwrap().get_parent();
+        builder.set_current_block(block.clone());
+        let block = block.as_ref::<Block>(&builder.module.context).unwrap();
+        let first_inst = block.get_inst(0).unwrap();
+        builder.set_insert_before(first_inst);
+        let res = builder.create_phi(ty, new_value.clone());
+        let phi = res.as_mut::<Instruction>(builder.context()).unwrap();
+        phi.set_comment(format!("replace {}", replaced_comment));
+        *new_value = vec![res.clone()];
+        res
+      };
+      eprintln!("Replacing {} with {}", replaced_comment, replacement.to_string(&builder.module.context, false));
+      iterative = iterative || builder.module.replace_all_uses_with(inst.clone(), replacement);
     }
-    let replacement = if new_value.len() == 1 || new_value.len() == 2 {
-      let res = new_value.get(0).unwrap().clone();
-      eprintln!("Replaced by {}", res.to_string(&builder.module.context, false));
-      res
-    } else {
-      let ty = new_value[0].get_type(&builder.module.context);
-      let block = inst.as_ref::<Instruction>(&builder.module.context).unwrap().get_parent();
-      builder.set_current_block(block.clone());
-      let block = block.as_ref::<Block>(&builder.module.context).unwrap();
-      let first_inst = block.get_inst(0).unwrap();
-      builder.set_insert_before(first_inst);
-      let res = builder.create_phi(ty, new_value.clone());
-      phi_replace.insert(inst.skey, res.clone());
-      let inst = res.as_ref::<Instruction>(&builder.module.context).unwrap();
-      eprintln!("Replaced by {}", inst.to_string(&builder.module.context));
-      res
-    };
-    builder.module.replace_all_uses_with(inst, replacement);
   }
   for skey in to_remove {
     let inst = ValueRef{skey, kind: VKindCode::Instruction};
+    eprintln!("Removing {}", inst.to_string(&builder.module.context, false));
     builder.module.remove_inst(inst, false);
   }
   builder.module
