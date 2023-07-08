@@ -5,7 +5,7 @@ use trinity::{
     value::{Block, Instruction},
     value::instruction::{InstOpcode, Store, Load},
   },
-  context::component::GetSlabKey
+  context::component::{GetSlabKey, AsSuper}
 };
 
 pub fn transform(mut module: Module) -> Module {
@@ -16,16 +16,15 @@ pub fn transform(mut module: Module) -> Module {
       let block = func.get_block(block).unwrap();
       let block = block.as_ref::<Block>(&module.context).unwrap();
       let mut values = HashMap::new();
-      for inst in block.iter() {
-        let inst_ref = inst.as_ref::<Instruction>(&module.context).unwrap();
-        match inst_ref.get_opcode() {
+      for inst in block.iter(&module.context) {
+        match inst.get_opcode() {
           InstOpcode::Alloca(_) => {
             // If it is allocate, create the entry.
-            values.insert(inst.skey, Vec::new());
+            values.insert(inst.get_skey(), Vec::new());
           },
           // Store should be checked here.
           InstOpcode::Store(_) => {
-            let store = Store::new(inst_ref);
+            let store = Store::new(inst);
             if let Some(addr) = store.get_ptr().as_ref::<Instruction>(&module.context) {
               // If it is store, update the value of the entry for allocated addresses.
               if let InstOpcode::Alloca(_) = addr.get_opcode() {
@@ -34,13 +33,13 @@ pub fn transform(mut module: Module) -> Module {
                 if values.get(&addr.get_skey()).is_none() {
                   values.insert(addr.get_skey(), Vec::new());
                 }
-                values.get_mut(&addr.get_skey()).unwrap().push(inst);
+                values.get_mut(&addr.get_skey()).unwrap().push(inst.as_super());
               }
             }
           },
           // If it is a load.
           InstOpcode::Load(_) => {
-            let load = Load::new(inst_ref);
+            let load = Load::new(inst);
             // And the pointer of this load is an alloca.
             if let Some(load_addr) = load.get_ptr().as_ref::<Instruction>(&module.context) {
               // If the load is from an allocated address.
@@ -52,8 +51,8 @@ pub fn transform(mut module: Module) -> Module {
                     let store = store.as_ref::<Instruction>(&module.context).unwrap();
                     let store = Store::new(store);
                     let value = store.get_value();
-                    to_replace.push((inst.clone(), value.clone()));
-                    to_remove.insert(inst);
+                    to_replace.push((inst.as_super(), value.clone()));
+                    to_remove.insert(inst.as_super());
                   }
                 }
               }

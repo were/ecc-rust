@@ -1,5 +1,5 @@
-use trinity::context::component::GetSlabKey;
-use trinity::ir::{module::Module, Block, Instruction, ValueRef};
+use trinity::context::component::{GetSlabKey, AsSuper};
+use trinity::ir::{module::Module, Block, ValueRef};
 use trinity::ir::value::instruction::InstOpcode;
 
 /// Count the number of use.
@@ -9,8 +9,7 @@ fn analysis(module: &Module) -> Vec<usize> {
   for func in module.iter() {
     for block in func.iter() {
       let block = block.as_ref::<Block>(&module.context).unwrap();
-      for inst_ref in block.iter() {
-        let inst = inst_ref.as_ref::<Instruction>(&module.context).unwrap();
+      for inst in block.iter(&module.context) {
         match inst.get_opcode() {
           InstOpcode::Return | InstOpcode::Call | InstOpcode::Branch | InstOpcode::Store(_) => {
             cnt[inst.get_skey()] = 1;
@@ -27,7 +26,7 @@ fn analysis(module: &Module) -> Vec<usize> {
   return cnt;
 }
 
-pub fn transform(mut module: Module) -> Module {
+pub fn transform(module: &mut Module) {
   let mut iterative = true;
   while iterative {
     let cnt = analysis(&module);
@@ -35,7 +34,7 @@ pub fn transform(mut module: Module) -> Module {
     for func in module.iter() {
       for block_ref in func.iter() {
         let block = block_ref.as_ref::<Block>(&module.context).unwrap();
-        block.iter().for_each(|x| if cnt[x.skey] == 0 { to_remove.push(x); });
+        block.iter(&module.context).for_each(|x| if cnt[x.get_skey()] == 0 { to_remove.push(x.as_super()); });
       }
     }
     eprintln!("to_remove: {}", to_remove.len());
@@ -45,5 +44,4 @@ pub fn transform(mut module: Module) -> Module {
       module.remove_inst(elem, true);
     }
   }
-  module
 }
