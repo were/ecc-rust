@@ -16,7 +16,7 @@ pub fn transform(mut module: Module) -> Module {
       let block = func.get_block(block).unwrap();
       let block = block.as_ref::<Block>(&module.context).unwrap();
       let mut values = HashMap::new();
-      for inst in block.iter(&module.context) {
+      for inst in block.inst_iter(&module.context) {
         match inst.get_opcode() {
           InstOpcode::Alloca(_) => {
             // If it is allocate, create the entry.

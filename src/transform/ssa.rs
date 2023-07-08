@@ -37,7 +37,6 @@ impl WorkEntry {
 
 fn analyze_dominators(ctx: &Context, func: &Function, workspace: &mut Vec<WorkEntry>) {
   // Calculate the dominators
-  // TODO(@were): Engineer this to a more efficient implementation.
   let mut changed = true;
   while changed {
     changed = false;
@@ -103,11 +102,10 @@ fn analyze_dominators(ctx: &Context, func: &Function, workspace: &mut Vec<WorkEn
   }
   // Calculate the dominate frontiers.
   // (immediate predeccessor, frontier block)
-  for block in func.iter() {
-    let block_ref = block.as_ref::<Block>(ctx).unwrap();
-    if block_ref.get_num_predecessors() > 1 {
-      for pred_idx in 0..block_ref.get_num_predecessors() {
-        let pred_block = block_ref
+  for block in func.iter(ctx) {
+    if block.get_num_predecessors() > 1 {
+      for pred_idx in 0..block.get_num_predecessors() {
+        let pred_block = block
           .get_predecessor(pred_idx)
           .unwrap()
           .as_ref::<Instruction>(ctx)
@@ -117,11 +115,11 @@ fn analyze_dominators(ctx: &Context, func: &Function, workspace: &mut Vec<WorkEn
         //   block.to_string(ctx, false),
         //   pred_block.to_string(ctx, false));
         let mut runner = pred_block.skey;
-        while runner != workspace[block.skey].idom {
+        while runner != workspace[block.get_skey()].idom {
           // eprintln!(" Add {} to frontier of {}",
           //   block.to_string(ctx, false),
           //   runner);
-          workspace[runner].frontiers.insert((pred_block.skey, block.skey));
+          workspace[runner].frontiers.insert((pred_block.skey, block.get_skey()));
           if workspace[runner].depth != 1 {
             runner = workspace[runner].idom;
           } else {
@@ -156,17 +154,17 @@ fn analyze_dominators(ctx: &Context, func: &Function, workspace: &mut Vec<WorkEn
       continue;
     }
     // eprintln!("  Block {} (Depth: {}) frontiers are:", block.to_string(ctx, false), entry.depth);
-    for (pred, frontier) in entry.frontiers.iter() {
-      let frontier= ValueRef{
-        skey: *frontier,
-        kind: trinity::ir::VKindCode::Block
-      };
-      let pred = ValueRef{
-        skey: *pred,
-        kind: trinity::ir::VKindCode::Block
-      };
-      // eprintln!("    {} by pred {}", frontier.to_string(ctx, false), pred.to_string(ctx, false));
-    }
+    // for (pred, frontier) in entry.frontiers.iter() {
+    //   let frontier= ValueRef{
+    //     skey: *frontier,
+    //     kind: trinity::ir::VKindCode::Block
+    //   };
+    //   let pred = ValueRef{
+    //     skey: *pred,
+    //     kind: trinity::ir::VKindCode::Block
+    //   };
+    //   eprintln!("    {} by pred {}", frontier.to_string(ctx, false), pred.to_string(ctx, false));
+    // }
   }
 }
 
@@ -224,7 +222,7 @@ fn find_value_dominator(
     let block_ref = block_value.as_ref::<Block>(ctx).unwrap();
     let n = if runner == sub_parent.skey {
       // If we are at the source block, inspect all the instructions before.
-      let pos = block_ref.iter(ctx).position(|iter| { sub.get_skey() == iter.get_skey() });
+      let pos = block_ref.inst_iter(ctx).position(|iter| { sub.get_skey() == iter.get_skey() });
       pos.unwrap()
     } else {
       // If we are at a dom block, inspect all the instructions.
@@ -264,10 +262,8 @@ fn find_value_dominator(
 fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashMap<usize, usize>) {
   // Register values to be phi-resolved
   for func in module.iter() {
-    for block in 0..func.get_num_blocks() {
-      let block = func.get_block(block).unwrap();
-      let block = block.as_ref::<Block>(&module.context).unwrap();
-      for inst in block.iter(&module.context) {
+    for block in func.iter(&module.context) {
+      for inst in block.inst_iter(&module.context) {
         match inst.get_opcode() {
           InstOpcode::Store(_) => {
             let store = Store::new(inst);
@@ -316,20 +312,18 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
   let mut to_append = Vec::new();
   let mut to_replace = Vec::new();
   for func in builder.module.iter() {
-    for block in func.iter() {
-      let block_ref = block.as_ref::<Block>(&builder.module.context).unwrap();
-      let predeccessors = if block_ref.get_num_predecessors() > 1 {
-        (0..block_ref.get_num_predecessors())
-          .map(|x| {
-            let br_inst = Instruction::from(block_ref.get_predecessor(x).unwrap().skey);
-            let block = br_inst.as_ref::<Instruction>(&builder.module.context).unwrap().get_parent();
+    for block in func.iter(&builder.module.context) {
+      let predeccessors = if block.get_num_predecessors() > 1 {
+        block.pred_iter(&builder.module.context)
+          .map(|inst| {
+            let block = inst.get_parent();
             block.skey
           })
           .collect::<HashSet<_>>()
       } else {
         HashSet::new()
       };
-      for inst in block_ref.iter(&builder.module.context) {
+      for inst in block.inst_iter(&builder.module.context) {
         match inst.get_opcode() {
           InstOpcode::Phi => {
             assert!(!predeccessors.is_empty());
@@ -394,16 +388,15 @@ fn find_undominated_stores(
   phi_to_alloc: &HashMap<usize, usize>) -> HashSet<usize> {
   let mut store_with_dom = HashSet::new();
   for func in module.iter() {
-    for block in func.iter() {
-      let block_ref = block.as_ref::<Block>(&module.context).unwrap();
-      for inst in block_ref.iter(&module.context) {
+    for block in func.iter(&module.context) {
+      for inst in block.inst_iter(&module.context) {
         match inst.get_opcode() {
           InstOpcode::Load(_) => {
             let load = Load::new(inst);
             if let Some(load_addr) = load.get_ptr().as_ref::<Instruction>(&module.context) {
               if let InstOpcode::Alloca(_) = load_addr.get_opcode() {
                 if let Some(value) = find_value_dominator(
-                  &module.context, inst, &block, workspace, &phi_to_alloc, true) {
+                  &module.context, inst, &block.as_super(), workspace, &phi_to_alloc, true) {
                   let inst = value.as_ref::<Instruction>(&module.context).unwrap();
                   if let InstOpcode::Store(_) = inst.get_opcode() {
                     store_with_dom.insert(value.skey);
@@ -426,9 +419,8 @@ fn cleanup(module: &mut Module, workspace: &Vec<WorkEntry>, phi_to_alloc: &HashM
     let dominated = find_undominated_stores(&module, &workspace, &phi_to_alloc);
     let mut to_remove = Vec::new();
     for func in module.iter() {
-      for block in func.iter() {
-        let block_ref = block.as_ref::<Block>(&module.context).unwrap();
-        for inst in block_ref.iter(&module.context) {
+      for block in func.iter(&module.context) {
+        for inst in block.inst_iter(&module.context) {
           match inst.get_opcode() {
             InstOpcode::Store(_) => {
               let store = Store::new(inst);
