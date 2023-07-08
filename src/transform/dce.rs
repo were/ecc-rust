@@ -37,10 +37,8 @@ pub fn transform(module: &mut Module) {
         block.iter(&module.context).for_each(|x| if cnt[x.get_skey()] == 0 { to_remove.push(x.as_super()); });
       }
     }
-    eprintln!("to_remove: {}", to_remove.len());
     iterative = to_remove.len() != 0;
     for elem in to_remove {
-      eprintln!("remove {}", elem.to_string(&module.context, true));
       module.remove_inst(elem, true);
     }
   }

@@ -113,14 +113,14 @@ fn analyze_dominators(ctx: &Context, func: &Function, workspace: &mut Vec<WorkEn
           .as_ref::<Instruction>(ctx)
           .unwrap()
           .get_parent();
-        eprintln!("Block {} has pred {}",
-          block.to_string(ctx, false),
-          pred_block.to_string(ctx, false));
+        // eprintln!("Block {} has pred {}",
+        //   block.to_string(ctx, false),
+        //   pred_block.to_string(ctx, false));
         let mut runner = pred_block.skey;
         while runner != workspace[block.skey].idom {
-          eprintln!(" Add {} to frontier of {}",
-            block.to_string(ctx, false),
-            runner);
+          // eprintln!(" Add {} to frontier of {}",
+          //   block.to_string(ctx, false),
+          //   runner);
           workspace[runner].frontiers.insert((pred_block.skey, block.skey));
           if workspace[runner].depth != 1 {
             runner = workspace[runner].idom;
@@ -131,31 +131,31 @@ fn analyze_dominators(ctx: &Context, func: &Function, workspace: &mut Vec<WorkEn
       }
     }
   }
-  eprintln!("In function {}:", func.get_name());
-  for i in 0..func.get_num_blocks() {
-    let block = func.get_block(i).unwrap();
-    let entry = &workspace[block.skey];
-    eprintln!("  Block {} (Depth: {}) dominated by:", block.to_string(ctx, false), entry.depth);
-    for dom in entry.dominators.iter() {
-      let block_ref= ValueRef{
-        skey: *dom,
-        kind: trinity::ir::VKindCode::Block
-      };
-      eprint!("    {}", block_ref.to_string(ctx, false));
-      if *dom == entry.idom {
-        eprintln!(" *")
-      } else {
-        eprintln!("")
-      }
-    }
-  }
+  // eprintln!("In function {}:", func.get_name());
+  // for i in 0..func.get_num_blocks() {
+  //   let block = func.get_block(i).unwrap();
+  //   let entry = &workspace[block.skey];
+  //   eprintln!("  Block {} (Depth: {}) dominated by:", block.to_string(ctx, false), entry.depth);
+  //   for dom in entry.dominators.iter() {
+  //     let block_ref= ValueRef{
+  //       skey: *dom,
+  //       kind: trinity::ir::VKindCode::Block
+  //     };
+  //     eprint!("    {}", block_ref.to_string(ctx, false));
+  //     if *dom == entry.idom {
+  //       eprintln!(" *")
+  //     } else {
+  //       eprintln!("")
+  //     }
+  //   }
+  // }
   for i in 0..func.get_num_blocks() {
     let block = func.get_block(i).unwrap();
     let entry = &workspace[block.skey];
     if entry.frontiers.is_empty() {
       continue;
     }
-    eprintln!("  Block {} (Depth: {}) frontiers are:", block.to_string(ctx, false), entry.depth);
+    // eprintln!("  Block {} (Depth: {}) frontiers are:", block.to_string(ctx, false), entry.depth);
     for (pred, frontier) in entry.frontiers.iter() {
       let frontier= ValueRef{
         skey: *frontier,
@@ -165,7 +165,7 @@ fn analyze_dominators(ctx: &Context, func: &Function, workspace: &mut Vec<WorkEn
         skey: *pred,
         kind: trinity::ir::VKindCode::Block
       };
-      eprintln!("    {} by pred {}", frontier.to_string(ctx, false), pred.to_string(ctx, false));
+      // eprintln!("    {} by pred {}", frontier.to_string(ctx, false), pred.to_string(ctx, false));
     }
   }
 }
@@ -461,7 +461,7 @@ fn cleanup(module: &mut Module, workspace: &Vec<WorkEntry>, phi_to_alloc: &HashM
 
 
 pub fn transform(module: Module) -> Module {
-  eprintln!("{}", module.to_string());
+  // eprintln!("{}", module.to_string());
   let mut workspace: Vec<WorkEntry> = Vec::new();
   workspace.resize(module.context.capacity(), WorkEntry::new());
   for func in module.iter() {

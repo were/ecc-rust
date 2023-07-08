@@ -46,6 +46,7 @@ fn metadata(src: &String) -> E2EMetadata {
 #[case("09-if.ecc")]
 #[case("10-while.ecc")]
 #[case("11-break.ecc")]
+#[case("12-readint.ecc")]
 fn test_e2e(#[case] fname: &str) {
   let src_path = format!("../tests/function/{}", fname);
   let mut file = File::open(&src_path).unwrap();
