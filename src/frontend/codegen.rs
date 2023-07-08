@@ -462,6 +462,7 @@ impl CodeGen {
           }
           super::lexer::TokenType::LT => self.tg.builder.create_slt(lhs, rhs),
           super::lexer::TokenType::GT => self.tg.builder.create_sgt(lhs, rhs),
+          super::lexer::TokenType::EQ => self.tg.builder.create_eq(lhs, rhs),
           _ => { panic!("Unknown binary op {}", binop.op); }
         }
       }

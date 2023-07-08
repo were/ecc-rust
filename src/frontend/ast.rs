@@ -239,7 +239,12 @@ impl Expr {
       }
       Expr::IntImm(i) => {
         Type::Builtin(Rc::new(BuiltinType {
-          token: i.token.clone(),
+          token: Token {
+            literal: "i32".to_string(),
+            row: i.token.row,
+            col: i.token.col,
+            value: TokenType::KeywordI32,
+          },
           code: BuiltinTypeCode::Int
         }))
       }

@@ -4,7 +4,7 @@ use trinity::{
   ir::{
     module::Module, Block,
     value::instruction::{Store, InstOpcode, Load, BranchInst, PhiNode, },
-    Instruction, ValueRef, Function, VKindCode
+    Instruction, ValueRef, Function, VKindCode, PointerType
   },
   context::{Context, component::{GetSlabKey, AsSuper}},
   builder::Builder
@@ -17,9 +17,6 @@ struct WorkEntry {
   dominators: HashSet<usize>,
   idom: usize,
   depth: usize,
-  frontiers: HashSet<(usize, usize)>,
-  /// <Key: Alloca informatio, Value: <Key: Come-From Block, Value>>
-  phi_info: HashMap<usize, HashMap<usize, ValueRef>>
 }
 
 impl WorkEntry {
@@ -28,8 +25,6 @@ impl WorkEntry {
       dominators: HashSet::new(),
       idom: 0,
       depth: 0,
-      frontiers: HashSet::new(),
-      phi_info: HashMap::new()
     }
   }
 }
@@ -100,35 +95,6 @@ fn analyze_dominators(ctx: &Context, func: &Function, workspace: &mut Vec<WorkEn
       }
     }
   }
-  // Calculate the dominate frontiers.
-  // (immediate predeccessor, frontier block)
-  for block in func.iter(ctx) {
-    if block.get_num_predecessors() > 1 {
-      for pred_idx in 0..block.get_num_predecessors() {
-        let pred_block = block
-          .get_predecessor(pred_idx)
-          .unwrap()
-          .as_ref::<Instruction>(ctx)
-          .unwrap()
-          .get_parent();
-        // eprintln!("Block {} has pred {}",
-        //   block.to_string(ctx, false),
-        //   pred_block.to_string(ctx, false));
-        let mut runner = pred_block.skey;
-        while runner != workspace[block.get_skey()].idom {
-          // eprintln!(" Add {} to frontier of {}",
-          //   block.to_string(ctx, false),
-          //   runner);
-          workspace[runner].frontiers.insert((pred_block.skey, block.get_skey()));
-          if workspace[runner].depth != 1 {
-            runner = workspace[runner].idom;
-          } else {
-            break;
-          }
-        }
-      }
-    }
-  }
   // eprintln!("In function {}:", func.get_name());
   // for i in 0..func.get_num_blocks() {
   //   let block = func.get_block(i).unwrap();
@@ -147,25 +113,6 @@ fn analyze_dominators(ctx: &Context, func: &Function, workspace: &mut Vec<WorkEn
   //     }
   //   }
   // }
-  for i in 0..func.get_num_blocks() {
-    let block = func.get_block(i).unwrap();
-    let entry = &workspace[block.skey];
-    if entry.frontiers.is_empty() {
-      continue;
-    }
-    // eprintln!("  Block {} (Depth: {}) frontiers are:", block.to_string(ctx, false), entry.depth);
-    // for (pred, frontier) in entry.frontiers.iter() {
-    //   let frontier= ValueRef{
-    //     skey: *frontier,
-    //     kind: trinity::ir::VKindCode::Block
-    //   };
-    //   let pred = ValueRef{
-    //     skey: *pred,
-    //     kind: trinity::ir::VKindCode::Block
-    //   };
-    //   eprintln!("    {} by pred {}", frontier.to_string(ctx, false), pred.to_string(ctx, false));
-    // }
-  }
 }
 
 // fn dominates_ii(a: &Instruction, b: &Instruction, workspace: &Vec<WorkEntry>, context: &Context) -> bool {
@@ -260,52 +207,63 @@ fn find_value_dominator(
 }
 
 fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashMap<usize, usize>) {
+  let mut phis = HashMap::new();
   // Register values to be phi-resolved
   for func in module.iter() {
     for block in func.iter(&module.context) {
-      for inst in block.inst_iter(&module.context) {
-        match inst.get_opcode() {
-          InstOpcode::Store(_) => {
-            let store = Store::new(inst);
-            if let Some(store_addr) = store.get_ptr().as_ref::<Instruction>(&module.context) {
-              if let InstOpcode::Alloca(_) = store_addr.get_opcode() {
-                for (pred, frontier) in workspace[block.get_skey()].frontiers.clone().iter() {
-                  if !workspace[*frontier].phi_info.contains_key(&store.get_ptr().skey) {
-                    workspace[*frontier].phi_info.insert(store.get_ptr().skey, HashMap::new());
+      if block.get_num_predecessors() > 1 {
+        // The current block is the frontier
+        let frontier = block.get_skey();
+        phis.insert(frontier, HashSet::new());
+        eprintln!("frontier: {}", block.as_super().to_string(&module.context, false));
+        for pred in block.pred_iter(&module.context) {
+          let mut runner = pred.get_parent().skey;
+          while runner != workspace[block.get_skey()].idom {
+            let runner_block = Block::from(runner);
+            let runner_block = runner_block.as_ref::<Block>(&module.context).unwrap();
+            runner_block.inst_iter(&module.context).rev().for_each(|inst| {
+              match inst.get_opcode() {
+                InstOpcode::Store(_) => {
+                  let store = Store::new(inst);
+                  if let Some(store_addr) = store.get_ptr().as_ref::<Instruction>(&module.context) {
+                    if let InstOpcode::Alloca(_) = store_addr.get_opcode() {
+                      phis.get_mut(&frontier).unwrap().insert(store_addr.get_skey());
+                    }
                   }
-                  let phi_info = workspace[*frontier].phi_info.get_mut(&store.get_ptr().skey).unwrap();
-                  phi_info.insert(pred.clone(), store.get_value().clone());
-                }
+                },
+                _ => {}
               }
+            });
+            if workspace[runner].depth == 1 {
+              break;
             }
-          },
-          _ => {}
+            runner = workspace[runner].idom;
+          }
         }
       }
     }
   }
+  let mut phi_to_alloc = HashMap::new();
   // Inject preliminary PHI nodes.
   let mut builder = Builder::new(module);
-  let mut phi_to_alloc = HashMap::new();
-  for (block_skey, elem) in workspace.iter().enumerate() {
-    let block = ValueRef { skey: block_skey, kind: VKindCode::Block };
-    for (alloc_skey, values) in elem.phi_info.iter() {
-      let alloc = ValueRef {skey: *alloc_skey, kind: VKindCode::Instruction};
+  for (block_skey, addrs) in phis.iter() {
+    let block = Block::from(*block_skey);
+    for alloc_skey in addrs.iter() {
+      let alloc = Instruction::from(*alloc_skey);
+      let ptr_ty = alloc.get_type(&builder.module.context);
+      let ty = ptr_ty.as_ref::<PointerType>(&builder.module.context).unwrap().get_pointee_ty();
       let comment = alloc.to_string(&builder.module.context, true);
-      let mut phi_operands = Vec::new();
-      values.iter().for_each(|(key, value)| {
-        phi_operands.push(value.clone());
-        phi_operands.push(Block::from(*key));
-      });
-      let ty = phi_operands[0].get_type(&builder.module.context);
       builder.set_current_block(block.clone());
       let block = block.as_ref::<Block>(&builder.module.context).unwrap();
       let first_inst = block.get_inst(0).unwrap();
       builder.set_insert_before(first_inst);
-      let res = builder.create_phi(ty, phi_operands.clone());
-      phi_to_alloc.insert(res.skey, *alloc_skey);
-      let phi = res.as_mut::<Instruction>(builder.context()).unwrap();
-      phi.set_comment(comment);
+      let phi = builder.create_phi(ty, vec![]);
+      phi_to_alloc.insert(phi.skey, *alloc_skey);
+      {
+        let phi = phi.as_mut::<Instruction>(builder.context()).unwrap();
+        phi.set_comment(comment);
+      }
+      builder.create_store(phi, alloc).unwrap();
     }
   }
   // Resolve missing incomings of PHI nodes.
@@ -327,13 +285,8 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
         match inst.get_opcode() {
           InstOpcode::Phi => {
             assert!(!predeccessors.is_empty());
-            let phi = PhiNode::new(inst);
-            let mut to_inspect = predeccessors.clone();
-            for i in 0..phi.get_num_incomings() {
-              to_inspect.remove(&phi.get_incoming_block(i).unwrap().skey);
-            }
-            for pred in to_inspect {
-              let incoming_block = Block::from(pred);
+            for pred in predeccessors.iter() {
+              let incoming_block = Block::from(*pred);
               if let Some(incoming_value) = find_value_dominator(
                 &builder.module.context,
                 inst,

@@ -137,7 +137,7 @@ fn parse_rval(tokenizer: &mut Lexer) -> Result<Expr, String> {
     res
   } else {
     parse_operator_expr(tokenizer,
-      &[(2, &[TokenType::LE, TokenType::LT, TokenType::GE, TokenType::GT]),
+      &[(2, &[TokenType::LE, TokenType::LT, TokenType::GE, TokenType::GT, TokenType::EQ]),
         (2, &[TokenType::Add, TokenType::Sub]),
         (2, &[TokenType::Mod, TokenType::Div, TokenType::Mul])])
   };
