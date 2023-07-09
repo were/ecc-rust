@@ -3,7 +3,7 @@ use std::collections::{HashSet, VecDeque, HashMap};
 use trinity::{
   ir::{
     module::Module, Block,
-    value::instruction::{Store, InstOpcode, Load, BranchInst, PhiNode, },
+    value::instruction::{Store, InstOpcode, Load, BranchInst},
     Instruction, ValueRef, Function, VKindCode, PointerType
   },
   context::{Context, component::{GetSlabKey, AsSuper}},
@@ -12,7 +12,6 @@ use trinity::{
 
 use super::dce;
 
-#[derive(Clone)]
 struct WorkEntry {
   dominators: HashSet<usize>,
   idom: usize,
@@ -157,7 +156,7 @@ fn find_value_dominator(
       },
       InstOpcode::Phi => {
         let skey = phi_to_alloc.get(&sub.get_skey()).unwrap();
-        Instruction::from(*skey)
+        Instruction::from_skey(*skey)
       },
       _ => { panic!("Not an addressed instruction") }
     }
@@ -165,7 +164,7 @@ fn find_value_dominator(
   let mut runner = block.skey;
   let sub_parent = sub.get_parent();
   loop {
-    let block_value = Block::from(runner);
+    let block_value = Block::from_skey(runner);
     let block_ref = block_value.as_ref::<Block>(ctx).unwrap();
     let n = if runner == sub_parent.skey {
       // If we are at the source block, inspect all the instructions before.
@@ -219,7 +218,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
         for pred in block.pred_iter(&module.context) {
           let mut runner = pred.get_parent().skey;
           while runner != workspace[block.get_skey()].idom {
-            let runner_block = Block::from(runner);
+            let runner_block = Block::from_skey(runner);
             let runner_block = runner_block.as_ref::<Block>(&module.context).unwrap();
             runner_block.inst_iter(&module.context).rev().for_each(|inst| {
               match inst.get_opcode() {
@@ -247,9 +246,9 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
   // Inject preliminary PHI nodes.
   let mut builder = Builder::new(module);
   for (block_skey, addrs) in phis.iter() {
-    let block = Block::from(*block_skey);
+    let block = Block::from_skey(*block_skey);
     for alloc_skey in addrs.iter() {
-      let alloc = Instruction::from(*alloc_skey);
+      let alloc = Instruction::from_skey(*alloc_skey);
       let ptr_ty = alloc.get_type(&builder.module.context);
       let ty = ptr_ty.as_ref::<PointerType>(&builder.module.context).unwrap().get_pointee_ty();
       let comment = alloc.to_string(&builder.module.context, true);
@@ -285,8 +284,8 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
         match inst.get_opcode() {
           InstOpcode::Phi => {
             assert!(!predeccessors.is_empty());
-            for pred in predeccessors.iter() {
-              let incoming_block = Block::from(*pred);
+            let incomings = predeccessors.iter().map(|pred| {
+              let incoming_block = Block::from_skey(*pred);
               if let Some(incoming_value) = find_value_dominator(
                 &builder.module.context,
                 inst,
@@ -294,12 +293,13 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
                 workspace,
                 &phi_to_alloc,
                 false) {
-                to_append.push((inst.as_super(), incoming_value, incoming_block));
+                (incoming_value, incoming_block)
               } else {
                 // TODO(@were): Warning here!
-                to_append.push((inst.as_super(), ValueRef{ skey: 0, kind: VKindCode::Unknown }, incoming_block));
+                (ValueRef{ skey: 0, kind: VKindCode::Unknown }, incoming_block)
               }
-            }
+            }).collect::<Vec<_>>();
+            to_append.push((inst.as_super(), incomings));
           }
           InstOpcode::Load(_) => {
             let load = Load::new(inst);
@@ -314,16 +314,21 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
       }
     }
   }
-  for (phi, incoming_value, incoming_block) in to_append {
-    let incoming_value = if incoming_value.kind == VKindCode::Unknown {
-      let ty = phi.get_type(&builder.module.context);
-      builder.context().undef(ty)
-    } else {
-      incoming_value
-    };
-    let phi = phi.as_mut::<Instruction>(builder.context()).unwrap();
-    phi.add_operand(incoming_value);
-    phi.add_operand(incoming_block);
+  for (phi, incomings) in to_append {
+    incomings.iter().for_each(|(incoming_value, incoming_block)| {
+      let incoming_value = match incoming_value.kind {
+        VKindCode::Unknown => {
+          let ty = phi.get_type(&builder.module.context);
+          builder.context().undef(ty)
+        }
+        _ => {
+          incoming_value.clone()
+        }
+      };
+      let phi = phi.as_mut::<Instruction>(builder.context()).unwrap();
+      phi.add_operand(incoming_value);
+      phi.add_operand(incoming_block.clone());
+    });
   }
   for inst in to_replace.iter() {
     let inst_ref = (*inst).as_ref::<Instruction>(&builder.module.context).unwrap();
@@ -408,7 +413,7 @@ fn cleanup(module: &mut Module, workspace: &Vec<WorkEntry>, phi_to_alloc: &HashM
 pub fn transform(module: Module) -> Module {
   // eprintln!("{}", module.to_string());
   let mut workspace: Vec<WorkEntry> = Vec::new();
-  workspace.resize(module.context.capacity(), WorkEntry::new());
+  (0..module.context.capacity()).for_each(|_| workspace.push(WorkEntry::new()));
   for func in module.iter() {
     if func.get_num_blocks() != 0 {
       analyze_dominators(&module.context, func, &mut workspace);
