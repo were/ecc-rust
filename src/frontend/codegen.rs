@@ -1,12 +1,12 @@
 use std::rc::Rc;
 use std::collections::HashMap;
 
-use trinity::ir::{
+use trinity::{ir::{
   self,
   value::ValueRef,
   types::{StructType, TypeRef},
   value::Function, PointerType, Block
-};
+}, context::{Reference, component::GetSlabKey}};
 use trinity::builder::Builder;
 use super::ast::{self, ForStmt, WhileStmt, IfStmt, ReturnStmt};
 
@@ -181,6 +181,7 @@ impl CodeGen {
       let func_ref = self.cache_stack.get(&func.id.literal).unwrap();
       let args = {
         let llvm_func = func_ref.as_ref::<Function>(&self.tg.builder.module.context).unwrap();
+        let llvm_func = Reference::new(llvm_func.get_skey(), &self.tg.builder.module.context, llvm_func);
         (0..llvm_func.get_num_args()).map(|i| {
           llvm_func.get_arg(i)
         }).collect::<Vec<ValueRef>>()
@@ -205,17 +206,18 @@ impl CodeGen {
     // Save block and instruciton for restoring later
     let block = self.tg.builder.get_current_block().unwrap();
     let insert_before = self.tg.builder.get_insert_before();
-    let entry_block = self.tg.builder
+    let func = self.tg.builder
       .get_current_function()
       .unwrap()
-      .as_ref::<Function>(self.tg.builder.context())
-      .unwrap()
-      .get_block(0)
+      .as_ref::<Function>(&self.tg.builder.module.context)
       .unwrap();
+    let func = Reference::new(func.get_skey(), &self.tg.builder.module.context, func);
+    let entry_block = func.get_block(0).unwrap();
+    let entry_block = Block::from_skey(entry_block.get_skey());
     // Insert to the 1st entry block.
     self.tg.builder.set_current_block(entry_block.clone());
     if let Some(first_inst) = entry_block
-      .as_ref::<Block>(self.tg.builder.context())
+      .as_ref::<Block>(&self.tg.builder.module.context)
       .unwrap()
       .get_inst(0) {
       self.tg.builder.set_insert_before(first_inst);
@@ -248,7 +250,8 @@ impl CodeGen {
   fn generate_return_stmt(&mut self, ret: &ReturnStmt) {
     let func = self.tg.builder.get_current_function().unwrap();
     let func = func.as_ref::<Function>(&self.tg.builder.module.context).unwrap();
-    let func_ret_ty = func.get_ret_ty(&self.tg.builder.module.context);
+    let func = Reference::new(func.get_skey(), &self.tg.builder.module.context, func);
+    let func_ret_ty = func.get_ret_ty();
     let expr_ty = if let Some(expr) = &ret.value {
       let val = self.generate_expr(&expr, false);
       let expr_ty = val.get_type(&self.tg.builder.module.context);

@@ -3,8 +3,8 @@ use std::collections::{HashSet, VecDeque, HashMap};
 use trinity::{
   ir::{
     module::Module, Block,
-    value::instruction::{Store, InstOpcode, Load, BranchInst, InstructionRef},
-    Instruction, ValueRef, Function, VKindCode, PointerType
+    value::{instruction::{Store, InstOpcode, Load, BranchInst, InstructionRef}, function::FunctionRef},
+    Instruction, ValueRef, VKindCode, PointerType
   },
   context::{Context, component::{GetSlabKey, AsSuper}, Reference},
   builder::Builder
@@ -29,18 +29,18 @@ impl WorkEntry {
 }
 
 
-fn analyze_dominators(ctx: &Context, func: &Function, workspace: &mut Vec<WorkEntry>) {
+fn analyze_dominators(ctx: &Context, func: &FunctionRef, workspace: &mut Vec<WorkEntry>) {
   // Calculate the dominators
   let mut changed = true;
   while changed {
     changed = false;
     let block = func.get_block(0).unwrap();
-    workspace[block.skey].dominators.insert(block.skey);
-    workspace[block.skey].depth = 1;
+    workspace[block.get_skey()].dominators.insert(block.get_skey());
+    workspace[block.get_skey()].depth = 1;
     let mut visited = HashSet::new();
-    visited.insert(block.skey);
+    visited.insert(block.get_skey());
     let mut q = VecDeque::new();
-    q.push_back(block.clone());
+    q.push_back(Block::from_skey(block.get_skey()));
     while let Some(front) = q.pop_front() {
       let block = front.as_ref::<Block>(ctx).unwrap();
       let last_idx = block.get_num_insts() - 1;
@@ -209,7 +209,8 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
   let mut phis = HashMap::new();
   // Register values to be phi-resolved
   for func in module.iter() {
-    for block in func.iter(&module.context) {
+    let func = Reference::new(func.get_skey(), &module.context, func);
+    for block in func.iter() {
       if block.get_num_predecessors() > 1 {
         // The current block is the frontier
         let frontier = block.get_skey();
@@ -271,7 +272,8 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
   let mut to_append = Vec::new();
   let mut to_replace = Vec::new();
   for func in builder.module.iter() {
-    for block in func.iter(&builder.module.context) {
+    let func = Reference::new(func.get_skey(), &builder.module.context, func);
+    for block in func.iter() {
       let predeccessors = if block.get_num_predecessors() > 1 {
         block.pred_iter(&builder.module.context)
           .map(|inst| {
@@ -357,7 +359,8 @@ fn find_undominated_stores(
   phi_to_alloc: &HashMap<usize, usize>) -> HashSet<usize> {
   let mut store_with_dom = HashSet::new();
   for func in module.iter() {
-    for block in func.iter(&module.context) {
+    let func = Reference::new(func.get_skey(), &module.context, func);
+    for block in func.iter() {
       for inst in block.inst_iter(&module.context) {
         let inst = Reference::new(inst.get_skey(), &module.context, inst);
         match inst.get_opcode() {
@@ -391,7 +394,8 @@ fn cleanup(module: &mut Module, workspace: &Vec<WorkEntry>, phi_to_alloc: &HashM
     let dominated = find_undominated_stores(&module, &workspace, &phi_to_alloc);
     let mut to_remove = Vec::new();
     for func in module.iter() {
-      for block in func.iter(&module.context) {
+      let func = Reference::new(func.get_skey(), &module.context, func);
+      for block in func.iter() {
         for inst in block.inst_iter(&module.context) {
           let inst = Reference::new(inst.get_skey(), &module.context, inst);
           match inst.get_opcode() {
@@ -432,8 +436,9 @@ pub fn transform(module: Module) -> Module {
   let mut workspace: Vec<WorkEntry> = Vec::new();
   (0..module.context.capacity()).for_each(|_| workspace.push(WorkEntry::new()));
   for func in module.iter() {
+    let func = Reference::new(func.get_skey(), &module.context, func);
     if func.get_num_blocks() != 0 {
-      analyze_dominators(&module.context, func, &mut workspace);
+      analyze_dominators(&module.context, &func, &mut workspace);
     }
   }
   let (mut injected, phi_to_alloc) = inject_phis(module, &mut workspace);

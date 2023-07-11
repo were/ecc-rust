@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use trinity::{
   ir::{
     module::Module,
-    value::{Block, Instruction},
+    value::Instruction,
     value::instruction::{InstOpcode, Store, Load},
   },
   context::component::{GetSlabKey, Reference}
@@ -12,9 +12,9 @@ pub fn transform(mut module: Module) -> Module {
   let mut to_replace = Vec::new();
   let mut to_remove = HashSet::new();
   for func in module.iter() {
+    let func = Reference::new(func.get_skey(), &module.context, func);
     for block in 0..func.get_num_blocks() {
       let block = func.get_block(block).unwrap();
-      let block = block.as_ref::<Block>(&module.context).unwrap();
       let mut values = HashMap::new();
       for inst in block.inst_iter(&module.context) {
         let inst = Reference::new(inst.get_skey(), &module.context, inst);

@@ -8,7 +8,8 @@ fn analysis(module: &Module) -> Vec<usize> {
   let mut cnt: Vec<usize> = Vec::new();
   cnt.resize(module.context.capacity(), 0);
   for func in module.iter() {
-    for block in func.iter(&module.context) {
+    let func = Reference::new(func.get_skey(), &module.context, func);
+    for block in func.iter() {
       for inst in block.inst_iter(&module.context) {
         let inst = Reference::new(inst.get_skey(), &module.context, inst);
         match inst.get_opcode() {
@@ -33,7 +34,8 @@ pub fn transform(module: &mut Module) {
     let cnt = analysis(&module);
     let mut to_remove : Vec<ValueRef> = Vec::new();
     for func in module.iter() {
-      for block in func.iter(&module.context) {
+      let func = Reference::new(func.get_skey(), &module.context, func);
+      for block in func.iter() {
         block.inst_iter(&module.context).for_each(|x| if cnt[x.get_skey()] == 0 { to_remove.push(x.as_super()); });
       }
     }
