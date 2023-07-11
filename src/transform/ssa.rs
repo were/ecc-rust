@@ -255,7 +255,9 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
     for alloc_skey in addrs.iter() {
       let alloc = Instruction::from_skey(*alloc_skey);
       let ptr_ty = alloc.get_type(&builder.module.context);
-      let ty = ptr_ty.as_ref::<PointerType>(&builder.module.context).unwrap().get_pointee_ty();
+      let ptr_ty = ptr_ty.as_ref::<PointerType>(&builder.module.context).unwrap();
+      let ptr_ty = Reference::new(&builder.module.context, ptr_ty);
+      let ty = ptr_ty.get_pointee_ty();
       let comment = alloc.to_string(&builder.module.context, true);
       builder.set_current_block(block.clone());
       let block = block.as_ref::<Block>(&builder.module.context).unwrap();

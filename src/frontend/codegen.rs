@@ -423,8 +423,9 @@ impl CodeGen {
         // "This" is expected to be a pointer to a struct.
         let this = self.generate_expr(&aa.this, false);
         // Get the pointer's underlying struct type.
-        let ptr_ty_ref = this.get_type(self.tg.builder.context());
-        let ptr_ty = ptr_ty_ref.as_ref::<PointerType>(self.tg.builder.context()).unwrap();
+        let ptr_ty_ref = this.get_type(&self.tg.builder.module.context);
+        let ptr_ty = ptr_ty_ref.as_ref::<PointerType>(&self.tg.builder.module.context).unwrap();
+        let ptr_ty = Reference::new(&self.tg.builder.module.context, ptr_ty);
         let sty_ref = ptr_ty.get_pointee_ty();
         let sty = sty_ref.as_ref::<StructType>(self.tg.builder.context()).unwrap();
         // Get the struct type for the corresponding struct attr.
