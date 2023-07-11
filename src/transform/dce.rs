@@ -1,5 +1,6 @@
 use trinity::context::Reference;
-use trinity::context::component::{GetSlabKey, AsSuper};
+use trinity::context::component::GetSlabKey;
+use trinity::ir::Instruction;
 use trinity::ir::{module::Module, ValueRef};
 use trinity::ir::value::instruction::InstOpcode;
 
@@ -10,8 +11,8 @@ fn analysis(module: &Module) -> Vec<usize> {
   for func in module.iter() {
     let func = Reference::new(func.get_skey(), &module.context, func);
     for block in func.iter() {
-      for inst in block.inst_iter(&module.context) {
-        let inst = Reference::new(inst.get_skey(), &module.context, inst);
+      let block = Reference::new(block.get_skey(), &module.context, block);
+      for inst in block.inst_iter() {
         match inst.get_opcode() {
           InstOpcode::Return | InstOpcode::Call | InstOpcode::Branch | InstOpcode::Store(_) => {
             cnt[inst.skey] = 1;
@@ -36,7 +37,12 @@ pub fn transform(module: &mut Module) {
     for func in module.iter() {
       let func = Reference::new(func.get_skey(), &module.context, func);
       for block in func.iter() {
-        block.inst_iter(&module.context).for_each(|x| if cnt[x.get_skey()] == 0 { to_remove.push(x.as_super()); });
+        let block = Reference::new(block.get_skey(), &module.context, block);
+        block.inst_iter().for_each(|x| {
+          if cnt[x.skey] == 0 {
+            to_remove.push(Instruction::from_skey(x.skey));
+          }
+        });
       }
     }
     iterative = to_remove.len() != 0;

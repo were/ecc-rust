@@ -216,10 +216,11 @@ impl CodeGen {
     let entry_block = Block::from_skey(entry_block.get_skey());
     // Insert to the 1st entry block.
     self.tg.builder.set_current_block(entry_block.clone());
-    if let Some(first_inst) = entry_block
+    let entry_block = entry_block
       .as_ref::<Block>(&self.tg.builder.module.context)
-      .unwrap()
-      .get_inst(0) {
+      .unwrap();
+    let entry_block = Reference::new(entry_block.get_skey(), &self.tg.builder.module.context, entry_block);
+    if let Some(first_inst) = entry_block.get_inst(0) {
       self.tg.builder.set_insert_before(first_inst);
     }
     let alloca = self.tg.builder.create_alloca(ty);
