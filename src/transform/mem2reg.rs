@@ -5,7 +5,7 @@ use trinity::{
     value::{Block, Instruction},
     value::instruction::{InstOpcode, Store, Load},
   },
-  context::component::{GetSlabKey, AsSuper}
+  context::component::{GetSlabKey, Reference}
 };
 
 pub fn transform(mut module: Module) -> Module {
@@ -17,42 +17,46 @@ pub fn transform(mut module: Module) -> Module {
       let block = block.as_ref::<Block>(&module.context).unwrap();
       let mut values = HashMap::new();
       for inst in block.inst_iter(&module.context) {
+        let inst = Reference::new(inst.get_skey(), &module.context, inst);
         match inst.get_opcode() {
           InstOpcode::Alloca(_) => {
             // If it is allocate, create the entry.
-            values.insert(inst.get_skey(), Vec::new());
+            values.insert(inst.skey, Vec::new());
           },
           // Store should be checked here.
           InstOpcode::Store(_) => {
-            let store = Store::new(inst);
+            let store = inst.as_sub::<Store>();
             if let Some(addr) = store.get_ptr().as_ref::<Instruction>(&module.context) {
+              let addr = Reference::new(addr.get_skey(), &module.context, addr);
               // If it is store, update the value of the entry for allocated addresses.
               if let InstOpcode::Alloca(_) = addr.get_opcode() {
                 // We are not always in the same block of allocation.
                 // If this entry is not in this block, create the entry.
-                if values.get(&addr.get_skey()).is_none() {
-                  values.insert(addr.get_skey(), Vec::new());
+                if values.get(&addr.skey).is_none() {
+                  values.insert(addr.skey, Vec::new());
                 }
-                values.get_mut(&addr.get_skey()).unwrap().push(inst.as_super());
+                values.get_mut(&addr.skey).unwrap().push(Instruction::from_skey(inst.skey));
               }
             }
           },
           // If it is a load.
           InstOpcode::Load(_) => {
-            let load = Load::new(inst);
+            let load = inst.as_sub::<Load>();
             // And the pointer of this load is an alloca.
             if let Some(load_addr) = load.get_ptr().as_ref::<Instruction>(&module.context) {
+              let load_addr = Reference::new(load_addr.get_skey(), &module.context, load_addr);
               // If the load is from an allocated address.
               if let InstOpcode::Alloca(_) = load_addr.get_opcode() {
-                if let Some(x) = values.get(&load_addr.get_skey()) {
+                if let Some(x) = values.get(&load_addr.skey) {
                   // If the address is allocated in this block.
                   if let Some(store) = x.last() {
                     // Replace the load with the value.
                     let store = store.as_ref::<Instruction>(&module.context).unwrap();
-                    let store = Store::new(store);
+                    let store = Reference::new(store.get_skey(), &module.context, store);
+                    let store = store.as_sub::<Store>();
                     let value = store.get_value();
-                    to_replace.push((inst.as_super(), value.clone()));
-                    to_remove.insert(inst.as_super());
+                    to_replace.push((Instruction::from_skey(inst.skey), value.clone()));
+                    to_remove.insert(Instruction::from_skey(inst.skey));
                   }
                 }
               }

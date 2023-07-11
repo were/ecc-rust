@@ -1,3 +1,4 @@
+use trinity::context::Reference;
 use trinity::context::component::{GetSlabKey, AsSuper};
 use trinity::ir::{module::Module, ValueRef};
 use trinity::ir::value::instruction::InstOpcode;
@@ -9,9 +10,10 @@ fn analysis(module: &Module) -> Vec<usize> {
   for func in module.iter() {
     for block in func.iter(&module.context) {
       for inst in block.inst_iter(&module.context) {
+        let inst = Reference::new(inst.get_skey(), &module.context, inst);
         match inst.get_opcode() {
           InstOpcode::Return | InstOpcode::Call | InstOpcode::Branch | InstOpcode::Store(_) => {
-            cnt[inst.get_skey()] = 1;
+            cnt[inst.skey] = 1;
           },
           _ => {}
         }
@@ -37,6 +39,7 @@ pub fn transform(module: &mut Module) {
     }
     iterative = to_remove.len() != 0;
     for elem in to_remove {
+      // eprintln!("remove {}", elem.skey);
       module.remove_inst(elem, true);
     }
   }
