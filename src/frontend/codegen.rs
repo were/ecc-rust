@@ -1,12 +1,14 @@
 use std::rc::Rc;
 use std::collections::HashMap;
 
-use trinity::{ir::{
-  self,
-  value::ValueRef,
-  types::{StructType, TypeRef},
-  value::Function, PointerType, Block
-}, context::{Reference, component::GetSlabKey}};
+use trinity::{
+  ir::{
+    self,
+    value::ValueRef,
+    types::{StructType, TypeRef},
+    value::Function, PointerType, Block
+  }
+};
 use trinity::builder::Builder;
 use super::ast::{self, ForStmt, WhileStmt, IfStmt, ReturnStmt};
 
@@ -181,7 +183,6 @@ impl CodeGen {
       let func_ref = self.cache_stack.get(&func.id.literal).unwrap();
       let args = {
         let llvm_func = func_ref.as_ref::<Function>(&self.tg.builder.module.context).unwrap();
-        let llvm_func = Reference::new(&self.tg.builder.module.context, llvm_func);
         (0..llvm_func.get_num_args()).map(|i| {
           llvm_func.get_arg(i)
         }).collect::<Vec<ValueRef>>()
@@ -211,7 +212,6 @@ impl CodeGen {
       .unwrap()
       .as_ref::<Function>(&self.tg.builder.module.context)
       .unwrap();
-    let func = Reference::new(&self.tg.builder.module.context, func);
     let entry_block = func.get_block(0).unwrap();
     let entry_block = Block::from_skey(entry_block.get_skey());
     // Insert to the 1st entry block.
@@ -219,7 +219,6 @@ impl CodeGen {
     let entry_block = entry_block
       .as_ref::<Block>(&self.tg.builder.module.context)
       .unwrap();
-    let entry_block = Reference::new(&self.tg.builder.module.context, entry_block);
     if let Some(first_inst) = entry_block.get_inst(0) {
       self.tg.builder.set_insert_before(first_inst);
     }
@@ -251,7 +250,6 @@ impl CodeGen {
   fn generate_return_stmt(&mut self, ret: &ReturnStmt) {
     let func = self.tg.builder.get_current_function().unwrap();
     let func = func.as_ref::<Function>(&self.tg.builder.module.context).unwrap();
-    let func = Reference::new(&self.tg.builder.module.context, func);
     let func_ret_ty = func.get_ret_ty();
     let expr_ty = if let Some(expr) = &ret.value {
       let val = self.generate_expr(&expr, false);
@@ -425,7 +423,6 @@ impl CodeGen {
         // Get the pointer's underlying struct type.
         let ptr_ty_ref = this.get_type(&self.tg.builder.module.context);
         let ptr_ty = ptr_ty_ref.as_ref::<PointerType>(&self.tg.builder.module.context).unwrap();
-        let ptr_ty = Reference::new(&self.tg.builder.module.context, ptr_ty);
         let sty_ref = ptr_ty.get_pointee_ty();
         let sty = sty_ref.as_ref::<StructType>(self.tg.builder.context()).unwrap();
         // Get the struct type for the corresponding struct attr.
