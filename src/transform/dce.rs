@@ -1,5 +1,4 @@
 use trinity::context::Reference;
-use trinity::context::component::GetSlabKey;
 use trinity::ir::Instruction;
 use trinity::ir::{module::Module, ValueRef};
 use trinity::ir::value::instruction::InstOpcode;
@@ -9,13 +8,13 @@ fn analysis(module: &Module) -> Vec<usize> {
   let mut cnt: Vec<usize> = Vec::new();
   cnt.resize(module.context.capacity(), 0);
   for func in module.iter() {
-    let func = Reference::new(func.get_skey(), &module.context, func);
+    let func = Reference::new(&module.context, func);
     for block in func.iter() {
-      let block = Reference::new(block.get_skey(), &module.context, block);
+      let block = Reference::new(&module.context, block);
       for inst in block.inst_iter() {
         match inst.get_opcode() {
           InstOpcode::Return | InstOpcode::Call | InstOpcode::Branch | InstOpcode::Store(_) => {
-            cnt[inst.skey] = 1;
+            cnt[inst.get_skey()] = 1;
           },
           _ => {}
         }
@@ -35,12 +34,12 @@ pub fn transform(module: &mut Module) {
     let cnt = analysis(&module);
     let mut to_remove : Vec<ValueRef> = Vec::new();
     for func in module.iter() {
-      let func = Reference::new(func.get_skey(), &module.context, func);
+      let func = Reference::new(&module.context, func);
       for block in func.iter() {
-        let block = Reference::new(block.get_skey(), &module.context, block);
+        let block = Reference::new(&module.context, block);
         block.inst_iter().for_each(|x| {
-          if cnt[x.skey] == 0 {
-            to_remove.push(Instruction::from_skey(x.skey));
+          if cnt[x.get_skey()] == 0 {
+            to_remove.push(Instruction::from_skey(x.get_skey()));
           }
         });
       }
