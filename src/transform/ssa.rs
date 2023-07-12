@@ -377,10 +377,12 @@ fn cleanup(module: &mut Module, workspace: &Vec<WorkEntry>, phi_to_alloc: &HashM
         for inst in block.inst_iter() {
           if let Some(store) = inst.as_sub::<Store>() {
             let ptr = store.get_ptr();
-            if let Some(ptr_inst) =  ptr.as_ref::<Instruction>(&module.context) {
+            if let Some(ptr_inst) = ptr.as_ref::<Instruction>(&module.context) {
               match ptr_inst.get_opcode() {
                 InstOpcode::Alloca(_) => {
                   if !dominated.contains(&inst.get_skey()) {
+                    let log = inst.to_string(false);
+                    eprintln!("[SSA] Remove: {}, because stored value not loaded.", log);
                     to_remove.push(Instruction::from_skey(inst.get_skey()));
                   }
                 },

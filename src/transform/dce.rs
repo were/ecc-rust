@@ -31,6 +31,8 @@ pub fn transform(module: &mut Module) {
     let to_remove = analysis(&module);
     iterative = to_remove.len() != 0;
     for elem in to_remove {
+      let log = elem.as_ref::<Instruction>(&module.context).unwrap().to_string(false);
+      eprintln!("[DCE] Remove {}, due to no user.", log);
       let mut mutator = InstMutator::new(&mut module.context, &elem);
       mutator.erase_from_parent();
     }
