@@ -1,10 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use trinity::{
-  ir::{
-    module::Module,
-    value::Instruction,
-    value::instruction::{InstOpcode, Store, Load},
-  }
+use trinity::ir::{
+  module::Module,
+  value::Instruction,
+  value::instruction::{InstOpcode, Store, Load},
 };
 
 pub fn transform(mut module: Module) -> Module {
@@ -22,7 +20,7 @@ pub fn transform(mut module: Module) -> Module {
           },
           // Store should be checked here.
           InstOpcode::Store(_) => {
-            let store = inst.as_sub::<Store>();
+            let store = inst.as_sub::<Store>().unwrap();
             if let Some(addr) = store.get_ptr().as_ref::<Instruction>(&module.context) {
               // If it is store, update the value of the entry for allocated addresses.
               if let InstOpcode::Alloca(_) = addr.get_opcode() {
@@ -37,7 +35,7 @@ pub fn transform(mut module: Module) -> Module {
           },
           // If it is a load.
           InstOpcode::Load(_) => {
-            let load = inst.as_sub::<Load>();
+            let load = inst.as_sub::<Load>().unwrap();
             // And the pointer of this load is an alloca.
             if let Some(load_addr) = load.get_ptr().as_ref::<Instruction>(&module.context) {
               // If the load is from an allocated address.
@@ -47,7 +45,7 @@ pub fn transform(mut module: Module) -> Module {
                   if let Some(store) = x.last() {
                     // Replace the load with the value.
                     let store = store.as_ref::<Instruction>(&module.context).unwrap();
-                    let store = store.as_sub::<Store>();
+                    let store = store.as_sub::<Store>().unwrap();
                     let value = store.get_value();
                     to_replace.push((Instruction::from_skey(inst.get_skey()), value.clone()));
                     to_remove.insert(Instruction::from_skey(inst.get_skey()));

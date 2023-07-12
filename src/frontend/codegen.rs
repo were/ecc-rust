@@ -1,13 +1,11 @@
 use std::rc::Rc;
 use std::collections::HashMap;
 
-use trinity::{
-  ir::{
-    self,
-    value::ValueRef,
-    types::{StructType, TypeRef},
-    value::Function, PointerType, Block
-  }
+use trinity::ir::{
+  self,
+  value::ValueRef,
+  types::{StructType, TypeRef},
+  value::Function, PointerType, Block
 };
 use trinity::builder::Builder;
 use super::ast::{self, ForStmt, WhileStmt, IfStmt, ReturnStmt};
