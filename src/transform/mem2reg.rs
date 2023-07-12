@@ -67,7 +67,8 @@ pub fn transform(mut module: Module) -> Module {
     }
   }
   for (inst, value) in to_replace.into_iter() {
-    module.replace_all_uses_with(inst, value);
+    let mut inst = InstMutator::new(&mut module.context, &inst);
+    inst.replace_all_uses_with(value);
   }
   for inst in to_remove.into_iter() {
     let mut mutator = InstMutator::new(&mut module.context, &inst);

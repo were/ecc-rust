@@ -327,10 +327,12 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
     let block = inst_ref.get_parent();
     let block = Block::from_skey(block.get_skey());
     if let Some(new_value) = find_value_dominator(&builder.module.context, &inst_ref, &block, workspace, &phi_to_alloc, false) {
+      let mut mutator = InstMutator::new(builder.context(), inst);
+      mutator.replace_all_uses_with(new_value);
+      // builder.module.replace_all_uses_with(inst.clone(), new_value);
       // eprintln!("SSA Replace: {} to {}",
       //  inst.to_string(&builder.module.context, false),
       //  new_value.to_string(&builder.module.context, false));
-      builder.module.replace_all_uses_with(inst.clone(), new_value);
       //eprintln!("Replaced? {}", replaced);
     }
   }
