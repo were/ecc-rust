@@ -198,6 +198,7 @@ impl TokenHandle {
         (Regex::new(r"^>="), valueless_token!(TokenType::GE)),
         (Regex::new(r"^=="), valueless_token!(TokenType::EQ)),
         (Regex::new(r"^\d+"), valueless_token!(TokenType::IntLiteral)),
+        (Regex::new(r"^\-\d+"), valueless_token!(TokenType::IntLiteral)),
         (Regex::new(r"^\."), valueless_token!(TokenType::AttrAccess)),
         (Regex::new("^\".*\""), valueless_token!(TokenType::StringLiteral)),
       ]

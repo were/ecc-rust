@@ -38,6 +38,13 @@ fn parse_array_suffix(tokenizer: &mut Lexer) -> Vec<Expr> {
 
 fn parse_id_and_suffix(tokenizer: &mut Lexer) -> Result<Expr, String> {
 
+  if tokenizer.lookahead(TokenType::LPran) {
+    tokenizer.consume(TokenType::LPran);
+    let res = parse_rval(tokenizer);
+    tokenizer.consume(TokenType::RPran);
+    return res
+  }
+
   let id = tokenizer.consume(TokenType::Identifier);
 
   if tokenizer.lookahead(TokenType::LPran) {
@@ -130,11 +137,6 @@ fn parse_new_expr(tokenizer: &mut Lexer) -> Result<Expr, String> {
 fn parse_rval(tokenizer: &mut Lexer) -> Result<Expr, String> {
   let res = if tokenizer.lookahead(TokenType::KeywordNew) {
     parse_new_expr(tokenizer)
-  } else if tokenizer.lookahead(TokenType::LPran) {
-    tokenizer.consume(TokenType::LPran);
-    let res = parse_rval(tokenizer);
-    tokenizer.consume(TokenType::RPran);
-    res
   } else {
     parse_operator_expr(tokenizer,
       &[(2, &[TokenType::LE, TokenType::LT, TokenType::GE, TokenType::GT, TokenType::EQ]),
