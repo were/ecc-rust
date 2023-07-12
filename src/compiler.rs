@@ -7,6 +7,7 @@ use crate::frontend::codegen_llvm;
 use crate::transform::optimize;
 
 fn backend(irname: &String, output: &String) {
+  eprintln!("Output to: {}", output);
   assert!(irname.ends_with(".ll"));
   let objname = irname[0..irname.len()-3].to_string() + ".o";
   // emcc a.ll -c

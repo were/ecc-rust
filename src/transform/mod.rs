@@ -5,11 +5,9 @@ mod dce;
 mod mem2reg;
 
 pub fn optimize(module: Module) -> Module {
-  eprintln!("{}", module);
+  // eprintln!("{}", module);
   let p1 = mem2reg::transform(module);
-  let mut p2 = ssa::transform(p1);
-  dce::transform(&mut p2);
-  // return dceed;
+  let p2 = ssa::transform(p1);
   p2
 }
 

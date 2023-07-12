@@ -29,7 +29,6 @@ fn main() -> Result<(), String> {
   let mut file = File::open(&args[1]).unwrap();
   let mut src = String::new();
   file.read_to_string(&mut src).unwrap();
-  eprintln!("Output to: {}", output);
   compiler::invoke(&args[1], &output, src, print_ast)
 }
 
