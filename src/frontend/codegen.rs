@@ -205,19 +205,19 @@ impl CodeGen {
     // Save block and instruciton for restoring later
     let block = self.tg.builder.get_current_block().unwrap();
     let insert_before = self.tg.builder.get_insert_before();
-    let entry_block = self.tg.builder
+    let func = self.tg.builder
       .get_current_function()
       .unwrap()
-      .as_ref::<Function>(self.tg.builder.context())
-      .unwrap()
-      .get_block(0)
+      .as_ref::<Function>(&self.tg.builder.module.context)
       .unwrap();
+    let entry_block = func.get_block(0).unwrap();
+    let entry_block = Block::from_skey(entry_block.get_skey());
     // Insert to the 1st entry block.
     self.tg.builder.set_current_block(entry_block.clone());
-    if let Some(first_inst) = entry_block
-      .as_ref::<Block>(self.tg.builder.context())
-      .unwrap()
-      .get_inst(0) {
+    let entry_block = entry_block
+      .as_ref::<Block>(&self.tg.builder.module.context)
+      .unwrap();
+    if let Some(first_inst) = entry_block.get_inst(0) {
       self.tg.builder.set_insert_before(first_inst);
     }
     let alloca = self.tg.builder.create_alloca(ty);
@@ -248,7 +248,7 @@ impl CodeGen {
   fn generate_return_stmt(&mut self, ret: &ReturnStmt) {
     let func = self.tg.builder.get_current_function().unwrap();
     let func = func.as_ref::<Function>(&self.tg.builder.module.context).unwrap();
-    let func_ret_ty = func.get_ret_ty(&self.tg.builder.module.context);
+    let func_ret_ty = func.get_ret_ty();
     let expr_ty = if let Some(expr) = &ret.value {
       let val = self.generate_expr(&expr, false);
       let expr_ty = val.get_type(&self.tg.builder.module.context);
@@ -419,8 +419,8 @@ impl CodeGen {
         // "This" is expected to be a pointer to a struct.
         let this = self.generate_expr(&aa.this, false);
         // Get the pointer's underlying struct type.
-        let ptr_ty_ref = this.get_type(self.tg.builder.context());
-        let ptr_ty = ptr_ty_ref.as_ref::<PointerType>(self.tg.builder.context()).unwrap();
+        let ptr_ty_ref = this.get_type(&self.tg.builder.module.context);
+        let ptr_ty = ptr_ty_ref.as_ref::<PointerType>(&self.tg.builder.module.context).unwrap();
         let sty_ref = ptr_ty.get_pointee_ty();
         let sty = sty_ref.as_ref::<StructType>(self.tg.builder.context()).unwrap();
         // Get the struct type for the corresponding struct attr.

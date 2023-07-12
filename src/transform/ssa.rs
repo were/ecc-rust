@@ -3,10 +3,10 @@ use std::collections::{HashSet, VecDeque, HashMap};
 use trinity::{
   ir::{
     module::Module, Block,
-    value::instruction::{Store, InstOpcode, Load, BranchInst},
-    Instruction, ValueRef, Function, VKindCode, PointerType
+    value::{instruction::{Store, InstOpcode, Load, BranchInst, InstructionRef, InstMutator}, function::FunctionRef},
+    Instruction, ValueRef, VKindCode, PointerType
   },
-  context::{Context, component::{GetSlabKey, AsSuper}},
+  context::Context,
   builder::Builder
 };
 
@@ -29,29 +29,25 @@ impl WorkEntry {
 }
 
 
-fn analyze_dominators(ctx: &Context, func: &Function, workspace: &mut Vec<WorkEntry>) {
+fn analyze_dominators(ctx: &Context, func: &FunctionRef, workspace: &mut Vec<WorkEntry>) {
   // Calculate the dominators
   let mut changed = true;
   while changed {
     changed = false;
     let block = func.get_block(0).unwrap();
-    workspace[block.skey].dominators.insert(block.skey);
-    workspace[block.skey].depth = 1;
+    workspace[block.get_skey()].dominators.insert(block.get_skey());
+    workspace[block.get_skey()].depth = 1;
     let mut visited = HashSet::new();
-    visited.insert(block.skey);
+    visited.insert(block.get_skey());
     let mut q = VecDeque::new();
-    q.push_back(block.clone());
+    q.push_back(Block::from_skey(block.get_skey()));
     while let Some(front) = q.pop_front() {
       let block = front.as_ref::<Block>(ctx).unwrap();
       let last_idx = block.get_num_insts() - 1;
-      let inst = block
-        .get_inst(last_idx)
-        .unwrap();
-      let inst = inst
-        .as_ref::<Instruction>(ctx)
-        .unwrap();
+      let inst = block.get_inst(last_idx).unwrap();
+      let inst = inst.as_ref::<Instruction>(ctx).unwrap();
       if *inst.get_opcode() == InstOpcode::Branch {
-        let successors = BranchInst::new(inst).get_successors();
+        let successors = inst.as_sub::<BranchInst>().unwrap().get_successors();
         for succ in successors {
           if visited.get(&succ.skey).is_none() {
             visited.insert(succ.skey);
@@ -143,7 +139,7 @@ fn analyze_dominators(ctx: &Context, func: &Function, workspace: &mut Vec<WorkEn
 
 fn find_value_dominator(
   ctx: &Context,
-  sub: &Instruction,
+  sub: &InstructionRef,
   block: &ValueRef,
   workspace: &Vec<WorkEntry>,
   phi_to_alloc: &HashMap<usize, usize>,
@@ -151,7 +147,7 @@ fn find_value_dominator(
   let addr = {
     match sub.get_opcode() {
       InstOpcode::Load(_) => {
-        let load = Load::new(sub);
+        let load = sub.as_sub::<Load>().unwrap();
         load.get_ptr().clone()
       },
       InstOpcode::Phi => {
@@ -166,9 +162,9 @@ fn find_value_dominator(
   loop {
     let block_value = Block::from_skey(runner);
     let block_ref = block_value.as_ref::<Block>(ctx).unwrap();
-    let n = if runner == sub_parent.skey {
+    let n = if runner == sub_parent.get_skey() {
       // If we are at the source block, inspect all the instructions before.
-      let pos = block_ref.inst_iter(ctx).position(|iter| { sub.get_skey() == iter.get_skey() });
+      let pos = block_ref.inst_iter().position(|iter| { sub.get_skey() == iter.get_skey() });
       pos.unwrap()
     } else {
       // If we are at a dom block, inspect all the instructions.
@@ -187,7 +183,7 @@ fn find_value_dominator(
           }
         },
         InstOpcode::Store(_) => {
-          let store = Store::new(dom_inst);
+          let store = dom_inst.as_sub::<Store>().unwrap();
           if store.get_ptr().skey == addr.skey {
             return if return_store { Some(dom) } else { Some(store.get_value().clone()) }
           }
@@ -209,28 +205,25 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
   let mut phis = HashMap::new();
   // Register values to be phi-resolved
   for func in module.iter() {
-    for block in func.iter(&module.context) {
-      if block.get_num_predecessors() > 1 {
+    for block in func.iter() {
+      let predeccessors = block.pred_iter().collect::<Vec<_>>();
+      if predeccessors.len() > 1 {
         // The current block is the frontier
         let frontier = block.get_skey();
         phis.insert(frontier, HashSet::new());
-        eprintln!("frontier: {}", block.as_super().to_string(&module.context, false));
-        for pred in block.pred_iter(&module.context) {
-          let mut runner = pred.get_parent().skey;
+        for user_inst in predeccessors.iter() {
+          let pred = user_inst;
+          let mut runner = pred.get_parent().get_skey();
           while runner != workspace[block.get_skey()].idom {
             let runner_block = Block::from_skey(runner);
             let runner_block = runner_block.as_ref::<Block>(&module.context).unwrap();
-            runner_block.inst_iter(&module.context).rev().for_each(|inst| {
-              match inst.get_opcode() {
-                InstOpcode::Store(_) => {
-                  let store = Store::new(inst);
-                  if let Some(store_addr) = store.get_ptr().as_ref::<Instruction>(&module.context) {
-                    if let InstOpcode::Alloca(_) = store_addr.get_opcode() {
-                      phis.get_mut(&frontier).unwrap().insert(store_addr.get_skey());
-                    }
+            runner_block.inst_iter().rev().for_each(|inst| {
+              if let Some(store) = inst.as_sub::<Store>() {
+                if let Some(store_addr) = store.get_ptr().as_ref::<Instruction>(&module.context) {
+                  if let InstOpcode::Alloca(_) = store_addr.get_opcode() {
+                    phis.get_mut(&frontier).unwrap().insert(store_addr.get_skey());
                   }
-                },
-                _ => {}
+                }
               }
             });
             if workspace[runner].depth == 1 {
@@ -250,7 +243,8 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
     for alloc_skey in addrs.iter() {
       let alloc = Instruction::from_skey(*alloc_skey);
       let ptr_ty = alloc.get_type(&builder.module.context);
-      let ty = ptr_ty.as_ref::<PointerType>(&builder.module.context).unwrap().get_pointee_ty();
+      let ptr_ty = ptr_ty.as_ref::<PointerType>(&builder.module.context).unwrap();
+      let ty = ptr_ty.get_pointee_ty();
       let comment = alloc.to_string(&builder.module.context, true);
       builder.set_current_block(block.clone());
       let block = block.as_ref::<Block>(&builder.module.context).unwrap();
@@ -260,7 +254,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
       phi_to_alloc.insert(phi.skey, *alloc_skey);
       {
         let phi = phi.as_mut::<Instruction>(builder.context()).unwrap();
-        phi.set_comment(comment);
+        phi.set_comment(format!("derive from {}", comment));
       }
       builder.create_store(phi, alloc).unwrap();
     }
@@ -269,18 +263,16 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
   let mut to_append = Vec::new();
   let mut to_replace = Vec::new();
   for func in builder.module.iter() {
-    for block in func.iter(&builder.module.context) {
-      let predeccessors = if block.get_num_predecessors() > 1 {
-        block.pred_iter(&builder.module.context)
-          .map(|inst| {
-            let block = inst.get_parent();
-            block.skey
-          })
-          .collect::<HashSet<_>>()
+    for block in func.iter() {
+      let pred_branches = block.pred_iter().collect::<Vec<_>>();
+      let predeccessors = if pred_branches.len() > 1 {
+        let mut res = HashSet::new();
+        pred_branches.iter().for_each(|inst| { res.insert(inst.get_parent().get_skey()); });
+        res
       } else {
         HashSet::new()
       };
-      for inst in block.inst_iter(&builder.module.context) {
+      for inst in block.inst_iter() {
         match inst.get_opcode() {
           InstOpcode::Phi => {
             assert!(!predeccessors.is_empty());
@@ -288,7 +280,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
               let incoming_block = Block::from_skey(*pred);
               if let Some(incoming_value) = find_value_dominator(
                 &builder.module.context,
-                inst,
+                &inst,
                 &incoming_block,
                 workspace,
                 &phi_to_alloc,
@@ -299,13 +291,13 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
                 (ValueRef{ skey: 0, kind: VKindCode::Unknown }, incoming_block)
               }
             }).collect::<Vec<_>>();
-            to_append.push((inst.as_super(), incomings));
+            to_append.push((Instruction::from_skey(inst.get_skey()), incomings));
           }
           InstOpcode::Load(_) => {
-            let load = Load::new(inst);
+            let load = inst.as_sub::<Load>().unwrap();
             if let Some(load_addr) = load.get_ptr().as_ref::<Instruction>(&builder.module.context) {
               if let InstOpcode::Alloca(_) = load_addr.get_opcode() {
-                to_replace.push(inst.as_super())
+                to_replace.push(Instruction::from_skey(inst.get_skey()))
               }
             }
           }
@@ -325,7 +317,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
           incoming_value.clone()
         }
       };
-      let phi = phi.as_mut::<Instruction>(builder.context()).unwrap();
+      let mut phi = InstMutator::new(builder.context(), &phi);
       phi.add_operand(incoming_value);
       phi.add_operand(incoming_block.clone());
     });
@@ -333,8 +325,15 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
   for inst in to_replace.iter() {
     let inst_ref = (*inst).as_ref::<Instruction>(&builder.module.context).unwrap();
     let block = inst_ref.get_parent();
-    if let Some(new_value) = find_value_dominator(&builder.module.context, inst_ref, &block, workspace, &phi_to_alloc, false) {
-      builder.module.replace_all_uses_with(inst.clone(), new_value);
+    let block = Block::from_skey(block.get_skey());
+    if let Some(new_value) = find_value_dominator(&builder.module.context, &inst_ref, &block, workspace, &phi_to_alloc, false) {
+      let mut mutator = InstMutator::new(builder.context(), inst);
+      mutator.replace_all_uses_with(new_value);
+      // builder.module.replace_all_uses_with(inst.clone(), new_value);
+      // eprintln!("SSA Replace: {} to {}",
+      //  inst.to_string(&builder.module.context, false),
+      //  new_value.to_string(&builder.module.context, false));
+      //eprintln!("Replaced? {}", replaced);
     }
   }
   (builder.module, phi_to_alloc)
@@ -346,24 +345,21 @@ fn find_undominated_stores(
   phi_to_alloc: &HashMap<usize, usize>) -> HashSet<usize> {
   let mut store_with_dom = HashSet::new();
   for func in module.iter() {
-    for block in func.iter(&module.context) {
-      for inst in block.inst_iter(&module.context) {
-        match inst.get_opcode() {
-          InstOpcode::Load(_) => {
-            let load = Load::new(inst);
-            if let Some(load_addr) = load.get_ptr().as_ref::<Instruction>(&module.context) {
-              if let InstOpcode::Alloca(_) = load_addr.get_opcode() {
-                if let Some(value) = find_value_dominator(
-                  &module.context, inst, &block.as_super(), workspace, &phi_to_alloc, true) {
-                  let inst = value.as_ref::<Instruction>(&module.context).unwrap();
-                  if let InstOpcode::Store(_) = inst.get_opcode() {
-                    store_with_dom.insert(value.skey);
-                  }
+    for block in func.iter() {
+      for inst in block.inst_iter() {
+        if let Some(load) = inst.as_sub::<Load>() {
+          if let Some(load_addr) = load.get_ptr().as_ref::<Instruction>(&module.context) {
+            if let InstOpcode::Alloca(_) = load_addr.get_opcode() {
+              let block_ref = Block::from_skey(block.get_skey());
+              if let Some(value) = find_value_dominator(
+                &module.context, &inst, &block_ref, workspace, &phi_to_alloc, true) {
+                let inst = value.as_ref::<Instruction>(&module.context).unwrap();
+                if let InstOpcode::Store(_) = inst.get_opcode() {
+                  store_with_dom.insert(value.skey);
                 }
               }
             }
           }
-          _ => {}
         }
       }
     }
@@ -377,25 +373,21 @@ fn cleanup(module: &mut Module, workspace: &Vec<WorkEntry>, phi_to_alloc: &HashM
     let dominated = find_undominated_stores(&module, &workspace, &phi_to_alloc);
     let mut to_remove = Vec::new();
     for func in module.iter() {
-      for block in func.iter(&module.context) {
-        for inst in block.inst_iter(&module.context) {
-          match inst.get_opcode() {
-            InstOpcode::Store(_) => {
-              let store = Store::new(inst);
-              let ptr = store.get_ptr();
-              if let Some(ptr_inst) =  ptr.as_ref::<Instruction>(&module.context) {
-                match ptr_inst.get_opcode() {
-                  InstOpcode::Alloca(_) => {
-                    if !dominated.contains(&inst.get_skey()) {
-                      to_remove.push(inst.as_super());
-                    }
-                  },
-                  _ => { }
-                }
-              } // if store ptr is a instruction
-            }, // store
-            _ => {}
-          } // match inst opcode
+      for block in func.iter() {
+        for inst in block.inst_iter() {
+          if let Some(store) = inst.as_sub::<Store>() {
+            let ptr = store.get_ptr();
+            if let Some(ptr_inst) =  ptr.as_ref::<Instruction>(&module.context) {
+              match ptr_inst.get_opcode() {
+                InstOpcode::Alloca(_) => {
+                  if !dominated.contains(&inst.get_skey()) {
+                    to_remove.push(Instruction::from_skey(inst.get_skey()));
+                  }
+                },
+                _ => { }
+              }
+            } // if store ptr is a instruction
+          }
         } // for inst
       } // for block
     } // for func
@@ -403,7 +395,8 @@ fn cleanup(module: &mut Module, workspace: &Vec<WorkEntry>, phi_to_alloc: &HashM
       return;
     }
     for elem in to_remove {
-      module.remove_inst(elem, true);
+      let mut mutator = InstMutator::new(&mut module.context, &elem);
+      mutator.erase_from_parent();
     }
     dce::transform(module);
   }
@@ -416,7 +409,7 @@ pub fn transform(module: Module) -> Module {
   (0..module.context.capacity()).for_each(|_| workspace.push(WorkEntry::new()));
   for func in module.iter() {
     if func.get_num_blocks() != 0 {
-      analyze_dominators(&module.context, func, &mut workspace);
+      analyze_dominators(&module.context, &func, &mut workspace);
     }
   }
   let (mut injected, phi_to_alloc) = inject_phis(module, &mut workspace);
