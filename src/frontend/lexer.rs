@@ -191,7 +191,7 @@ impl TokenHandle {
         (Regex::new(r"^\-"), valueless_token!(TokenType::Sub)),
         (Regex::new(r"^%"), valueless_token!(TokenType::Mod)),
         (Regex::new(r"^/"), valueless_token!(TokenType::Div)),
-        (Regex::new(r"^\*"), valueless_token!(TokenType::Div)),
+        (Regex::new(r"^\*"), valueless_token!(TokenType::Mul)),
         (Regex::new(r"^<"), valueless_token!(TokenType::LT)),
         (Regex::new(r"^>"), valueless_token!(TokenType::GT)),
         (Regex::new(r"^<="), valueless_token!(TokenType::LE)),
@@ -218,11 +218,23 @@ impl TokenHandle {
 impl Lexer {
 
   fn skip(src : &String, head : &mut usize, row : &mut usize, col : &mut usize) -> bool {
-    let mut skip_comment = false;
     while *head < src.len() {
-      let ch = src.chars().nth(*head);
-      match ch {
-        Some(' ') => {
+      let ch0 = src.as_bytes().get(*head).map(|&b| b as char);
+      let ch1 = src.as_bytes().get(*head + 1).map(|&b| b as char);
+      if let(Some('/'), Some('/')) = (ch0, ch1) {
+        *head += 2;
+        while let Some(ch) = src.as_bytes().get(*head).map(|&b| b as char) {
+          *head += 1;
+          if ch == '\n' {
+            // eprintln!("skip comment @line {}", *row);
+            *row += 1;
+            break;
+          }
+        }
+        continue;
+      }
+      match ch0 {
+        Some(' ') | Some('\t') => {
           *head += 1;
           *col += 1;
         }
@@ -230,35 +242,8 @@ impl Lexer {
           *head += 1;
           *row += 1;
           *col = 1;
-          skip_comment = false;
         }
-        Some('/') => {
-          if *head + 1 < src.len() {
-            let next = src.chars().nth(*head + 1);
-            match next {
-              Some('/') => {
-                *head += 2;
-                *col += 2;
-                skip_comment = true;
-              }
-              _ => {
-                if !skip_comment {
-                  break;
-                }
-              }
-            }
-          }
-        }
-        Some(_) => {
-          if !skip_comment {
-            break;
-          }
-          *head += 1;
-          *col += 1;
-        }
-        None => {
-          break;
-        }
+        _ => break
       }
     }
     return *head < src.len();
@@ -311,6 +296,7 @@ impl Lexer {
     let mut tokens : Vec<Token> = Vec::new();
 
     while Lexer::skip(&src, &mut head, &mut row, &mut col) {
+      // eprintln!("{} {} {}: {}", head, row, col, src.chars().nth(head).unwrap());
       tokens.push(Lexer::next_token(&handle, &src, &mut head, &mut row, &mut col));
     }
 
@@ -321,7 +307,7 @@ impl Lexer {
     });
 
     // for token in &tokens {
-    //   println!("{} {}", token.value, token);
+    //   eprintln!("{} {}", token.value, token);
     // }
 
     Lexer { i : 0, tokens, }
