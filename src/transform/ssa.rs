@@ -254,7 +254,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
       phi_to_alloc.insert(phi.skey, *alloc_skey);
       {
         let phi = phi.as_mut::<Instruction>(builder.context()).unwrap();
-        phi.set_comment(comment);
+        phi.set_comment(format!("derive from {}", comment));
       }
       builder.create_store(phi, alloc).unwrap();
     }
@@ -393,8 +393,8 @@ fn cleanup(module: &mut Module, workspace: &Vec<WorkEntry>, phi_to_alloc: &HashM
       return;
     }
     for elem in to_remove {
-      // eprintln!("Removing: {}", elem.skey);
-      module.remove_inst(elem, true);
+      let mut mutator = InstMutator::new(&mut module.context, &elem);
+      mutator.erase_from_parent();
     }
     dce::transform(module);
   }

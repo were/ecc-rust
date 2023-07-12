@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use trinity::ir::{
   module::Module,
-  value::Instruction,
+  value::{Instruction, instruction::InstMutator},
   value::instruction::{InstOpcode, Store, Load},
 };
 
@@ -70,7 +70,8 @@ pub fn transform(mut module: Module) -> Module {
     module.replace_all_uses_with(inst, value);
   }
   for inst in to_remove.into_iter() {
-    module.remove_inst(inst, true);
+    let mut mutator = InstMutator::new(&mut module.context, &inst);
+    mutator.erase_from_parent();
   }
   module
 }

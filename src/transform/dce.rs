@@ -1,6 +1,6 @@
 use trinity::ir::Instruction;
 use trinity::ir::{module::Module, ValueRef};
-use trinity::ir::value::instruction::InstOpcode;
+use trinity::ir::value::instruction::{InstOpcode, InstMutator};
 
 /// Count the number of use.
 fn analysis(module: &Module) -> Vec<usize> {
@@ -42,7 +42,8 @@ pub fn transform(module: &mut Module) {
     iterative = to_remove.len() != 0;
     for elem in to_remove {
       // eprintln!("remove {}", elem.skey);
-      module.remove_inst(elem, true);
+      let mut mutator = InstMutator::new(&mut module.context, &elem);
+      mutator.erase_from_parent();
     }
   }
 }
