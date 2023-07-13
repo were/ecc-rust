@@ -12,6 +12,7 @@ fn backend(irname: &String, output: &String) {
   let objname = irname[0..irname.len()-3].to_string() + ".o";
   // emcc a.ll -c
   if let Ok(linker) = std::process::Command::new("emcc")
+    .arg("-O0")
     .arg("-c")
     .arg("-o")
     .arg(&objname)
