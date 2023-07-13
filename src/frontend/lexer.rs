@@ -12,6 +12,8 @@ pub enum TokenType {
   KeywordAsm,
   KeywordNew,
   KeywordBool,
+  KeywordFalse,
+  KeywordTrue,
   KeywordChar,
   KeywordVoid,
   KeywordIn,
@@ -48,6 +50,9 @@ pub enum TokenType {
   GT,
   GE,
   EQ,
+  LogicAnd,
+  LogicOr,
+  LogicNot,
   Comma,
   IntLiteral,
   StringLiteral,
@@ -63,6 +68,8 @@ impl fmt::Display for TokenType {
       TokenType::KeywordAsm => write!(f, "KeywordAsm asm"),
       TokenType::KeywordNew => write!(f, "KeywordNew new"),
       TokenType::KeywordBool => write!(f, "KeywordBool bool"),
+      TokenType::KeywordFalse => write!(f, "KeywordFalse false"),
+      TokenType::KeywordTrue => write!(f, "KeywordTrue true"),
       TokenType::KeywordChar => write!(f, "KeywordChar i8"),
       TokenType::KeywordCastAs => write!(f, "KeywordCastAs as"),
       TokenType::KeywordVoid => write!(f, "KeywordVoid void"),
@@ -99,6 +106,9 @@ impl fmt::Display for TokenType {
       TokenType::LT => write!(f, "LT <"),
       TokenType::LE => write!(f, "LE <="),
       TokenType::EQ => write!(f, "EQ =="),
+      TokenType::LogicAnd => write!(f, "And &&"),
+      TokenType::LogicOr => write!(f, "Or ||"),
+      TokenType::LogicNot => write!(f, "Not !"),
       TokenType::IntLiteral => write!(f, "IntLiteral"),
       TokenType::StringLiteral => write!(f, "StringLiteral"),
       TokenType::Eof => write!(f, "Eof"),
@@ -161,6 +171,8 @@ impl TokenHandle {
         (Regex::new(r"^asm"), valueless_token!(TokenType::KeywordAsm)),
         (Regex::new(r"^new"), valueless_token!(TokenType::KeywordNew)),
         (Regex::new(r"^bool"), valueless_token!(TokenType::KeywordBool)),
+        (Regex::new(r"^false"), valueless_token!(TokenType::KeywordFalse)),
+        (Regex::new(r"^true"), valueless_token!(TokenType::KeywordTrue)),
         (Regex::new(r"^i8"), valueless_token!(TokenType::KeywordChar)),
         (Regex::new(r"^i32"), valueless_token!(TokenType::KeywordI32)),
         (Regex::new(r"^in"), valueless_token!(TokenType::KeywordIn)),
@@ -191,13 +203,17 @@ impl TokenHandle {
         (Regex::new(r"^\-"), valueless_token!(TokenType::Sub)),
         (Regex::new(r"^%"), valueless_token!(TokenType::Mod)),
         (Regex::new(r"^/"), valueless_token!(TokenType::Div)),
-        (Regex::new(r"^\*"), valueless_token!(TokenType::Div)),
+        (Regex::new(r"^\*"), valueless_token!(TokenType::Mul)),
         (Regex::new(r"^<"), valueless_token!(TokenType::LT)),
         (Regex::new(r"^>"), valueless_token!(TokenType::GT)),
         (Regex::new(r"^<="), valueless_token!(TokenType::LE)),
         (Regex::new(r"^>="), valueless_token!(TokenType::GE)),
         (Regex::new(r"^=="), valueless_token!(TokenType::EQ)),
+        (Regex::new(r"^&&"), valueless_token!(TokenType::LogicAnd)),
+        (Regex::new(r"^\|\|"), valueless_token!(TokenType::LogicOr)),
+        (Regex::new(r"^!"), valueless_token!(TokenType::LogicNot)),
         (Regex::new(r"^\d+"), valueless_token!(TokenType::IntLiteral)),
+        (Regex::new(r"^\-\d+"), valueless_token!(TokenType::IntLiteral)),
         (Regex::new(r"^\."), valueless_token!(TokenType::AttrAccess)),
         (Regex::new("^\".*\""), valueless_token!(TokenType::StringLiteral)),
       ]
@@ -218,11 +234,23 @@ impl TokenHandle {
 impl Lexer {
 
   fn skip(src : &String, head : &mut usize, row : &mut usize, col : &mut usize) -> bool {
-    let mut skip_comment = false;
     while *head < src.len() {
-      let ch = src.chars().nth(*head);
-      match ch {
-        Some(' ') => {
+      let ch0 = src.as_bytes().get(*head).map(|&b| b as char);
+      let ch1 = src.as_bytes().get(*head + 1).map(|&b| b as char);
+      if let(Some('/'), Some('/')) = (ch0, ch1) {
+        *head += 2;
+        while let Some(ch) = src.as_bytes().get(*head).map(|&b| b as char) {
+          *head += 1;
+          if ch == '\n' {
+            // eprintln!("skip comment @line {}", *row);
+            *row += 1;
+            break;
+          }
+        }
+        continue;
+      }
+      match ch0 {
+        Some(' ') | Some('\t') => {
           *head += 1;
           *col += 1;
         }
@@ -230,35 +258,8 @@ impl Lexer {
           *head += 1;
           *row += 1;
           *col = 1;
-          skip_comment = false;
         }
-        Some('/') => {
-          if *head + 1 < src.len() {
-            let next = src.chars().nth(*head + 1);
-            match next {
-              Some('/') => {
-                *head += 2;
-                *col += 2;
-                skip_comment = true;
-              }
-              _ => {
-                if !skip_comment {
-                  break;
-                }
-              }
-            }
-          }
-        }
-        Some(_) => {
-          if !skip_comment {
-            break;
-          }
-          *head += 1;
-          *col += 1;
-        }
-        None => {
-          break;
-        }
+        _ => break
       }
     }
     return *head < src.len();
@@ -311,6 +312,7 @@ impl Lexer {
     let mut tokens : Vec<Token> = Vec::new();
 
     while Lexer::skip(&src, &mut head, &mut row, &mut col) {
+      // eprintln!("{} {} {}: {}", head, row, col, src.chars().nth(head).unwrap());
       tokens.push(Lexer::next_token(&handle, &src, &mut head, &mut row, &mut col));
     }
 
@@ -321,7 +323,7 @@ impl Lexer {
     });
 
     // for token in &tokens {
-    //   println!("{} {}", token.value, token);
+    //   eprintln!("{} {}", token.value, token);
     // }
 
     Lexer { i : 0, tokens, }

@@ -2,14 +2,12 @@ use trinity::ir::module::Module;
 
 mod ssa;
 mod dce;
-mod mem2reg;
+mod cse;
 
 pub fn optimize(module: Module) -> Module {
   eprintln!("{}", module);
-  let p1 = mem2reg::transform(module);
-  let mut p2 = ssa::transform(p1);
-  dce::transform(&mut p2);
-  // return dceed;
-  p2
+  let (ssa, dom) = ssa::transform(module);
+  let cse = cse::transform(ssa, &dom);
+  cse
 }
 

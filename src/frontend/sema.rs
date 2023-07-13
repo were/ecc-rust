@@ -330,10 +330,11 @@ impl Visitor for SymbolResolver {
       Expr::FuncCall(call) => Expr::FuncCall(self.visit_func_call(call)),
       Expr::Variable(var) => self.visit_var(var),
       Expr::BinaryOp(op) => self.visit_binary_op(op),
+      Expr::UnaryOp(op) => self.visit_unary_op(op),
       Expr::AttrAccess(_) => expr.clone(),
       Expr::ArrayIndex(array_idx) => self.visit_array_index(array_idx),
       Expr::NewExpr(ne) => self.visit_new_expr(ne),
-      Expr::Cast(cast) => self.visit_cast(cast)
+      Expr::Cast(cast) => self.visit_cast(cast),
     }
   }
 

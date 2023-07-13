@@ -5,10 +5,10 @@ use trinity::ir::{
   self,
   value::ValueRef,
   types::{StructType, TypeRef},
-  value::Function, PointerType, Block
+  value::Function, PointerType, Block, Instruction
 };
 use trinity::builder::Builder;
-use super::ast::{self, ForStmt, WhileStmt, IfStmt, ReturnStmt};
+use super::{ast::{self, ForStmt, WhileStmt, IfStmt, ReturnStmt, Expr}, lexer::TokenType};
 
 struct TypeGen {
   pub builder: Builder,
@@ -35,20 +35,25 @@ impl TypeGen {
     }
   }
 
-  fn type_to_llvm(&mut self, ty: &ast::Type) -> ir::types::TypeRef {
+  fn type_to_llvm(&mut self, ty: &ast::Type) -> (ir::types::TypeRef, Vec<Expr>) {
     match ty {
       ast::Type::Class(class) => {
         let res = self.class_cache.get(&class.id.literal).unwrap();
-        return res.ptr_type(self.builder.context());
+        return (res.ptr_type(self.builder.context()), vec![]);
       }
-      ast::Type::Builtin(builtin) => self.builtin_to_llvm(builtin.as_ref()),
-      ast::Type::Array(array) => self.array_to_llvm(array),
+      ast::Type::Builtin(builtin) => {
+        let ty = self.builtin_to_llvm(builtin.as_ref());
+        (ty, vec![])
+      }
+      ast::Type::Array(array) => {
+        self.array_to_llvm(array)
+      }
     }
   }
 
   fn class_to_struct(&mut self, class: &Rc<ast::ClassDecl>) {
     let attrs : Vec<ir::types::TypeRef> = class.attrs.iter().map(
-      |attr| { self.type_to_llvm(&attr.ty) }).collect();
+      |attr| { self.type_to_llvm(&attr.ty).0 }).collect();
     if let Some(sty) = self.class_cache.get(&class.id.literal) {
       let sty_mut = sty.as_mut::<StructType>(self.builder.context()).unwrap();
       sty_mut.set_body(attrs);
@@ -65,12 +70,12 @@ impl TypeGen {
     }
   }
 
-  fn array_to_llvm(&mut self, array: &ast::ArrayType) -> ir::types::TypeRef {
-    let mut res = self.type_to_llvm(&array.scalar_ty);
+  fn array_to_llvm(&mut self, array: &ast::ArrayType) -> (ir::types::TypeRef, Vec<Expr>) {
+    let (mut res, _) = self.type_to_llvm(&array.scalar_ty);
     for _ in 0..array.dims.len() {
       res = res.ptr_type(self.builder.context());
     }
-    return res
+    return (res, array.dims.clone())
   }
 
 }
@@ -147,9 +152,9 @@ impl CodeGen {
   fn generate_translation_unit(&mut self, tu: &Rc<ast::TranslateUnit>) {
     for decl in &tu.decls {
       if let ast::Decl::Func(func) = decl {
-        let ret_ty = self.tg.type_to_llvm(&func.ty);
+        let ret_ty = self.tg.type_to_llvm(&func.ty).0;
         let args_ty :Vec<TypeRef> = func.args.iter().map(|arg| {
-          let res = self.tg.type_to_llvm(&arg.ty);
+          let res = self.tg.type_to_llvm(&arg.ty).0;
           if *res.kind() == ir::types::TKindCode::StructType {
             res.ptr_type(self.tg.builder.context())
           } else {
@@ -220,7 +225,7 @@ impl CodeGen {
     if let Some(first_inst) = entry_block.get_inst(0) {
       self.tg.builder.set_insert_before(first_inst);
     }
-    let alloca = self.tg.builder.create_alloca(ty);
+    let alloca = self.tg.builder.create_alloca(ty.0);
     // Restore block and instruction
     self.tg.builder.set_current_block(block);
     if let Some(insert_before) = insert_before {
@@ -385,8 +390,21 @@ impl CodeGen {
         self.generate_func_call(&call)
       }
       ast::Expr::IntImm(value) => {
-        let i32ty = self.tg.builder.context().int_type(32);
-        self.tg.builder.context().const_value(i32ty, value.value as u64)
+        match value.token.value {
+          TokenType::IntLiteral => {
+            let i32ty = self.tg.builder.context().int_type(32);
+            self.tg.builder.context().const_value(i32ty, value.value as u64)
+          },
+          TokenType::KeywordTrue => {
+            let i32ty = self.tg.builder.context().int_type(1);
+            self.tg.builder.context().const_value(i32ty, 1)
+          }
+          TokenType::KeywordFalse => {
+            let i32ty = self.tg.builder.context().int_type(1);
+            self.tg.builder.context().const_value(i32ty, 0)
+          }
+          _ => unreachable!()
+        }
       }
       ast::Expr::StrImm(value) => {
         let len = value.value.len();
@@ -466,14 +484,36 @@ impl CodeGen {
           _ => { panic!("Unknown binary op {}", binop.op); }
         }
       }
+      ast::Expr::UnaryOp(unary) => {
+        let expr = self.generate_expr(&unary.expr, false);
+        expr
+      }
       ast::Expr::NewExpr(ne) => {
         let malloc = self.cache_stack.get(&"malloc".to_string()).unwrap().clone();
-        let i32ty = self.tg.builder.context().int_type(32);
         // TODO(@were): Support the size of malloc.
         let dest = self.tg.type_to_llvm(&ne.dtype);
-        let params = vec![self.tg.builder.context().const_value(i32ty, 8)];
+        let i32ty = self.tg.builder.context().int_type(32);
+        let scalar_ty = dest.0.as_ref::<PointerType>(&self.tg.builder.module.context).unwrap();
+        let size = scalar_ty.get_pointee_ty().get_scalar_size_in_bits(&self.tg.builder.module);
+        let mut flat_size = self.tg.builder.context().const_value(i32ty.clone(), 1);
+        for (i, elem) in dest.1.iter().enumerate() {
+          let dim = self.generate_expr(elem, false);
+          flat_size = self.tg.builder.create_mul(dim, flat_size.clone());
+          flat_size
+            .as_mut::<Instruction>(&mut self.tg.builder.module.context)
+            .unwrap()
+            .set_comment(format!("dim {}", i));
+        }
+        let size = self.tg.builder.context().const_value(i32ty, (size / 8) as u64);
+        flat_size = self.tg.builder.create_mul(flat_size, size);
+        let scalar_cmt = dest.0.to_string(&self.tg.builder.module.context);
+        flat_size
+          .as_mut::<Instruction>(&mut self.tg.builder.module.context)
+          .unwrap()
+          .set_comment(format!("x scalar {}", scalar_cmt));
+        let params = vec![flat_size];
         let call = self.tg.builder.create_func_call(malloc, params);
-        self.tg.builder.create_bitcast(call, dest)
+        self.tg.builder.create_bitcast(call, dest.0)
       }
       ast::Expr::ArrayIndex(idx) => {
         let array = self.generate_expr(&idx.array, false);
@@ -486,7 +526,7 @@ impl CodeGen {
       ast::Expr::Cast(cast) => {
         let value = self.generate_expr(&cast.expr, false);
         let ty = self.tg.type_to_llvm(&cast.dtype);
-        self.tg.builder.create_cast(value, ty)
+        self.tg.builder.create_cast(value, ty.0)
       }
       _ => {
         eprintln!("Not supported node (use 0 as a placeholder):\n{}", expr);
