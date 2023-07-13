@@ -12,13 +12,13 @@ use trinity::{
 
 use super::dce;
 
-struct WorkEntry {
+pub struct DomInfo {
   dominators: HashSet<usize>,
   idom: usize,
   depth: usize,
 }
 
-impl WorkEntry {
+impl DomInfo {
   fn new() -> Self {
     Self {
       dominators: HashSet::new(),
@@ -29,7 +29,7 @@ impl WorkEntry {
 }
 
 
-fn analyze_dominators(ctx: &Context, func: &FunctionRef, workspace: &mut Vec<WorkEntry>) {
+fn analyze_dominators(ctx: &Context, func: &FunctionRef, workspace: &mut Vec<DomInfo>) {
   // Calculate the dominators
   let mut changed = true;
   while changed {
@@ -110,38 +110,38 @@ fn analyze_dominators(ctx: &Context, func: &FunctionRef, workspace: &mut Vec<Wor
   // }
 }
 
-// fn dominates_ii(a: &Instruction, b: &Instruction, workspace: &Vec<WorkEntry>, context: &Context) -> bool {
-//   let a_block = a.get_parent();
-//   let b_block = b.get_parent();
-//   if a_block.skey == b_block.skey {
-//     let block = a_block.as_ref::<Block>(context).unwrap();
-//     let mut idx_a = 0;
-//     let mut idx_b = 0;
-//     let a_skey = a.as_super().skey;
-//     let b_skey = b.as_super().skey;
-//     for i in 0..block.get_num_insts() {
-//       let inst = block.get_inst(i).unwrap();
-//       if inst.skey == a_skey {
-//         idx_a = i;
-//       }
-//       if inst.skey == b_skey {
-//         idx_b = i;
-//       }
-//     }
-//     return idx_a < idx_b;
-//   }
-//   if workspace[b_block.skey].dominators.contains(&a_block.skey) {
-//     true
-//   } else {
-//     false
-//   }
-// }
+pub fn a_dominates_b(workspace: &Vec<DomInfo>, a: &InstructionRef, b: &InstructionRef) -> bool {
+  let a_block = a.get_parent();
+  let b_block = b.get_parent();
+  if a_block.get_skey() == b_block.get_skey() {
+    let block = a_block;
+    let mut idx_a = 0;
+    let mut idx_b = 0;
+    let a_skey = a.get_skey();
+    let b_skey = b.get_skey();
+    for i in 0..block.get_num_insts() {
+      let inst = block.get_inst(i).unwrap();
+      if inst.skey == a_skey {
+        idx_a = i;
+      }
+      if inst.skey == b_skey {
+        idx_b = i;
+      }
+    }
+    return idx_a <= idx_b;
+  }
+  if workspace[b_block.get_skey()].dominators.contains(&a_block.get_skey()) {
+    true
+  } else {
+    false
+  }
+}
 
 fn find_value_dominator(
   ctx: &Context,
   sub: &InstructionRef,
   block: &ValueRef,
-  workspace: &Vec<WorkEntry>,
+  workspace: &Vec<DomInfo>,
   phi_to_alloc: &HashMap<usize, usize>,
   return_store: bool) -> Option<ValueRef> {
   let addr = {
@@ -201,7 +201,7 @@ fn find_value_dominator(
   None
 }
 
-fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashMap<usize, usize>) {
+fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap<usize, usize>) {
   let mut phis = HashMap::new();
   // Register values to be phi-resolved
   for func in module.iter() {
@@ -346,7 +346,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
 
 fn find_undominated_stores(
   module: &Module,
-  workspace: &Vec<WorkEntry>,
+  workspace: &Vec<DomInfo>,
   phi_to_alloc: &HashMap<usize, usize>) -> HashSet<usize> {
   let mut store_with_dom = HashSet::new();
   for func in module.iter() {
@@ -372,7 +372,7 @@ fn find_undominated_stores(
   store_with_dom
 }
 
-fn cleanup(module: &mut Module, workspace: &Vec<WorkEntry>, phi_to_alloc: &HashMap<usize, usize>) {
+fn cleanup(module: &mut Module, workspace: &Vec<DomInfo>, phi_to_alloc: &HashMap<usize, usize>) {
   dce::transform(module);
   loop {
     let dominated = find_undominated_stores(&module, &workspace, &phi_to_alloc);
@@ -410,10 +410,10 @@ fn cleanup(module: &mut Module, workspace: &Vec<WorkEntry>, phi_to_alloc: &HashM
 }
 
 
-pub fn transform(module: Module) -> Module {
+pub fn transform(module: Module) -> (Module, Vec<DomInfo>) {
   // eprintln!("{}", module.to_string());
-  let mut workspace: Vec<WorkEntry> = Vec::new();
-  (0..module.context.capacity()).for_each(|_| workspace.push(WorkEntry::new()));
+  let mut workspace: Vec<DomInfo> = Vec::new();
+  (0..module.context.capacity()).for_each(|_| workspace.push(DomInfo::new()));
   for func in module.iter() {
     if func.get_num_blocks() != 0 {
       analyze_dominators(&module.context, &func, &mut workspace);
@@ -421,6 +421,6 @@ pub fn transform(module: Module) -> Module {
   }
   let (mut injected, phi_to_alloc) = inject_phis(module, &mut workspace);
   cleanup(&mut injected, &workspace, &phi_to_alloc);
-  injected
+  (injected, workspace)
 }
 

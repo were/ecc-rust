@@ -7,10 +7,10 @@ func println(string s) -> void {
 func toString(i32 x) -> string {
   let i32 cnt = 0;
   let i32 tmpx = x;
-  let bool neg = false;
+  let i32 neg = 0;
   if tmpx < 0 {
     tmpx = 0 - tmpx;
-    neg = true;
+    neg = 1;
   }
   while tmpx > 0 {
     tmpx = tmpx / 10;
@@ -20,13 +20,17 @@ func toString(i32 x) -> string {
     cnt = 1;
   }
   let string res = new string;
-  res.data_ = new i8[cnt + 1];
-  res.data_[cnt] = 0 as i8;
+  res.data_ = new i8[cnt + 1 + neg];
+  res.data_[cnt + neg] = 0 as i8;
+  if neg == 1 {
+    res.data_[0] = 45 as i8;
+    x = 0 - x;
+  }
   for i in 0..cnt {
-    res.data_[cnt - 1 - i] = (x % 10 + 48) as i8;
+    res.data_[neg + cnt - 1 - i] = (x % 10 + 48) as i8;
     x = x / 10;
   }
-  res.length_ = cnt;
+  res.length_ = cnt + neg;
   return res;
 }
 
