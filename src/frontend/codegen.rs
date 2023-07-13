@@ -484,6 +484,10 @@ impl CodeGen {
           _ => { panic!("Unknown binary op {}", binop.op); }
         }
       }
+      ast::Expr::UnaryOp(unary) => {
+        let expr = self.generate_expr(&unary.expr, false);
+        expr
+      }
       ast::Expr::NewExpr(ne) => {
         let malloc = self.cache_stack.get(&"malloc".to_string()).unwrap().clone();
         // TODO(@were): Support the size of malloc.

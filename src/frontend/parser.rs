@@ -5,7 +5,9 @@ use super::ast::{
   BuiltinType, BuiltinTypeCode, Type, TranslateUnit, CompoundStmt, ReturnStmt, IntImm,
   Decl, InlineAsm, NewExpr, Cast, ForStmt, WhileStmt, LoopJump
 };
-use super::ast::{FuncDecl, Stmt, Expr, StrImm, FuncCall, ClassDecl, VarDecl, ArrayType, BinaryOp, ArrayIndex, IfStmt};
+use super::ast::{
+  FuncDecl, Stmt, Expr, StrImm, FuncCall, ClassDecl, VarDecl, ArrayType, BinaryOp, ArrayIndex, IfStmt, UnaryOp
+};
 
 fn parse_intimm(tokenizer: &mut Lexer) -> Result<Expr, String> {
   let token = tokenizer.consume(TokenType::IntLiteral);
@@ -116,22 +118,30 @@ fn parse_return(tokenizer: &mut Lexer) -> Result<ReturnStmt, String> {
 
 /// Precedence from low to high, parse each operator expression.
 fn parse_operator_expr(tokenizer: &mut Lexer, operators: &[(i32, &[TokenType])]) -> Result<Expr, String> {
-  if operators.len() == 0 {
-    return parse_expr_term(tokenizer);
-  } else if operators[0].0 == 1 {
-    if tokenizer.tok().is_one_of(operators[0].1) {
-      parse_operator_expr(tokenizer, &operators[1..]).unwrap();
+  match operators.get(0) {
+    None => {
+      return parse_expr_term(tokenizer);
     }
-  } else if operators[0].0 == 2 {
-    let mut res = parse_operator_expr(tokenizer, &operators[1..]).unwrap();
-    while tokenizer.tok().is_one_of(operators[0].1) {
-      let op = tokenizer.consume_any();
-      let rhs = parse_operator_expr(tokenizer, &operators[1..]).unwrap();
-      res = Expr::BinaryOp(Rc::new(BinaryOp{op, lhs: res, rhs}));
+    Some((1, parsing_operator)) => {
+      let mut res = parse_operator_expr(tokenizer, &operators[1..]).unwrap();
+      while tokenizer.tok().is_one_of(parsing_operator) {
+        let op = tokenizer.consume_any();
+        let expr = parse_operator_expr(tokenizer, &operators[1..]).unwrap();
+        res = Expr::UnaryOp(Rc::new(UnaryOp{op, expr}));
+      }
+      return Ok(res)
     }
-    return Ok(res);
+    Some((2, parsing_operator)) => {
+      let mut res = parse_operator_expr(tokenizer, &operators[1..]).unwrap();
+      while tokenizer.tok().is_one_of(parsing_operator) {
+        let op = tokenizer.consume_any();
+        let rhs = parse_operator_expr(tokenizer, &operators[1..]).unwrap();
+        res = Expr::BinaryOp(Rc::new(BinaryOp{op, lhs: res, rhs}));
+      }
+      return Ok(res);
+    }
+    _ => panic!("Invalid operator precedence")
   }
-  panic!("Invalid operator precedence")
 }
 
 fn parse_new_expr(tokenizer: &mut Lexer) -> Result<Expr, String> {
@@ -145,9 +155,11 @@ fn parse_rval(tokenizer: &mut Lexer) -> Result<Expr, String> {
     parse_new_expr(tokenizer)
   } else {
     parse_operator_expr(tokenizer,
-      &[(2, &[TokenType::LE, TokenType::LT, TokenType::GE, TokenType::GT, TokenType::EQ]),
+      &[(2, &[TokenType::LogicAnd, TokenType::LogicOr]),
+        (2, &[TokenType::LE, TokenType::LT, TokenType::GE, TokenType::GT, TokenType::EQ]),
         (2, &[TokenType::Add, TokenType::Sub]),
-        (2, &[TokenType::Mod, TokenType::Div, TokenType::Mul])])
+        (2, &[TokenType::Mod, TokenType::Div, TokenType::Mul]),
+        (1, &[TokenType::LogicNot])])
   };
   if tokenizer.lookahead(TokenType::KeywordCastAs) {
     let token = tokenizer.consume(TokenType::KeywordCastAs);

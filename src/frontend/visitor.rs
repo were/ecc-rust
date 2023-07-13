@@ -5,7 +5,7 @@ use super::ast::{
   FuncDecl, CompoundStmt, Stmt, ReturnStmt, IntImm,
   Decl, Expr, FuncCall, Linkage, VarDecl, ClassDecl,
   InlineAsm, BinaryOp, ArrayType, AttrAccess, ArrayIndex,
-  NewExpr, Cast, ForStmt, IfStmt, WhileStmt
+  NewExpr, Cast, ForStmt, IfStmt, WhileStmt, UnaryOp
 };
 
 #[macro_export]
@@ -86,6 +86,7 @@ pub trait Visitor {
       Expr::FuncCall(call) => Expr::FuncCall(self.visit_func_call(call)),
       Expr::Variable(var) => self.visit_var(var),
       Expr::BinaryOp(op) => self.visit_binary_op(op),
+      Expr::UnaryOp(op) => self.visit_unary_op(op),
       Expr::AttrAccess(access) => self.visit_attr_access(access),
       Expr::ArrayIndex(array_idx) => self.visit_array_index(array_idx),
       Expr::NewExpr(ne) => self.visit_new_expr(ne),
@@ -259,6 +260,14 @@ pub trait Visitor {
       return Expr::BinaryOp(op.clone())
     }
     Expr::BinaryOp(Rc::new(BinaryOp{ lhs, rhs, op: op.op.clone() }))
+  }
+
+  fn visit_unary_op(&mut self, op: &Rc<UnaryOp>) -> Expr {
+    let expr = self.visit_expr(&op.expr);
+    if expr_eq(&expr, &op.expr) {
+      return Expr::UnaryOp(op.clone())
+    }
+    Expr::UnaryOp(Rc::new(UnaryOp{ op: op.op.clone(), expr }))
   }
 
   fn visit_return(&mut self, x: &Rc<ReturnStmt>) -> Stmt {

@@ -5,7 +5,7 @@ use super::ast::{
   ReturnStmt, Expr, TranslateUnit, Linkage, FuncCall, VarDecl,
   ClassDecl, ArrayType, InlineAsm, StrImm, BinaryOp, AttrAccess,
   BuiltinTypeCode, ArrayIndex, NewExpr, Cast, ForStmt, IfStmt,
-  WhileStmt
+  WhileStmt, UnaryOp
 };
 
 fn print_linkage(linkage: &Linkage, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
@@ -278,6 +278,9 @@ fn print_expr(expr: &Expr, f: &mut fmt::Formatter, indent: &String) -> fmt::Resu
     Expr::BinaryOp(op) => {
       print_binary_op(op, f, indent)
     }
+    Expr::UnaryOp(op) => {
+      print_unary_op(op, f, indent)
+    }
     Expr::AttrAccess(access) => {
       print_attr_access(access, f, indent)
     }
@@ -291,6 +294,12 @@ fn print_expr(expr: &Expr, f: &mut fmt::Formatter, indent: &String) -> fmt::Resu
       print_cast(cast, f, indent)
     }
   }
+}
+
+fn print_unary_op(op: &UnaryOp, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
+  write!(f, "UnaryOp\n").unwrap();
+  write!(f, "{}|->Op={}\n{}`->Expr=", indent, op.op.literal, indent).unwrap();
+  print_expr(&op.expr, f, &format!("{}   ", indent))
 }
 
 fn print_cast(cast: &Cast, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {

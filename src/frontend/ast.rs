@@ -215,6 +215,7 @@ pub enum Expr {
   FuncCall(Rc<FuncCall>),
   Variable(Rc<Variable>),
   BinaryOp(Rc<BinaryOp>),
+  UnaryOp(Rc<UnaryOp>),
   AttrAccess(Rc<AttrAccess>),
   ArrayIndex(Rc<ArrayIndex>),
   NewExpr(Rc<NewExpr>),
@@ -264,6 +265,25 @@ impl Expr {
       Expr::BinaryOp(s) => {
         s.lhs.dtype(symbols)
       }
+      Expr::UnaryOp(s) => {
+        match s.op.value {
+          TokenType::Sub => {
+            s.expr.dtype(symbols)
+          }
+          TokenType::LogicNot => {
+            Type::Builtin(Rc::new(BuiltinType {
+              token: Token {
+                literal: "bool".to_string(),
+                row: s.op.row,
+                col: s.op.col,
+                value: TokenType::KeywordBool,
+              },
+              code: BuiltinTypeCode::Bool
+            }))
+          }
+          _ => panic!("Unknown unary operator")
+        }
+      }
       Expr::UnknownRef(tok) => {
         Type::Builtin(Rc::new(BuiltinType {
           token: tok.clone(),
@@ -310,6 +330,12 @@ pub struct BinaryOp {
   pub lhs: Expr,
   pub rhs: Expr,
   pub op: Token,
+}
+
+#[derive(Clone)]
+pub struct UnaryOp {
+  pub op: Token,
+  pub expr: Expr,
 }
 
 #[derive(Clone)]
