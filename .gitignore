@@ -1,5 +1,6 @@
 target/*
-backend
+backend/emsdk
+backend/wabt
 Cargo.lock
 *.wasm
 *.wat
