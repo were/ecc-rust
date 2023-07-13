@@ -17,6 +17,12 @@ fn parse_expr_term(tokenizer: &mut Lexer) -> Result<Expr, String> {
   if tokenizer.lookahead(TokenType::IntLiteral) {
     return parse_intimm(tokenizer)
   }
+  if tokenizer.lookahead(TokenType::KeywordFalse) {
+    return Ok(Expr::IntImm(Rc::new(IntImm{token: tokenizer.consume_any(), value: 0 })));
+  }
+  if tokenizer.lookahead(TokenType::KeywordTrue) {
+    return Ok(Expr::IntImm(Rc::new(IntImm{token: tokenizer.consume_any(), value: 1 })));
+  }
   if tokenizer.lookahead(TokenType::StringLiteral) {
     return parse_strimm(tokenizer)
   }

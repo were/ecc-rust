@@ -286,19 +286,13 @@ pub trait Visitor {
 
   fn visit_array_ty(&mut self, x: &Rc<ArrayType>) -> Type {
     let ty = self.visit_type(&x.scalar_ty);
-    if type_eq(&ty, &x.scalar_ty) {
-      return Type::Array(x.clone())
-    }
     let new_dims = x.dims.iter().map(|x| {
       if let Expr::UnknownRef(tok) = x {
         if tok.literal == "" {
-          x.clone()
-        } else {
-          panic!("What is the token {}", tok.literal);
+          return x.clone();
         }
-      } else {
-        self.visit_expr(x)
       }
+      return self.visit_expr(x);
     }).collect::<Vec<Expr>>();
     Type::Array(Rc::new(ArrayType{ scalar_ty: ty, dims: new_dims }))
   }

@@ -46,8 +46,8 @@ fn analyze_dominators(ctx: &Context, func: &FunctionRef, workspace: &mut Vec<Wor
       let last_idx = block.get_num_insts() - 1;
       let inst = block.get_inst(last_idx).unwrap();
       let inst = inst.as_ref::<Instruction>(ctx).unwrap();
-      if *inst.get_opcode() == InstOpcode::Branch {
-        let successors = inst.as_sub::<BranchInst>().unwrap().get_successors();
+      if let Some(branch) = inst.as_sub::<BranchInst>() {
+        let successors = branch.get_successors();
         for succ in successors {
           if visited.get(&succ.skey).is_none() {
             visited.insert(succ.skey);
@@ -267,7 +267,10 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
       let pred_branches = block.pred_iter().collect::<Vec<_>>();
       let predeccessors = if pred_branches.len() > 1 {
         let mut res = HashSet::new();
-        pred_branches.iter().for_each(|inst| { res.insert(inst.get_parent().get_skey()); });
+        pred_branches.iter().for_each(|inst| {
+          // eprintln!("gather block: {}", inst.get_parent().to_string());
+          res.insert(inst.get_parent().get_skey());
+        });
         res
       } else {
         HashSet::new()
@@ -278,6 +281,8 @@ fn inject_phis(module: Module, workspace: &mut Vec<WorkEntry>) -> (Module, HashM
             assert!(!predeccessors.is_empty());
             let incomings = predeccessors.iter().map(|pred| {
               let incoming_block = Block::from_skey(*pred);
+              // eprintln!("incoming block: {}", incoming_block.to_string(&builder.module.context, true));
+              // incoming_block.as_ref::<Block>(&builder.module.context).unwrap();
               if let Some(incoming_value) = find_value_dominator(
                 &builder.module.context,
                 &inst,
