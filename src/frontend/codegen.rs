@@ -216,14 +216,14 @@ impl CodeGen {
       .as_ref::<Function>(&self.tg.builder.module.context)
       .unwrap();
     let entry_block = func.get_block(0).unwrap();
-    let entry_block = Block::from_skey(entry_block.get_skey());
+    let entry_block = entry_block.as_super();
     // Insert to the 1st entry block.
     self.tg.builder.set_current_block(entry_block.clone());
     let entry_block = entry_block
       .as_ref::<Block>(&self.tg.builder.module.context)
       .unwrap();
     if let Some(first_inst) = entry_block.get_inst(0) {
-      self.tg.builder.set_insert_before(first_inst);
+      self.tg.builder.set_insert_before(first_inst.as_super());
     }
     let alloca = self.tg.builder.create_alloca(ty.0);
     // Restore block and instruction

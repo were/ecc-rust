@@ -34,6 +34,7 @@ fn metadata(src: &String) -> E2EMetadata {
   E2EMetadata { stdin: stdio[0].clone(), stdout: stdio[1].clone(), }
 }
 
+/// This uses emcc as backend, so we only worry about the frontend.
 #[rstest]
 #[case("01-return0.ecc")]
 #[case("02-helloworld.ecc")]
@@ -50,7 +51,7 @@ fn metadata(src: &String) -> E2EMetadata {
 #[case("13-print0.ecc")]
 #[case("14-recursion.ecc")]
 #[case("15-expr.ecc")]
-fn test_e2e(#[case] fname: &str) {
+fn test_frontend(#[case] fname: &str) {
   let src_path = format!("../tests/function/{}", fname);
   let mut file = File::open(&src_path).unwrap();
   let mut src = String::new();
@@ -59,7 +60,7 @@ fn test_e2e(#[case] fname: &str) {
   assert!(fname.ends_with(".ecc"));
   let obj_output = format!("{}.o", fname[0..fname.len()-4].to_string());
   // Compile it
-  invoke(&fname.to_string(), &obj_output, src, 0).unwrap();
+  invoke(&fname.to_string(), &obj_output, src, 0, &"emcc".to_string()).unwrap();
   // Run it
   let mut exec = std::process::Command::new("node")
     .arg("builtins/host.js")

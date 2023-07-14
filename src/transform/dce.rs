@@ -15,7 +15,7 @@ fn analysis(module: &Module) -> Vec<ValueRef> {
           _ => {
             let mut users = inst.user_iter();
             if users.next().is_none() {
-              res.push(Instruction::from_skey(inst.get_skey()));
+              res.push(inst.as_super());
             }
           }
         }
