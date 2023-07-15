@@ -3,7 +3,7 @@ use std::collections::{HashSet, VecDeque, HashMap};
 use trinity::{
   ir::{
     module::Module, Block,
-    value::{instruction::{Store, InstOpcode, Load, BranchInst, InstructionRef, InstMutator}, function::FunctionRef},
+    value::{instruction::{Store, InstOpcode, Load, InstructionRef, InstMutator}, function::FunctionRef},
     Instruction, ValueRef, VKindCode, PointerType
   },
   context::Context,
@@ -43,48 +43,44 @@ fn analyze_dominators(ctx: &Context, func: &FunctionRef, workspace: &mut Vec<Dom
     q.push_back(block.as_super());
     while let Some(front) = q.pop_front() {
       let block = front.as_ref::<Block>(ctx).unwrap();
-      let last_idx = block.get_num_insts() - 1;
-      let inst = block.get_inst(last_idx).unwrap();
-      if let Some(branch) = inst.as_sub::<BranchInst>() {
-        let successors = branch.get_successors();
-        for succ in successors {
-          if visited.get(&succ.skey).is_none() {
-            visited.insert(succ.skey);
-            let (new_set, diff) = if workspace[succ.skey].dominators.is_empty() {
-              let mut new_set = workspace[front.skey].dominators.clone();
-              new_set.insert(succ.skey);
-              (new_set, true)
-            } else {
-              let mut new_set = workspace[succ.skey].dominators
-                .intersection(&workspace[front.skey].dominators)
-                .cloned()
-                .collect::<HashSet<_>>();
-              new_set.insert(succ.skey);
-              let diff = new_set != workspace[succ.skey].dominators;
-              (new_set, diff)
-            };
-            if diff {
-              changed = true;
-              workspace[succ.skey].dominators = new_set;
-              let (idom, deepest) = workspace[succ.skey]
-                .dominators
-                .iter()
-                .fold((0, 0),
-                |acc, elem| {
-                if workspace[*elem].depth + 1 > acc.1 {
-                  (*elem, workspace[*elem].depth + 1)
-                } else {
-                  acc
-                }
-              });
-              // Find the deepest one as the immediate dominator
-              if deepest > workspace[succ.skey].depth {
-                workspace[succ.skey].depth = deepest;
-                workspace[succ.skey].idom = idom;
+      for succ in block.succ_iter() {
+        let succ_skey = succ.get_skey();
+        if !visited.contains(&succ_skey) {
+          visited.insert(succ_skey);
+          let (new_set, diff) = if workspace[succ_skey].dominators.is_empty() {
+            let mut new_set = workspace[front.skey].dominators.clone();
+            new_set.insert(succ_skey);
+            (new_set, true)
+          } else {
+            let mut new_set = workspace[succ_skey].dominators
+              .intersection(&workspace[front.skey].dominators)
+              .cloned()
+              .collect::<HashSet<_>>();
+            new_set.insert(succ_skey);
+            let diff = new_set != workspace[succ_skey].dominators;
+            (new_set, diff)
+          };
+          if diff {
+            changed = true;
+            workspace[succ_skey].dominators = new_set;
+            let (idom, deepest) = workspace[succ_skey]
+              .dominators
+              .iter()
+              .fold((0, 0),
+              |acc, elem| {
+              if workspace[*elem].depth + 1 > acc.1 {
+                (*elem, workspace[*elem].depth + 1)
+              } else {
+                acc
               }
+            });
+            // Find the deepest one as the immediate dominator
+            if deepest > workspace[succ_skey].depth {
+              workspace[succ_skey].depth = deepest;
+              workspace[succ_skey].idom = idom;
             }
-            q.push_back(succ);
           }
+          q.push_back(succ.as_super());
         }
       }
     }
