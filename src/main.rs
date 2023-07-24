@@ -6,6 +6,7 @@ mod frontend;
 mod transform;
 mod compiler;
 mod backend;
+mod analysis;
 #[cfg(test)]
 mod tests;
 

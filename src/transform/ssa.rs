@@ -201,7 +201,7 @@ fn find_value_dominator(
 fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap<usize, usize>) {
   let mut phis = HashMap::new();
   // Register values to be phi-resolved
-  for func in module.iter() {
+  for func in module.func_iter() {
     for block in func.iter() {
       let predeccessors = block.pred_iter().collect::<Vec<_>>();
       if predeccessors.len() > 1 {
@@ -259,7 +259,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap
   // Resolve missing incomings of PHI nodes.
   let mut to_append = Vec::new();
   let mut to_replace = Vec::new();
-  for func in builder.module.iter() {
+  for func in builder.module.func_iter() {
     for block in func.iter() {
       let pred_branches = block.pred_iter().collect::<Vec<_>>();
       let predeccessors = if pred_branches.len() > 1 {
@@ -346,7 +346,7 @@ fn find_undominated_stores(
   workspace: &Vec<DomInfo>,
   phi_to_alloc: &HashMap<usize, usize>) -> HashSet<usize> {
   let mut store_with_dom = HashSet::new();
-  for func in module.iter() {
+  for func in module.func_iter() {
     for block in func.iter() {
       for inst in block.inst_iter() {
         if let Some(load) = inst.as_sub::<Load>() {
@@ -374,7 +374,7 @@ fn cleanup(module: &mut Module, workspace: &Vec<DomInfo>, phi_to_alloc: &HashMap
   loop {
     let dominated = find_undominated_stores(&module, &workspace, &phi_to_alloc);
     let mut to_remove = Vec::new();
-    for func in module.iter() {
+    for func in module.func_iter() {
       for block in func.iter() {
         for inst in block.inst_iter() {
           if let Some(store) = inst.as_sub::<Store>() {
@@ -411,7 +411,7 @@ pub fn transform(module: Module) -> (Module, Vec<DomInfo>) {
   // eprintln!("{}", module.to_string());
   let mut workspace: Vec<DomInfo> = Vec::new();
   (0..module.context.capacity()).for_each(|_| workspace.push(DomInfo::new()));
-  for func in module.iter() {
+  for func in module.func_iter() {
     if func.get_num_blocks() != 0 {
       analyze_dominators(&module.context, &func, &mut workspace);
     }

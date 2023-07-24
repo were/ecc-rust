@@ -319,7 +319,7 @@ impl CodeGen {
     let then_block = self.builder_mut().add_block(format!("then.{}", cond.skey));
     let else_block = self.builder_mut().add_block(format!("else.{}", cond.skey));
     let converge = self.builder_mut().add_block(format!("converge.{}", cond.skey));
-    self.builder_mut().create_conditional_branch(cond, then_block.clone(), else_block.clone());
+    self.builder_mut().create_conditional_branch(cond, then_block.clone(), else_block.clone(), false);
     self.builder_mut().set_current_block(then_block.clone());
     self.generate_compound_stmt(&if_stmt.then_body, true);
     self.builder_mut().create_unconditional_branch(converge.clone());
@@ -343,7 +343,7 @@ impl CodeGen {
     self.builder_mut().create_unconditional_branch(cond_block.clone());
     self.builder_mut().set_current_block(cond_block.clone());
     let cond = self.generate_expr(&while_stmt.cond, false);
-    self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone());
+    self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
     self.builder_mut().set_current_block(body_block);
     self.generate_compound_stmt(&while_stmt.body, false);
     self.builder_mut().create_unconditional_branch(cond_block.clone());
@@ -369,7 +369,7 @@ impl CodeGen {
     let loop_var_addr = self.cache_stack.get(&for_stmt.var.id.literal).unwrap();
     let loop_var_value = self.builder_mut().create_load(loop_var_addr.clone());
     let cond = self.builder_mut().create_slt(loop_var_value, extent);
-    self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone());
+    self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
     self.builder_mut().set_current_block(body_block);
     self.generate_compound_stmt(&for_stmt.body, false);
     let loop_var_value = self.builder_mut().create_load(loop_var_addr.clone());

@@ -5,11 +5,11 @@ use trinity::ir::value::instruction::{InstOpcode, InstMutator};
 /// Count the number of use.
 fn analysis(module: &Module) -> Vec<ValueRef> {
   let mut res = Vec::new();
-  for func in module.iter() {
+  for func in module.func_iter() {
     for block in func.iter() {
       for inst in block.inst_iter() {
         match inst.get_opcode() {
-          InstOpcode::Return | InstOpcode::Call | InstOpcode::Branch | InstOpcode::Store(_) => {
+          InstOpcode::Return | InstOpcode::Call | InstOpcode::Branch(_) | InstOpcode::Store(_) => {
             continue;
           },
           _ => {
