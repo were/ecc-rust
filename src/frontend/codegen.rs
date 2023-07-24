@@ -338,9 +338,10 @@ impl CodeGen {
     let cond_block = self.builder_mut().add_block("while.cond".to_string());
     let body_block = self.builder_mut().add_block("while.body".to_string());
     let end_block = self.builder_mut().add_block("while.end".to_string());
+    let cond = self.generate_expr(&while_stmt.cond, false);
+    self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
     // Set it to the inner most loop.
     self.loop_cond_and_end = (cond_block.clone(), end_block.clone()).into();
-    self.builder_mut().create_unconditional_branch(cond_block.clone());
     self.builder_mut().set_current_block(cond_block.clone());
     let cond = self.generate_expr(&while_stmt.cond, false);
     self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
@@ -358,13 +359,18 @@ impl CodeGen {
     let old = self.loop_cond_and_end.clone();
     self.cache_stack.push();
     self.generate_var_decl(&for_stmt.var);
-    let cond_block = self.builder_mut().add_block("for.cond".to_string());
     let body_block = self.builder_mut().add_block("for.body".to_string());
+    let cond_block = self.builder_mut().add_block("for.cond".to_string());
     let end_block = self.builder_mut().add_block("for.end".to_string());
     // Set it to the inner most loop.
     self.loop_cond_and_end = (cond_block.clone(), end_block.clone()).into();
     let extent = self.generate_expr(&for_stmt.end, false);
-    self.builder_mut().create_unconditional_branch(cond_block.clone());
+    let i32ty = self.tg.builder.context().int_type(32);
+    let zero = self.tg.builder.context().const_value(i32ty.clone(), 0);
+    // If extent <= 0, just skip the loop.
+    let precond = self.builder_mut().create_sle(extent.clone(), zero);
+    self.builder_mut().create_conditional_branch(precond, end_block.clone(), body_block.clone(), false);
+    // Generate the loop conditions.
     self.builder_mut().set_current_block(cond_block.clone());
     let loop_var_addr = self.cache_stack.get(&for_stmt.var.id.literal).unwrap();
     let loop_var_value = self.builder_mut().create_load(loop_var_addr.clone());
@@ -373,7 +379,6 @@ impl CodeGen {
     self.builder_mut().set_current_block(body_block);
     self.generate_compound_stmt(&for_stmt.body, false);
     let loop_var_value = self.builder_mut().create_load(loop_var_addr.clone());
-    let i32ty = self.tg.builder.context().int_type(32);
     let one = self.tg.builder.context().const_value(i32ty.clone(), 1);
     let added = self.builder_mut().create_add(loop_var_value, one);
     self.builder_mut().create_store(added, loop_var_addr).unwrap();
