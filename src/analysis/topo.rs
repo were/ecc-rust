@@ -55,16 +55,16 @@ impl <'ctx>LoopInfo<'ctx> {
     }
   }
 
-  fn get_latch(&self) -> InstructionRef<'ctx> {
+  pub fn get_latch(&self) -> InstructionRef<'ctx> {
     Instruction::from_skey(self.latch).as_ref::<Instruction>(self.ctx).unwrap()
   }
 
-  fn get_head(&'ctx self) -> BlockRef<'ctx> {
+  pub fn get_head(&'ctx self) -> BlockRef<'ctx> {
     let head = Block::from_skey(self.head).as_ref::<Block>(self.ctx).unwrap();
     return head;
   }
 
-  fn get_exit(&'ctx self) -> BlockRef<'ctx> {
+  pub fn get_exit(&'ctx self) -> BlockRef<'ctx> {
     let exit = Block::from_skey(self.exit).as_ref::<Block>(self.ctx).unwrap();
     return exit;
   }
@@ -73,6 +73,7 @@ impl <'ctx>LoopInfo<'ctx> {
 
 pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) -> Vec<Either<usize, LoopInfo<'ctx>>> {
   let mut loop_stack = Vec::new();
+  let mut fianlized_loops = Vec::new();
   let mut stack = Vec::new();
   let mut res = Vec::new();
 
@@ -84,15 +85,14 @@ pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) 
   while let Some((block, idx)) = stack.last() {
     if *idx == 0 {
       if let Some(latch) = block.is_loop_head() {
-        eprintln!("Loop latch: {}", latch.to_string(false));
+        // eprintln!("Loop latch: {}", latch.to_string(false));
         // TODO(@were): This lifetime management is not elegant enough.
         //              I can only pass the key of this variable.
         loop_stack.push(LoopInfo::new(func.ctx, latch.get_skey(), block.get_skey()));
-        print_loop_info(loop_stack.last().unwrap(), 0);
       }
     }
     if let Some(succ) = block.get_succ(*idx) {
-      eprintln!("Visiting {}'s {}-th child, {}", block.get_name(), idx, succ.get_name());
+      // eprintln!("Visiting {}'s {}-th child, {}", block.get_name(), idx, succ.get_name());
       let dst_key = succ.get_skey();
       // We cannot go out this loop until we traverse all the blocks.
       let not_an_exit = loop_stack.iter().all(|x| {
@@ -107,37 +107,44 @@ pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) 
         }
       }
     } else {
-      if let Some(cur_loop) = loop_stack.last_mut() {
-        cur_loop.children.push(Either::Left(block.get_skey()));
-      } else {
-        res.push(Either::Left(block.get_skey()));
-      }
-      let push_exit = if block.is_loop_head().is_some() {
-        eprintln!("Finalized loop: {}, {}", block.get_name(), *idx);
-        let finalized_loop = loop_stack.pop().unwrap();
-        print_loop_info(&finalized_loop, 0);
-        let to_push = {
-          eprintln!("Pushing exit block: {}", finalized_loop.get_exit().get_name());
+      if *idx == block.get_num_succs() {
+        if let Some(cur_loop) = loop_stack.last_mut() {
+          cur_loop.children.push(Either::Left(block.get_skey()));
+        } else {
+          res.push(Either::Left(block.get_skey()));
+        }
+        let push_exit = if block.is_loop_head().is_some() {
+          let to_finalize = loop_stack.pop().unwrap();
+          eprintln!("Pushing exit block: {}", to_finalize.get_exit().get_name());
           // TODO(@were): The lifetime management is not elegant enough here.
           //              I can only reconstruct the exit block.
-          let block = finalized_loop.get_exit().as_super();
+          let block = to_finalize.get_exit().as_super();
           let block = block.as_ref::<Block>(func.ctx).unwrap();
-          block
-        };
-        if let Some(parent) = loop_stack.last_mut() {
-          parent.children.push(Either::Right(Box::new(finalized_loop)));
+          fianlized_loops.push(to_finalize);
+          Some(block)
         } else {
-          res.push(Either::Right(finalized_loop));
+          None
+        };
+        if let Some(block) = push_exit {
+          if !visited[block.get_skey()] {
+            let (_, idx) = stack.last_mut().unwrap();
+            *idx += 1;
+            visited[block.get_skey()] = true;
+            stack.push((block, 0 as usize));
+            continue;
+          }
         }
-        Some(to_push)
       } else {
-        None
-      };
-      stack.pop();
-      if let Some(block) = push_exit {
-        visited[block.get_skey()] = true;
-        stack.push((block, 0 as usize));
+        // eprintln!("Finalized loop: {}, {}", block.get_name(), *idx);
+        // print_loop_info(&finalized_loop, 0);
+        let finalized = fianlized_loops.pop().unwrap();
+        if let Some(parent) = loop_stack.last_mut() {
+          parent.children.push(Either::Right(Box::new(finalized)));
+        } else {
+          res.push(Either::Right(finalized));
+        }
       }
+      stack.pop();
     }
     if let Some((_, idx)) = stack.last_mut() {
       *idx += 1;
@@ -149,10 +156,10 @@ pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) 
     match elem {
       Either::Left(block) => {
         let block = Block::from_skey(*block).as_ref::<Block>(func.ctx).unwrap();
-        println!("Block: {}", block.get_name());
+        println!(" Block: {}", block.get_name());
       }
       Either::Right(li) => {
-        print_loop_info(li, 0)
+        print_loop_info(li, 1)
       }
     }
   }

@@ -31,7 +31,7 @@ impl WASMFunc {
   pub(super) fn to_string(&self) -> String{
     let mut indent = 2;
     let mut res = format!(" (func ${}\n", self.name);
-    res.push_str(self.args.iter().map(|x| format!("  (param i32 {})", x)).collect::<Vec<String>>().join("\n").as_str());
+    res.push_str(self.args.iter().map(|x| format!("  (param i32 ${})", x)).collect::<Vec<String>>().join("\n").as_str());
     res.push('\n');
     if !self.rty.is_empty() {
       res.push_str("  (result i32)\n");

@@ -2,6 +2,7 @@ mod ir;
 
 use std::collections::HashSet;
 
+use either::Either;
 use trinity::{ir::{
   module::{Module, namify},
   value::{
@@ -89,12 +90,6 @@ fn emit_scc(ctx: &Context, scc: &Vec<usize>, emit_cache: &mut Vec<Emission>) -> 
   res
 }
 
-fn linearize_blocks(func: &FunctionRef, workspace: &mut Vec<SCCEntry>) {
-
-
-
-}
-
 fn emit_function(func: &FunctionRef,
                  emit_cache: &mut Vec<Emission>,
                  workspace: &mut Vec<SCCEntry>) -> WASMFunc {
@@ -105,9 +100,36 @@ fn emit_function(func: &FunctionRef,
     let arg = arg.as_ref::<Argument>(func.ctx).unwrap();
     namify(&arg.get_name())
   }).collect::<Vec<String>>();
-  let res = WASMFunc::new(namify(&func.get_name()), args, rty.to_string());
+  let mut res = WASMFunc::new(namify(&func.get_name()), args, rty.to_string());
   let mut visited = vec![false; func.ctx.capacity()];
-  analyze_topology(func, &mut visited);
+  let topo = analyze_topology(func, &mut visited);
+  for elem in topo.iter() {
+    let (skey, label) = match elem {
+      Either::Left(block) => {
+        let block = Block::from_skey(*block).as_ref::<Block>(func.ctx).unwrap();
+        (block.get_skey(), namify(&block.get_name()))
+      }
+      Either::Right(li) => {
+        let head = li.get_head();
+        (head.get_skey(), namify(&head.get_name()))
+      }
+    };
+    res.insts.push(WASMInst::block_begin(skey, label));
+  }
+  for elem in topo.iter().rev() {
+    let (skey, label) = match elem {
+      Either::Left(block) => {
+        let block = Block::from_skey(*block).as_ref::<Block>(func.ctx).unwrap();
+        (block.get_skey(), namify(&block.get_name()))
+      }
+      Either::Right(li) => {
+        let head = li.get_head();
+        (head.get_skey(), namify(&head.get_name()))
+      }
+    };
+    res.insts.push(WASMInst::block_end(skey));
+    res.insts.last_mut().unwrap().comment = label.to_string();
+  }
   res
 }
 
