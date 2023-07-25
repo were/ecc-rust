@@ -19,7 +19,7 @@ pub struct LoopInfo<'ctx> {
   /// The loop exit block.
   exit: usize,
   /// The child elements of this loop.
-  children: Vec<Either<usize, Box<LoopInfo<'ctx>>>>,
+  children: Vec<Either<BlockRef<'ctx>, Box<LoopInfo<'ctx>>>>,
 }
 
 pub fn print_loop_info<'ctx>(li: &LoopInfo<'ctx>, indent: usize) {
@@ -30,7 +30,6 @@ pub fn print_loop_info<'ctx>(li: &LoopInfo<'ctx>, indent: usize) {
   for elem in li.children.iter() {
     match elem {
       Either::Left(block) => {
-        let block = Block::from_skey(*block).as_ref::<Block>(li.ctx).unwrap();
         println!("{}Block: {}", " ".repeat(indent), block.get_name());
       }
       Either::Right(loop_info) => {
@@ -69,9 +68,13 @@ impl <'ctx>LoopInfo<'ctx> {
     return exit;
   }
 
+  pub fn child_iter(&'ctx self) -> impl Iterator<Item=&Either<BlockRef<'ctx>, Box<LoopInfo<'ctx>>>> {
+    self.children.iter()
+  }
+
 }
 
-pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) -> Vec<Either<usize, LoopInfo<'ctx>>> {
+pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) -> Vec<Either<BlockRef<'ctx>, Box<LoopInfo<'ctx>>>> {
   let mut loop_stack = Vec::new();
   let mut fianlized_loops = Vec::new();
   let mut stack = Vec::new();
@@ -109,7 +112,9 @@ pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) 
     } else {
       if *idx == block.get_num_succs() {
         if let Some(cur_loop) = loop_stack.last_mut() {
-          cur_loop.children.push(Either::Left(block.get_skey()));
+          // TODO(@were): Make this later a method?
+          let clone = block.as_super().as_ref::<Block>(func.ctx).unwrap();
+          cur_loop.children.push(Either::Left(clone));
         } else {
           res.push(Either::Left(block.get_skey()));
         }
@@ -164,6 +169,11 @@ pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) 
     }
   }
 
-  res
+  res.into_iter().map(|x| {
+    match x {
+      Either::Left(block) => Either::Left(Block::from_skey(block).as_ref::<Block>(func.ctx).unwrap()),
+      Either::Right(li) => Either::Right(Box::new(li)),
+    }
+  }).collect::<Vec<_>>()
 }
 

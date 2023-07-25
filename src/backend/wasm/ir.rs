@@ -1,6 +1,8 @@
 pub(super) enum WASMOpcode {
   /// The begin of the block.
   BlockBegin(String),
+  /// The begin of the block.
+  LoopBegin(String),
   /// The end of the block.
   BlockEnd,
   /// Jump to the block.
@@ -28,7 +30,7 @@ impl WASMFunc {
     }
   }
 
-  pub(super) fn to_string(&self) -> String{
+  pub(super) fn to_string(&self) -> String {
     let mut indent = 2;
     let mut res = format!(" (func ${}\n", self.name);
     res.push_str(self.args.iter().map(|x| format!("  (param i32 ${})", x)).collect::<Vec<String>>().join("\n").as_str());
@@ -52,6 +54,15 @@ pub(super) struct WASMInst {
 }
 
 impl WASMInst {
+
+  pub(super) fn loop_begin(skey: usize, label: String) -> WASMInst {
+    WASMInst {
+      skey,
+      opcode: WASMOpcode::LoopBegin(label),
+      operands: Vec::new(),
+      comment: String::new(),
+    }
+  }
 
   pub(super) fn block_begin(skey: usize, label: String) -> WASMInst {
     WASMInst {
@@ -99,29 +110,33 @@ impl WASMInst {
   }
 
   fn to_string(&self, indent: &mut usize) -> String {
-    match &self.opcode {
+    let mut res = match &self.opcode {
       WASMOpcode::BlockBegin(label) => {
         *indent += 1;
-        format!("{}(block ${} ;; {}", " ".repeat(*indent - 1), label, self.comment)
+        format!("{}(block ${}", " ".repeat(*indent - 1), label)
+      },
+      WASMOpcode::LoopBegin(label) => {
+        *indent += 1;
+        format!("{}(loop ${}", " ".repeat(*indent - 1), label)
       },
       WASMOpcode::BlockEnd => {
         *indent -= 1;
-        format!("{}) ;; {}", " ".repeat(*indent), self.comment)
+        format!("{})", " ".repeat(*indent))
       }
       WASMOpcode::Br(label) => {
-        format!("{}(br ${}) ;; {}", " ".repeat(*indent), label, self.comment)
+        format!("{}(br ${})", " ".repeat(*indent), label)
       }
       WASMOpcode::BrIf(label) => {
-        format!("{}(br_if ${} (i32.const 0)) ;; {}", " ".repeat(*indent), label, self.comment)
+        format!("{}(br_if ${} (i32.const 0))", " ".repeat(*indent), label)
       }
       WASMOpcode::Plain(s) => {
-        let mut res = format!("{}", s);
-        if !self.comment.is_empty() {
-          res.push_str(&format!(" ;; {}", self.comment).as_str());
-        }
-        format!("{}{}", " ".repeat(*indent), res)
+        format!("{}", s)
       }
+    };
+    if !self.comment.is_empty() {
+      res.push_str(&format!(" ;; {}", self.comment).as_str());
     }
+    res
   }
 
 }
