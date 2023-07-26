@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use trinity::ir::{
   value::{
     function::FunctionRef, instruction::{PhiNode, InstructionRef, InstOpcode}, block::BlockRef
-  }, module::namify, ValueRef, ConstScalar, Instruction
+  },
+  module::namify, ValueRef, Instruction
 };
 
 
@@ -17,6 +18,10 @@ pub(super) fn gather_locals(func: &FunctionRef) -> HashMap<usize, String> {
         res.insert(inst.get_skey(), namify(&inst.get_name()));
         // eprintln!("Pushed to local due to more than 1 user!");
       }
+      if inst.user_iter().any(|x| if let InstOpcode::Phi = x.get_opcode() { true } else { false }) {
+        res.insert(inst.get_skey(), namify(&inst.get_name()));
+        // eprintln!("Pushed to local due to used by phi!");
+      }
       if let InstOpcode::Phi = inst.get_opcode() {
         res.insert(inst.get_skey(), namify(&inst.get_name()));
         // eprintln!("Pushed to local due phi!");
@@ -26,19 +31,17 @@ pub(super) fn gather_locals(func: &FunctionRef) -> HashMap<usize, String> {
   res
 }
 
-pub(super) fn gather_block_downstreams<'ctx>(block: &'ctx BlockRef) -> Vec<(InstructionRef<'ctx>, Vec<ValueRef>)> {
+pub(super) fn gather_block_downstreams<'ctx>(block: &'ctx BlockRef) -> Vec<(InstructionRef<'ctx>, ValueRef)> {
   let mut res = vec![];
   for elem in block.user_iter() {
-    let mut tmp = vec![];
     if let Some(phi) = elem.as_sub::<PhiNode>() {
-      for elem in phi.iter() {
-        if let Some(const_scalar) = elem.1.as_ref::<ConstScalar>(block.ctx) {
-          tmp.push(const_scalar.as_super());
+      for (incoming_block, value) in phi.iter() {
+        if incoming_block.get_skey() == block.get_skey() {
+          let inst = elem.as_super();
+          let inst = inst.as_ref::<Instruction>(block.ctx).unwrap();
+          res.push((inst, value.clone()));
         }
       }
-      let phi = elem.as_super();
-      let phi = phi.as_ref::<Instruction>(block.ctx).unwrap(); 
-      res.push((phi, tmp));
     }
   }
   res

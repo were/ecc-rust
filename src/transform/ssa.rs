@@ -10,7 +10,7 @@ use trinity::{
   builder::Builder
 };
 
-use super::dce;
+use super::{dce, simplify};
 
 pub struct DomInfo {
   dominators: HashSet<usize>,
@@ -402,6 +402,7 @@ fn cleanup(module: &mut Module, workspace: &Vec<DomInfo>, phi_to_alloc: &HashMap
       let mut mutator = InstMutator::new(&mut module.context, &elem);
       mutator.erase_from_parent();
     }
+    simplify::remove_trivial_phi(module);
     dce::transform(module);
   }
 }

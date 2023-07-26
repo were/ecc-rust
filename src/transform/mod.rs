@@ -3,6 +3,7 @@ use trinity::ir::module::Module;
 mod ssa;
 mod dce;
 mod cse;
+mod simplify;
 
 pub fn optimize(module: Module) -> Module {
   eprintln!("{}", module);

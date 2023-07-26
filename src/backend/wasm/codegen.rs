@@ -86,21 +86,12 @@ fn emit_value(
       }
     };
     if let Some(var_name) = locals.get(&inst.get_skey()) {
-      let value = res.remove(0);
-      res.push(WASMInst::local_set(inst.get_skey(), var_name.clone(), value));
-      res.last_mut().unwrap().comment = "More than one user, write to local variable".to_string();
-    }
-    inst.user_iter().for_each(|x| {
-      if let InstOpcode::Phi = x.get_opcode() {
-        let value = if inst.user_iter().count() == 0 {
-          res.remove(0)
-        } else {
-          WASMInst::local_get(inst.get_skey(), namify(&inst.get_name()))
-        };
-        eprintln!("[WASM-CG] {} used by {}", x.to_string(false), x.to_string(false));
-        res.push(WASMInst::local_set(x.get_skey(), namify(&x.get_name()), value));
+      if define {
+        let value = res.remove(0);
+        res.push(WASMInst::local_set(inst.get_skey(), var_name.clone(), value));
+        res.last_mut().unwrap().comment = "Defined here! Write to local variable allocated".to_string();
       }
-    });
+    }
     res
   } else {
     let res = match value.kind {
@@ -151,14 +142,12 @@ fn emit_loop_or_block<'ctx>(
         func.insts.last_mut().unwrap().comment = block.get_name();
         // Gather the constant changes in this block.
         let downstreams = gather_block_downstreams(block);
-        for (phi, values) in downstreams {
+        for (phi, raw_value) in downstreams {
           let var_name = namify(&phi.get_name());
-          for raw_value in values {
-            let mut value = emit_value(block.ctx, raw_value, emit_cache, &func.locals, true);
-            let mut inst = WASMInst::local_set(phi.get_skey(), var_name.clone(), value.remove(0));
-            inst.comment = format!("{} of {}", block.get_name(), phi.to_string(false));
-            func.insts.push(inst);
-          }
+          let mut value = emit_value(block.ctx, raw_value, emit_cache, &func.locals, true);
+          let mut inst = WASMInst::local_set(phi.get_skey(), var_name.clone(), value.remove(0));
+          inst.comment = format!("{} of {}", block.get_name(), phi.to_string(false));
+          func.insts.push(inst);
         }
         for inst in block.inst_iter() {
           let emit = match inst.get_opcode() {
@@ -171,15 +160,7 @@ fn emit_loop_or_block<'ctx>(
               false
             }
             _ => {
-              let used_by_phi = inst.user_iter().any(|x| {
-                if let InstOpcode::Phi = x.get_opcode() {
-                  true
-                } else {
-                  false
-                }
-              });
-              // If used by phi or used more than once, should be written to local variable.
-              used_by_phi || func.locals.contains_key(&inst.get_skey())
+              func.locals.contains_key(&inst.get_skey())
             }
           };
           if emit {

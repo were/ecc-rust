@@ -127,7 +127,7 @@ pub fn dfs_topology<'ctx>(
   if is_head {
     let to_finalize = loop_stack.pop().unwrap();
     // eprintln!("Push exit block: {}", to_finalize.get_exit().get_name());
-    print_loop_info(&to_finalize, 0);
+    // print_loop_info(&to_finalize, 0);
     // TODO(@were): The lifetime management is not elegant enough here.
     //              I can only reconstruct the exit block.
     let exit_block = to_finalize.get_exit().as_super();
