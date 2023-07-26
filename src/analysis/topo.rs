@@ -104,7 +104,7 @@ pub fn dfs_topology<'ctx>(
     });
     if not_an_exit {
       if !visited[dst_key] {
-        eprintln!("First visit, push {} to stack!", succ.get_name());
+        // eprintln!("First visit, push {} to stack!", succ.get_name());
         visited[dst_key] = true;
         dfs_topology(ctx, &succ, visited, loop_stack, finalized_loops, res);
       }
@@ -126,7 +126,7 @@ pub fn dfs_topology<'ctx>(
 
   if is_head {
     let to_finalize = loop_stack.pop().unwrap();
-    eprintln!("Push exit block: {}", to_finalize.get_exit().get_name());
+    // eprintln!("Push exit block: {}", to_finalize.get_exit().get_name());
     print_loop_info(&to_finalize, 0);
     // TODO(@were): The lifetime management is not elegant enough here.
     //              I can only reconstruct the exit block.
@@ -139,9 +139,9 @@ pub fn dfs_topology<'ctx>(
       dfs_topology(ctx, &exit_block, visited, loop_stack, finalized_loops, res);
     }
 
-    eprintln!("Finalized loop: {}", exit_block.get_name());
+    // eprintln!("Finalized loop: {}", exit_block.get_name());
     let finalized = finalized_loops.pop().unwrap();
-    print_loop_info(&finalized, 0);
+    // print_loop_info(&finalized, 0);
 
     if let Some(parent) = loop_stack.last_mut() {
       parent.children.push(Either::Right(Box::new(finalized)));
@@ -163,18 +163,18 @@ pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) 
   visited[entry.get_skey()] = true;
   dfs_topology(func.ctx, &entry, visited, &mut loop_stack, &mut finalized_loops, &mut res);
 
-  println!("Function {}:", func.get_name());
-  for elem in res.iter() {
-    match elem {
-      Either::Left(block) => {
-        let block = Block::from_skey(*block).as_ref::<Block>(func.ctx).unwrap();
-        println!(" Block: {}", block.get_name());
-      }
-      Either::Right(li) => {
-        print_loop_info(li, 1)
-      }
-    }
-  }
+  // println!("Function {}:", func.get_name());
+  // for elem in res.iter() {
+  //   match elem {
+  //     Either::Left(block) => {
+  //       let block = Block::from_skey(*block).as_ref::<Block>(func.ctx).unwrap();
+  //       println!(" Block: {}", block.get_name());
+  //     }
+  //     Either::Right(li) => {
+  //       print_loop_info(li, 1)
+  //     }
+  //   }
+  // }
 
   assert!(finalized_loops.is_empty(), "There are still some loops not finalized!");
 

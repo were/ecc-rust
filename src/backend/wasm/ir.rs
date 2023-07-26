@@ -1,4 +1,6 @@
-use trinity::ir::value::instruction::CmpPred;
+use std::collections::HashMap;
+
+use trinity::ir::value::instruction::{CmpPred, BinaryOp};
 
 pub(super) enum WASMOpcode {
   /// The begin of the block.
@@ -14,9 +16,15 @@ pub(super) enum WASMOpcode {
   /// Plain string.
   Plain(String),
   /// Const (is_int, dbits, int).
-  Const(bool, usize, usize),
+  Const(bool, usize, u64),
   /// Compare inst (dtype, pred).
   Compare(i32, CmpPred),
+  /// Binary operator.
+  Binary(BinaryOp),
+  /// Local load instruction.
+  LocalGet(String),
+  /// Local store instruction.
+  LocalSet(String),
   /// Return instruction.
   Return,
 }
@@ -25,15 +33,18 @@ pub(super) struct WASMFunc {
   name: String,
   args: Vec<String>,
   pub(super) insts: Vec<WASMInst>,
+  pub(super) locals: HashMap<usize, String>,
   rty: String
 }
 
 impl WASMFunc {
+
   pub(super) fn new(name: String, args: Vec<String>, rty: String) -> Self {
     Self {
       name,
       args,
       insts: Vec::new(),
+      locals: HashMap::new(),
       rty
     }
   }
@@ -45,6 +56,9 @@ impl WASMFunc {
     res.push('\n');
     if !self.rty.is_empty() {
       res.push_str("  (result i32)\n");
+    }
+    for (_, local) in self.locals.iter() {
+      res.push_str(format!("  (local ${} i32)\n", local).as_str());
     }
     for elem in self.insts.iter() {
       res.push_str((elem.to_string(&mut indent) + "\n").as_str());
@@ -90,11 +104,38 @@ impl WASMInst {
     }
   }
 
+  pub(super) fn binop(skey: usize, op: WASMOpcode, lhs: WASMInst, rhs: WASMInst) -> WASMInst {
+    WASMInst {
+      skey,
+      opcode: op,
+      operands: vec![Box::new(lhs), Box::new(rhs)],
+      comment: String::new(),
+    }
+  }
+
   pub(super) fn plain(s: String) -> WASMInst {
     WASMInst {
       skey: 0,
       opcode: WASMOpcode::Plain(s),
       operands: Vec::new(),
+      comment: String::new(),
+    }
+  }
+
+  pub(super) fn local_get(skey: usize, name: String) -> WASMInst {
+    WASMInst {
+      skey,
+      opcode: WASMOpcode::LocalGet(name),
+      operands: Vec::new(),
+      comment: String::new(),
+    }
+  }
+
+  pub(super) fn local_set(skey: usize, name: String, value: WASMInst) -> WASMInst {
+    WASMInst {
+      skey,
+      opcode: WASMOpcode::LocalSet(name),
+      operands: vec![Box::new(value)],
       comment: String::new(),
     }
   }
@@ -135,7 +176,7 @@ impl WASMInst {
     }
   }
 
-  pub(super) fn iconst(skey: usize, i: usize) -> WASMInst {
+  pub(super) fn iconst(skey: usize, i: u64) -> WASMInst {
     WASMInst {
       skey,
       opcode: WASMOpcode::Const(true, 32, i),
@@ -162,7 +203,11 @@ impl WASMInst {
         format!("{}(br ${})", " ".repeat(*indent), label)
       }
       WASMOpcode::BrIf(label) => {
-        format!("{}(br_if ${} (i32.const 0))", " ".repeat(*indent), label)
+        let indent0 = " ".repeat(*indent);
+        *indent += 1;
+        let cond = self.operands[0].to_string(indent);
+        *indent -= 1;
+        format!("{}(br_if ${}\n{}\n{})", indent0, label, cond, indent0)
       }
       WASMOpcode::Plain(s) => {
         format!("{}{}", " ".repeat(*indent), s)
@@ -172,6 +217,7 @@ impl WASMInst {
       }
       WASMOpcode::Compare(dtype, pred) => {
         let pred = pred.to_string();
+        let pred = if pred.len() > 2 { pred[1..].to_string() + "_s" } else { pred.to_string() };
         *indent += 1;
         let lhs = self.operands[0].to_string(indent);
         let rhs = self.operands[1].to_string(indent);
@@ -190,6 +236,23 @@ impl WASMInst {
         };
         let indent = " ".repeat(*indent);
         format!("{}(return\n{}\n{})", indent, value, indent)
+      }
+      WASMOpcode::Binary(op) => {
+        *indent += 1;
+        let lhs = self.operands[0].to_string(indent);
+        let rhs = self.operands[1].to_string(indent);
+        *indent -= 1;
+        format!("{}(i32.{}\n{}\n{}\n)", " ".repeat(*indent), op.to_string(), lhs, rhs)
+      }
+      WASMOpcode::LocalGet(var) => {
+        format!("{}(local.get ${})", " ".repeat(*indent), var)
+      }
+      WASMOpcode::LocalSet(var) => {
+        *indent += 1;
+        let value = self.operands[0].to_string(indent);
+        *indent -= 1;
+        let indent = " ".repeat(*indent);
+        format!("{}(local.set ${}\n{}\n{})", indent, var, value, indent)
       }
     };
     if !self.comment.is_empty() {
