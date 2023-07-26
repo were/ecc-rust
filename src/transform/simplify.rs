@@ -2,7 +2,7 @@ use trinity::ir::{module::Module, value::instruction::{PhiNode, InstMutator}, Va
 
 fn has_trivial_phi(module: &Module) -> Option<(usize, ValueRef)> {
   for func in module.func_iter() {
-    for block in func.iter() {
+    for block in func.block_iter() {
       for inst in block.inst_iter() {
         if let Some(phi) = inst.as_sub::<PhiNode>() {
           let value = phi.get_incoming_value(0).unwrap();

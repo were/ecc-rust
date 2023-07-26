@@ -69,7 +69,7 @@ impl WASMFunc {
 }
 
 pub(super) struct WASMInst {
-  skey: usize,
+  _skey: usize,
   opcode: WASMOpcode,
   operands: Vec<Box<WASMInst>>,
   pub(super) comment: String,
@@ -79,7 +79,7 @@ impl WASMInst {
 
   pub(super) fn loop_begin(skey: usize, label: String) -> WASMInst {
     WASMInst {
-      skey,
+      _skey: skey,
       opcode: WASMOpcode::LoopBegin(label),
       operands: Vec::new(),
       comment: String::new(),
@@ -88,7 +88,7 @@ impl WASMInst {
 
   pub(super) fn block_begin(skey: usize, label: String) -> WASMInst {
     WASMInst {
-      skey,
+      _skey: skey,
       opcode: WASMOpcode::BlockBegin(label),
       operands: Vec::new(),
       comment: String::new(),
@@ -97,17 +97,17 @@ impl WASMInst {
 
   pub(super) fn block_end(skey: usize) -> WASMInst {
     WASMInst {
-      skey,
+      _skey: skey,
       opcode: WASMOpcode::BlockEnd,
       operands: Vec::new(),
       comment: String::new(),
     }
   }
 
-  pub(super) fn binop(skey: usize, op: WASMOpcode, lhs: WASMInst, rhs: WASMInst) -> WASMInst {
+  pub(super) fn binop(skey: usize, op: &BinaryOp, lhs: WASMInst, rhs: WASMInst) -> WASMInst {
     WASMInst {
-      skey,
-      opcode: op,
+      _skey: skey,
+      opcode: WASMOpcode::Binary(op.clone()),
       operands: vec![Box::new(lhs), Box::new(rhs)],
       comment: String::new(),
     }
@@ -115,7 +115,7 @@ impl WASMInst {
 
   pub(super) fn plain(s: String) -> WASMInst {
     WASMInst {
-      skey: 0,
+      _skey: 0,
       opcode: WASMOpcode::Plain(s),
       operands: Vec::new(),
       comment: String::new(),
@@ -124,7 +124,7 @@ impl WASMInst {
 
   pub(super) fn local_get(skey: usize, name: String) -> WASMInst {
     WASMInst {
-      skey,
+      _skey: skey,
       opcode: WASMOpcode::LocalGet(name),
       operands: Vec::new(),
       comment: String::new(),
@@ -133,7 +133,7 @@ impl WASMInst {
 
   pub(super) fn local_set(skey: usize, name: String, value: WASMInst) -> WASMInst {
     WASMInst {
-      skey,
+      _skey: skey,
       opcode: WASMOpcode::LocalSet(name),
       operands: vec![Box::new(value)],
       comment: String::new(),
@@ -142,7 +142,7 @@ impl WASMInst {
 
   pub(super) fn ret(skey: usize, val: Option<WASMInst>) -> WASMInst {
     WASMInst {
-      skey,
+      _skey: skey,
       opcode: WASMOpcode::Return,
       operands: if val.is_some() { vec![Box::new(val.unwrap())] } else { Vec::new() },
       comment: String::new(),
@@ -151,7 +151,7 @@ impl WASMInst {
 
   pub(super) fn cmp(skey: usize, pred: CmpPred, lhs: WASMInst, rhs: WASMInst) -> WASMInst {
     WASMInst {
-      skey,
+      _skey: skey,
       opcode: WASMOpcode::Compare(32, pred),
       operands: vec![Box::new(lhs), Box::new(rhs)],
       comment: String::new()
@@ -160,7 +160,7 @@ impl WASMInst {
 
   pub(super) fn br_if(skey: usize, label: String, cond: WASMInst) -> WASMInst {
     WASMInst {
-      skey,
+      _skey: skey,
       opcode: WASMOpcode::BrIf(label),
       operands: vec![Box::new(cond)],
       comment: String::new(),
@@ -169,7 +169,7 @@ impl WASMInst {
 
   pub(super) fn br(skey: usize, label: String) -> WASMInst {
     WASMInst {
-      skey,
+      _skey: skey,
       opcode: WASMOpcode::Br(label),
       operands: Vec::new(),
       comment: String::new(),
@@ -178,7 +178,7 @@ impl WASMInst {
 
   pub(super) fn iconst(skey: usize, i: u64) -> WASMInst {
     WASMInst {
-      skey,
+      _skey: skey,
       opcode: WASMOpcode::Const(true, 32, i),
       operands: Vec::new(),
       comment: String::new(),

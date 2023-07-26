@@ -28,15 +28,11 @@ fn emit_value(
   if let Some(inst) = value.as_ref::<Instruction>(ctx) {
     let next_block = emit_cache[inst.get_parent().get_skey()].next_block;
     let mut res = match inst.get_opcode() {
-      // InstOpcode::Call => {
-      //   let call = inst.as_sub::<Call>().unwrap();
-      //   if let Some(func) = call.get_callee().as_ref::<Function>(inst.ctx) {
-      //     let fname = format!("${}", namify(&func.get_name()));
-      //     for i in 0..call.get_num_args() {
-      //       call.get_arg(i);
-      //     }
-      //   }
-      // }
+      InstOpcode::Call => {
+        let call = inst.as_sub::<Call>().unwrap();
+        let name = call.get_callee().get_name();
+        vec![]
+      }
       InstOpcode::Branch(_) => {
         let br = inst.as_sub::<BranchInst>().unwrap();
         if let Some(cond) = br.cond() {
@@ -61,11 +57,18 @@ fn emit_value(
         let cmp = inst.as_sub::<CompareInst>().unwrap();
         let mut lhs = emit_value(ctx, inst.get_operand(0).unwrap().clone(), emit_cache, locals, false);
         let mut rhs = emit_value(ctx, inst.get_operand(1).unwrap().clone(), emit_cache, locals, false);
-        match cmp.get_pred() {
+        let mut res = match cmp.get_pred() {
           CmpPred::SLT | CmpPred::SGT | CmpPred::SLE | CmpPred::SGE | CmpPred::EQ => {
-            return vec![WASMInst::cmp(inst.get_skey(), cmp.get_pred().clone(), lhs.remove(0), rhs.remove(0))];
+            vec![WASMInst::cmp(inst.get_skey(), cmp.get_pred().clone(), lhs.remove(0), rhs.remove(0))]
           }
-        }
+        };
+        res.last_mut().unwrap().comment = inst.to_string(false);
+        res
+      }
+      InstOpcode::BinaryOp(op) => {
+        let mut lhs = emit_value(ctx, inst.get_operand(0).unwrap().clone(), emit_cache, locals, false);
+        let mut rhs = emit_value(ctx, inst.get_operand(1).unwrap().clone(), emit_cache, locals, false);
+        vec![WASMInst::binop(inst.get_skey(), op, lhs.remove(0), rhs.remove(0))]
       }
       InstOpcode::Return => {
         let ret = inst.as_sub::<Return>().unwrap();
@@ -144,7 +147,7 @@ fn emit_loop_or_block<'ctx>(
         let downstreams = gather_block_downstreams(block);
         for (phi, raw_value) in downstreams {
           let var_name = namify(&phi.get_name());
-          let mut value = emit_value(block.ctx, raw_value, emit_cache, &func.locals, true);
+          let mut value = emit_value(block.ctx, raw_value, emit_cache, &func.locals, false);
           let mut inst = WASMInst::local_set(phi.get_skey(), var_name.clone(), value.remove(0));
           inst.comment = format!("{} of {}", block.get_name(), phi.to_string(false));
           func.insts.push(inst);

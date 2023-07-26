@@ -2,30 +2,44 @@ use std::collections::HashMap;
 
 use trinity::ir::{
   value::{
-    function::FunctionRef, instruction::{PhiNode, InstructionRef, InstOpcode}, block::BlockRef
+    function::FunctionRef, instruction::{PhiNode, InstructionRef, InstOpcode, Call}, block::BlockRef
   },
-  module::namify, ValueRef, Instruction
+  module::namify, ValueRef, Instruction, TKindCode
 };
 
 
 
 pub(super) fn gather_locals(func: &FunctionRef) -> HashMap<usize, String> {
   let mut res = HashMap::new();
-  for block in func.iter() {
+  for block in func.block_iter() {
     for inst in block.inst_iter() {
-      // eprintln!("[WASM-CG] {} has {} user(s)", inst.to_string(false), inst.user_iter().count());
-      if inst.user_iter().count() > 1 {
-        res.insert(inst.get_skey(), namify(&inst.get_name()));
-        // eprintln!("Pushed to local due to more than 1 user!");
+      match inst.get_opcode() {
+        InstOpcode::Branch(_) | InstOpcode::Return => {
+          continue;
+        },
+        InstOpcode::Call => {
+          let call = inst.as_sub::<Call>().unwrap();
+          let rty = call.get_callee().get_ret_ty();
+          if let TKindCode::VoidType = rty.kind() {
+            continue;
+          }
+        },
+        _ => {}
       }
-      if inst.user_iter().any(|x| if let InstOpcode::Phi = x.get_opcode() { true } else { false }) {
-        res.insert(inst.get_skey(), namify(&inst.get_name()));
-        // eprintln!("Pushed to local due to used by phi!");
-      }
-      if let InstOpcode::Phi = inst.get_opcode() {
-        res.insert(inst.get_skey(), namify(&inst.get_name()));
-        // eprintln!("Pushed to local due phi!");
-      }
+      res.insert(inst.get_skey(), namify(&inst.get_name()));
+      // // eprintln!("[WASM-CG] {} has {} user(s)", inst.to_string(false), inst.user_iter().count());
+      // if inst.user_iter().count() > 1 {
+      //   res.insert(inst.get_skey(), namify(&inst.get_name()));
+      //   // eprintln!("Pushed to local due to more than 1 user!");
+      // }
+      // if inst.user_iter().any(|x| if let InstOpcode::Phi = x.get_opcode() { true } else { false }) {
+      //   res.insert(inst.get_skey(), namify(&inst.get_name()));
+      //   // eprintln!("Pushed to local due to used by phi!");
+      // }
+      // if let InstOpcode::Phi = inst.get_opcode() {
+      //   res.insert(inst.get_skey(), namify(&inst.get_name()));
+      //   // eprintln!("Pushed to local due phi!");
+      // }
     }
   }
   res

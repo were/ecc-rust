@@ -6,7 +6,7 @@ use trinity::ir::value::instruction::{InstOpcode, InstMutator};
 fn analysis(module: &Module) -> Vec<ValueRef> {
   let mut res = Vec::new();
   for func in module.func_iter() {
-    for block in func.iter() {
+    for block in func.block_iter() {
       for inst in block.inst_iter() {
         match inst.get_opcode() {
           InstOpcode::Return | InstOpcode::Call | InstOpcode::Branch(_) | InstOpcode::Store(_) => {

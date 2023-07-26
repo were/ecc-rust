@@ -7,7 +7,7 @@ use super::{ssa::{DomInfo, a_dominates_b}, dce};
 fn analysis<'ctx>(module: &'ctx Module, dom: &Vec<DomInfo>) -> Vec<(ValueRef, Vec<ValueRef>)> {
   let mut to_eliminate = HashMap::new();
   for func in module.func_iter() {
-    for block in func.iter() {
+    for block in func.block_iter() {
       for inst in block.inst_iter() {
         if let Some(bin) = inst.as_sub::<BinaryInst>() {
           let key = (bin.get_op(), bin.lhs().clone(), bin.rhs().clone());

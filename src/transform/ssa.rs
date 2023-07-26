@@ -211,7 +211,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap
   let mut phis = HashMap::new();
   // Register values to be phi-resolved
   for func in module.func_iter() {
-    for block in func.iter() {
+    for block in func.block_iter() {
       let predeccessors = block.pred_iter().collect::<Vec<_>>();
       if predeccessors.len() > 1 {
         // The current block is the frontier
@@ -269,7 +269,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap
   let mut to_append = Vec::new();
   let mut to_replace = Vec::new();
   for func in builder.module.func_iter() {
-    for block in func.iter() {
+    for block in func.block_iter() {
       let pred_branches = block.pred_iter().collect::<Vec<_>>();
       let predeccessors = if pred_branches.len() > 1 {
         let mut res = HashSet::new();
@@ -360,7 +360,7 @@ fn find_undominated_stores(
   phi_to_alloc: &HashMap<usize, usize>) -> HashSet<usize> {
   let mut store_with_dom = HashSet::new();
   for func in module.func_iter() {
-    for block in func.iter() {
+    for block in func.block_iter() {
       for inst in block.inst_iter() {
         if let Some(load) = inst.as_sub::<Load>() {
           if let Some(load_addr) = load.get_ptr().as_ref::<Instruction>(&module.context) {
@@ -388,7 +388,7 @@ fn cleanup(module: &mut Module, workspace: &Vec<DomInfo>, phi_to_alloc: &HashMap
     let dominated = find_undominated_stores(&module, &workspace, &phi_to_alloc);
     let mut to_remove = Vec::new();
     for func in module.func_iter() {
-      for block in func.iter() {
+      for block in func.block_iter() {
         for inst in block.inst_iter() {
           if let Some(store) = inst.as_sub::<Store>() {
             let ptr = store.get_ptr();
