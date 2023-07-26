@@ -153,18 +153,26 @@ fn find_value_dominator(
   };
   let mut runner = block.skey;
   let sub_parent = sub.get_parent();
+  let mut first_iteration = true;
   loop {
     let block_value = Block::from_skey(runner);
     let block_ref = block_value.as_ref::<Block>(ctx).unwrap();
-    let n = if runner == sub_parent.get_skey() {
-      // If we are at the source block, inspect all the instructions before.
+    let range = if runner == sub_parent.get_skey() {
+      // If we are at the source block,
       let pos = block_ref.inst_iter().position(|iter| { sub.get_skey() == iter.get_skey() });
-      pos.unwrap()
+      // And the first iteration, inspect all the instructions before.
+      if first_iteration {
+        0..pos.unwrap()
+      } else {
+        // If not the first iteration, which indicates there is a backloop, inspect all the
+        // instructions after.
+        pos.unwrap()..block_ref.get_num_insts()
+      }
     } else {
       // If we are at a dom block, inspect all the instructions.
-      block_ref.get_num_insts()
+      0..block_ref.get_num_insts()
     };
-    for i in (0..n).into_iter().rev() {
+    for i in range.into_iter().rev() {
       let dom = block_ref.get_inst(i).unwrap();
       if dom.get_skey() == sub.get_skey() {
         continue;
@@ -193,6 +201,7 @@ fn find_value_dominator(
       break;
     }
     runner = workspace[runner].idom;
+    first_iteration = false;
   }
   // This should not happen at all.
   None
@@ -287,6 +296,10 @@ fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap
                 workspace,
                 &phi_to_alloc,
                 false) {
+                eprintln!("[SSA] {}: [ {}, {} ]",
+                  inst.get_name(),
+                  incoming_value.to_string(&builder.module.context, true),
+                  incoming_block.as_ref::<Block>(&builder.module.context).unwrap().get_name());
                 (incoming_value, incoming_block)
               } else {
                 // TODO(@were): Warning here!
