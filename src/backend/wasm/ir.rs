@@ -1,3 +1,5 @@
+use trinity::ir::value::instruction::CmpPred;
+
 pub(super) enum WASMOpcode {
   /// The begin of the block.
   BlockBegin(String),
@@ -11,6 +13,12 @@ pub(super) enum WASMOpcode {
   BrIf(String),
   /// Plain string.
   Plain(String),
+  /// Const (is_int, dbits, int).
+  Const(bool, usize, usize),
+  /// Compare inst (dtype, pred).
+  Compare(i32, CmpPred),
+  /// Return instruction.
+  Return,
 }
 
 pub(super) struct WASMFunc {
@@ -33,7 +41,7 @@ impl WASMFunc {
   pub(super) fn to_string(&self) -> String {
     let mut indent = 2;
     let mut res = format!(" (func ${}\n", self.name);
-    res.push_str(self.args.iter().map(|x| format!("  (param i32 ${})", x)).collect::<Vec<String>>().join("\n").as_str());
+    res.push_str(self.args.iter().map(|x| format!("  (param ${} i32)", x)).collect::<Vec<String>>().join("\n").as_str());
     res.push('\n');
     if !self.rty.is_empty() {
       res.push_str("  (result i32)\n");
@@ -91,6 +99,24 @@ impl WASMInst {
     }
   }
 
+  pub(super) fn ret(skey: usize, val: Option<WASMInst>) -> WASMInst {
+    WASMInst {
+      skey,
+      opcode: WASMOpcode::Return,
+      operands: if val.is_some() { vec![Box::new(val.unwrap())] } else { Vec::new() },
+      comment: String::new(),
+    }
+  }
+
+  pub(super) fn cmp(skey: usize, pred: CmpPred, lhs: WASMInst, rhs: WASMInst) -> WASMInst {
+    WASMInst {
+      skey,
+      opcode: WASMOpcode::Compare(32, pred),
+      operands: vec![Box::new(lhs), Box::new(rhs)],
+      comment: String::new()
+    }
+  }
+
   pub(super) fn br_if(skey: usize, label: String, cond: WASMInst) -> WASMInst {
     WASMInst {
       skey,
@@ -104,6 +130,15 @@ impl WASMInst {
     WASMInst {
       skey,
       opcode: WASMOpcode::Br(label),
+      operands: Vec::new(),
+      comment: String::new(),
+    }
+  }
+
+  pub(super) fn iconst(skey: usize, i: usize) -> WASMInst {
+    WASMInst {
+      skey,
+      opcode: WASMOpcode::Const(true, 32, i),
       operands: Vec::new(),
       comment: String::new(),
     }
@@ -130,7 +165,31 @@ impl WASMInst {
         format!("{}(br_if ${} (i32.const 0))", " ".repeat(*indent), label)
       }
       WASMOpcode::Plain(s) => {
-        format!("{}", s)
+        format!("{}{}", " ".repeat(*indent), s)
+      }
+      WASMOpcode::Const(_, dbits, i) => {
+        format!("{}(i{}.const {})", " ".repeat(*indent), dbits, i)
+      }
+      WASMOpcode::Compare(dtype, pred) => {
+        let pred = pred.to_string();
+        *indent += 1;
+        let lhs = self.operands[0].to_string(indent);
+        let rhs = self.operands[1].to_string(indent);
+        *indent -= 1;
+        let indent = " ".repeat(*indent);
+        format!("{}(i{}.{}\n{}\n{}\n{})", indent, dtype, pred, lhs, rhs, indent)
+      }
+      WASMOpcode::Return => {
+        let value = if self.operands.len() > 0 {
+          *indent += 1;
+          let res = self.operands[0].to_string(indent);
+          *indent -= 1;
+          res
+        } else {
+          "".to_string()
+        };
+        let indent = " ".repeat(*indent);
+        format!("{}(return\n{}\n{})", indent, value, indent)
       }
     };
     if !self.comment.is_empty() {

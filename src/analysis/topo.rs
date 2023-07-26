@@ -72,89 +72,96 @@ impl <'ctx>LoopInfo<'ctx> {
     self.children.iter()
   }
 
+  pub fn children(&'ctx self) -> &Vec<Either<BlockRef<'ctx>, Box<LoopInfo<'ctx>>>> {
+    &self.children
+  }
+
+}
+
+pub fn dfs_topology<'ctx>(
+  ctx: &'ctx Context,
+  cur: &'_ BlockRef,
+  visited: &mut Vec<bool>,
+  loop_stack: &mut Vec<LoopInfo<'ctx>>,
+  finalized_loops: &mut Vec<LoopInfo<'ctx>>,
+  res: &mut Vec<Either<usize, LoopInfo<'ctx>>>) {
+
+  let is_head = if let Some(latch) = cur.is_loop_head() {
+    // eprintln!("Loop latch: {}", latch.to_string(false));
+    loop_stack.push(LoopInfo::new(ctx, latch.get_skey(), cur.get_skey()));
+    true
+  } else {
+    false
+  };
+
+  let successors = cur.succ_iter().collect::<Vec<_>>();
+  for succ in successors.iter() {
+    // eprintln!("Visiting {}'s {}-th child, {}", block.get_name(), idx, succ.get_name());
+    let dst_key = succ.get_skey();
+    // We cannot go out this loop until we traverse all the blocks.
+    let not_an_exit = loop_stack.iter().all(|x| {
+      x.get_exit().get_skey() != dst_key
+    });
+    if not_an_exit {
+      if !visited[dst_key] {
+        eprintln!("First visit, push {} to stack!", succ.get_name());
+        visited[dst_key] = true;
+        dfs_topology(ctx, &succ, visited, loop_stack, finalized_loops, res);
+      }
+    }
+  }
+
+
+  let cleanup = |block: &BlockRef<'_>, loop_stack: &mut Vec<LoopInfo<'ctx>>, res: &mut Vec<Either<usize, LoopInfo<'ctx>>>| {
+    if let Some(cur_loop) = loop_stack.last_mut() {
+      // TODO(@were): Make this later a method?
+      let clone = block.as_super().as_ref::<Block>(ctx).unwrap();
+      cur_loop.children.push(Either::Left(clone));
+    } else {
+      res.push(Either::Left(block.get_skey()));
+    }
+  };
+
+  cleanup(cur, loop_stack, res);
+
+  if is_head {
+    let to_finalize = loop_stack.pop().unwrap();
+    eprintln!("Push exit block: {}", to_finalize.get_exit().get_name());
+    print_loop_info(&to_finalize, 0);
+    // TODO(@were): The lifetime management is not elegant enough here.
+    //              I can only reconstruct the exit block.
+    let exit_block = to_finalize.get_exit().as_super();
+    let exit_block = exit_block.as_ref::<Block>(ctx).unwrap();
+    finalized_loops.push(to_finalize);
+
+    if !visited[exit_block.get_skey()] {
+      visited[exit_block.get_skey()] = true;
+      dfs_topology(ctx, &exit_block, visited, loop_stack, finalized_loops, res);
+    }
+
+    eprintln!("Finalized loop: {}", exit_block.get_name());
+    let finalized = finalized_loops.pop().unwrap();
+    print_loop_info(&finalized, 0);
+
+    if let Some(parent) = loop_stack.last_mut() {
+      parent.children.push(Either::Right(Box::new(finalized)));
+    } else {
+      res.push(Either::Right(finalized));
+    }
+  }
+
+
 }
 
 pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) -> Vec<Either<BlockRef<'ctx>, Box<LoopInfo<'ctx>>>> {
   let mut loop_stack = Vec::new();
-  let mut fianlized_loops = Vec::new();
-  let mut stack = Vec::new();
+  let mut finalized_loops = Vec::new();
   let mut res = Vec::new();
+
 
   let entry = func.get_block(0).unwrap();
   visited[entry.get_skey()] = true;
-  stack.push((entry, 0 as usize));
-
-  // This is a system-stack-free DFS.
-  while let Some((block, idx)) = stack.last() {
-    if *idx == 0 {
-      if let Some(latch) = block.is_loop_head() {
-        // eprintln!("Loop latch: {}", latch.to_string(false));
-        // TODO(@were): This lifetime management is not elegant enough.
-        //              I can only pass the key of this variable.
-        loop_stack.push(LoopInfo::new(func.ctx, latch.get_skey(), block.get_skey()));
-      }
-    }
-    if let Some(succ) = block.get_succ(*idx) {
-      // eprintln!("Visiting {}'s {}-th child, {}", block.get_name(), idx, succ.get_name());
-      let dst_key = succ.get_skey();
-      // We cannot go out this loop until we traverse all the blocks.
-      let not_an_exit = loop_stack.iter().all(|x| {
-        x.get_exit().get_skey() != dst_key
-      });
-      if not_an_exit {
-        if !visited[dst_key] {
-          eprintln!("First visit, push {} to stack!", succ.get_name());
-          stack.push((succ, 0 as usize));
-          visited[dst_key] = true;
-          continue;
-        }
-      }
-    } else {
-      if *idx == block.get_num_succs() {
-        if let Some(cur_loop) = loop_stack.last_mut() {
-          // TODO(@were): Make this later a method?
-          let clone = block.as_super().as_ref::<Block>(func.ctx).unwrap();
-          cur_loop.children.push(Either::Left(clone));
-        } else {
-          res.push(Either::Left(block.get_skey()));
-        }
-        let push_exit = if block.is_loop_head().is_some() {
-          let to_finalize = loop_stack.pop().unwrap();
-          eprintln!("Pushing exit block: {}", to_finalize.get_exit().get_name());
-          // TODO(@were): The lifetime management is not elegant enough here.
-          //              I can only reconstruct the exit block.
-          let block = to_finalize.get_exit().as_super();
-          let block = block.as_ref::<Block>(func.ctx).unwrap();
-          fianlized_loops.push(to_finalize);
-          Some(block)
-        } else {
-          None
-        };
-        if let Some(block) = push_exit {
-          if !visited[block.get_skey()] {
-            let (_, idx) = stack.last_mut().unwrap();
-            *idx += 1;
-            visited[block.get_skey()] = true;
-            stack.push((block, 0 as usize));
-            continue;
-          }
-        }
-      } else {
-        // eprintln!("Finalized loop: {}, {}", block.get_name(), *idx);
-        // print_loop_info(&finalized_loop, 0);
-        let finalized = fianlized_loops.pop().unwrap();
-        if let Some(parent) = loop_stack.last_mut() {
-          parent.children.push(Either::Right(Box::new(finalized)));
-        } else {
-          res.push(Either::Right(finalized));
-        }
-      }
-      stack.pop();
-    }
-    if let Some((_, idx)) = stack.last_mut() {
-      *idx += 1;
-    }
-  }
+  dfs_topology(func.ctx, &entry, visited, &mut loop_stack, &mut finalized_loops, &mut res);
 
   println!("Function {}:", func.get_name());
   for elem in res.iter() {
@@ -168,6 +175,8 @@ pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) 
       }
     }
   }
+
+  assert!(finalized_loops.is_empty(), "There are still some loops not finalized!");
 
   res.into_iter().map(|x| {
     match x {
