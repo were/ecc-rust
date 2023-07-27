@@ -6,7 +6,7 @@ mod cse;
 mod simplify;
 
 pub fn optimize(module: Module) -> Module {
-  eprintln!("{}", module);
+  // eprintln!("{}", module);
   let (ssa, dom) = ssa::transform(module);
   let cse = cse::transform(ssa, &dom);
   cse
