@@ -5,7 +5,7 @@ use trinity::{ir::{
   module::{Module, namify},
   value::{
     function::FunctionRef,
-    instruction::{InstOpcode, BranchInst, Return, Call, CompareInst, CmpPred, SubInst},
+    instruction::{InstOpcode, BranchInst, Return, Call, CompareInst, CmpPred, SubInst, CastOp},
     block::BlockRef
   },
   VoidType, Argument, Instruction, ValueRef, ConstScalar, VKindCode
@@ -17,7 +17,7 @@ use super::{ir::{WASMFunc, WASMInst}, analysis::gather_block_downstreams};
 
 
 fn emit_value(
-  ctx: &Context, value: ValueRef, emit_cache: &mut Vec<Emission>,
+  ctx: &Context, value: &ValueRef, emit_cache: &mut Vec<Emission>,
   locals: &HashMap<usize, String>,
   define: bool) -> Vec<WASMInst> {
   if !define {
@@ -30,15 +30,16 @@ fn emit_value(
     let mut res = match inst.get_opcode() {
       InstOpcode::Call => {
         let call = inst.as_sub::<Call>().unwrap();
-        let name = call.get_callee().get_name();
-        vec![]
+        let callee = call.get_callee().get_name();
+        let operands = call.arg_iter().map(|x| emit_value(ctx, x, emit_cache, locals, false).remove(0));
+        vec![WASMInst::call(inst.get_skey(), namify(&callee), operands.collect())]
       }
       InstOpcode::Branch(_) => {
         let br = inst.as_sub::<BranchInst>().unwrap();
         if let Some(cond) = br.cond() {
           let raw_true = br.true_label().unwrap();
           let raw_false = br.false_label().unwrap();
-          let mut cond = emit_value(ctx, cond.clone(), emit_cache, locals, false);
+          let mut cond = emit_value(ctx, cond, emit_cache, locals, false);
           let mut res = vec![
             WASMInst::br_if(inst.get_skey(), namify(&raw_false.get_name()), cond.remove(0)),
             WASMInst::br(inst.get_skey(), namify(&raw_true.get_name()))];
@@ -55,8 +56,8 @@ fn emit_value(
       }
       InstOpcode::ICompare(_) => {
         let cmp = inst.as_sub::<CompareInst>().unwrap();
-        let mut lhs = emit_value(ctx, inst.get_operand(0).unwrap().clone(), emit_cache, locals, false);
-        let mut rhs = emit_value(ctx, inst.get_operand(1).unwrap().clone(), emit_cache, locals, false);
+        let mut lhs = emit_value(ctx, inst.get_operand(0).unwrap(), emit_cache, locals, false);
+        let mut rhs = emit_value(ctx, inst.get_operand(1).unwrap(), emit_cache, locals, false);
         let mut res = match cmp.get_pred() {
           CmpPred::SLT | CmpPred::SGT | CmpPred::SLE | CmpPred::SGE | CmpPred::EQ => {
             vec![WASMInst::cmp(inst.get_skey(), cmp.get_pred().clone(), lhs.remove(0), rhs.remove(0))]
@@ -66,14 +67,28 @@ fn emit_value(
         res
       }
       InstOpcode::BinaryOp(op) => {
-        let mut lhs = emit_value(ctx, inst.get_operand(0).unwrap().clone(), emit_cache, locals, false);
-        let mut rhs = emit_value(ctx, inst.get_operand(1).unwrap().clone(), emit_cache, locals, false);
+        let mut lhs = emit_value(ctx, inst.get_operand(0).unwrap(), emit_cache, locals, false);
+        let mut rhs = emit_value(ctx, inst.get_operand(1).unwrap(), emit_cache, locals, false);
         vec![WASMInst::binop(inst.get_skey(), op, lhs.remove(0), rhs.remove(0))]
+      }
+      InstOpcode::CastInst(op) => {
+        match op {
+          CastOp::Bitcast => {
+            let mut src = emit_value(ctx, inst.get_operand(0).unwrap(), emit_cache, locals, false);
+            src.last_mut().unwrap().comment = "Bitcast is a noop".to_string();
+            vec![src.remove(0)]
+          }
+          _ => {
+            let mut res = vec![WASMInst::iconst(value.skey, 0)];
+            res.last_mut().unwrap().comment = format!("Inst not supported yet: {}", inst.to_string(false));
+            res
+          }
+        }
       }
       InstOpcode::Return => {
         let ret = inst.as_sub::<Return>().unwrap();
         if let Some(val) = ret.get_ret_val() {
-          let mut ret_val = emit_value(ctx, val.clone(), emit_cache, locals, false);
+          let mut ret_val = emit_value(ctx, val, emit_cache, locals, false);
           vec![WASMInst::ret(inst.get_skey(), Some(ret_val.remove(0)))]
         } else {
           vec![WASMInst::plain(format!(";; ret void as a noop: {}", inst.to_string(false)))]
@@ -147,7 +162,7 @@ fn emit_loop_or_block<'ctx>(
         let downstreams = gather_block_downstreams(block);
         for (phi, raw_value) in downstreams {
           let var_name = namify(&phi.get_name());
-          let mut value = emit_value(block.ctx, raw_value, emit_cache, &func.locals, false);
+          let mut value = emit_value(block.ctx, &raw_value, emit_cache, &func.locals, false);
           let mut inst = WASMInst::local_set(phi.get_skey(), var_name.clone(), value.remove(0));
           inst.comment = format!("{} of {}", block.get_name(), phi.to_string(false));
           func.insts.push(inst);
@@ -168,7 +183,7 @@ fn emit_loop_or_block<'ctx>(
           };
           if emit {
             let value = inst.as_super();
-            func.insts.extend(emit_value(inst.ctx, value, emit_cache, &func.locals, true));
+            func.insts.extend(emit_value(inst.ctx, &value, emit_cache, &func.locals, true));
           } else {
             func.insts.push(WASMInst::plain(format!(";; Skip for now: {}", inst.to_string(false))));
           }
@@ -219,8 +234,8 @@ pub fn emit(module: &Module) -> String {
   res.push_str(" (type (;0;) (func (param i32) (result i32)))\n"); // malloc
   res.push_str(" (type (;1;) (func (param i32 i32)))\n");
   res.push_str(" (import \"env\" \"__linear_memory\" (memory (;0;) 1))\n");
-  res.push_str(" (import \"env\" \"malloc\" (func (;0;) (type 0)))\n");
-  res.push_str(" (import \"env\" \"__print_str__\" (func (;1;) (type 1)))\n");
+  res.push_str(" (import \"env\" \"malloc\" (func $malloc (type 0)))\n");
+  res.push_str(" (import \"env\" \"__print_str__\" (func $__print_str__ (type 1)))\n");
   let mut visited = vec![false; module.context.capacity()];
   for func in module.func_iter() {
     if func.is_declaration() {

@@ -25,6 +25,8 @@ pub(super) enum WASMOpcode {
   LocalGet(String),
   /// Local store instruction.
   LocalSet(String),
+  /// Local store instruction.
+  Call(String),
   /// Return instruction.
   Return,
 }
@@ -109,6 +111,15 @@ impl WASMInst {
       _skey: skey,
       opcode: WASMOpcode::Binary(op.clone()),
       operands: vec![Box::new(lhs), Box::new(rhs)],
+      comment: String::new(),
+    }
+  }
+
+  pub(super) fn call(skey: usize, name: String, args: Vec<WASMInst>) -> WASMInst {
+    WASMInst {
+      _skey: skey,
+      opcode: WASMOpcode::Call(name),
+      operands: args.into_iter().map(|x| Box::new(x)).collect::<Vec<Box<WASMInst>>>(),
       comment: String::new(),
     }
   }
@@ -242,7 +253,14 @@ impl WASMInst {
         let lhs = self.operands[0].to_string(indent);
         let rhs = self.operands[1].to_string(indent);
         *indent -= 1;
-        format!("{}(i32.{}\n{}\n{}\n)", " ".repeat(*indent), op.to_string(), lhs, rhs)
+        let op = op.to_string();
+        let op = if op.len() > 3 {
+          op[1..].to_string() + "_s"
+        } else {
+          op.to_string()
+        };
+        let indent = " ".repeat(*indent);
+        format!("{}(i32.{}\n{}\n{}\n{})", indent, op, lhs, rhs, indent)
       }
       WASMOpcode::LocalGet(var) => {
         format!("{}(local.get ${})", " ".repeat(*indent), var)
@@ -253,6 +271,16 @@ impl WASMInst {
         *indent -= 1;
         let indent = " ".repeat(*indent);
         format!("{}(local.set ${}\n{}\n{})", indent, var, value, indent)
+      }
+      WASMOpcode::Call(callee) => {
+        let operands = {
+          *indent += 1;
+          let operands = self.operands.iter().map(|op| op.to_string(indent)).collect::<Vec<String>>().join("\n");
+          *indent -= 1;
+          operands
+        };
+        let indent = " ".repeat(*indent);
+        format!("{}(call ${}\n{}\n{})", indent, callee, operands, indent)
       }
     };
     if !self.comment.is_empty() {

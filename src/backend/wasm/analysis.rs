@@ -14,7 +14,7 @@ pub(super) fn gather_locals(func: &FunctionRef) -> HashMap<usize, String> {
   for block in func.block_iter() {
     for inst in block.inst_iter() {
       match inst.get_opcode() {
-        InstOpcode::Branch(_) | InstOpcode::Return => {
+        InstOpcode::Branch(_) | InstOpcode::Return | InstOpcode::Store(_) => {
           continue;
         },
         InstOpcode::Call => {

@@ -7,8 +7,17 @@ mod wasm;
 pub fn myown_codegen(module: &Module, output: &String) {
   eprintln!("Output to: {}", output);
   let asm = wasm::emit(module);
-  let mut fd = std::fs::File::create(&output).unwrap();
-  fd.write(format!("{}", asm).as_bytes()).unwrap();
+  {
+    output.strip_suffix(".wat").unwrap();
+    let mut fd = std::fs::File::create(&output).unwrap();
+    fd.write(format!("{}", asm).as_bytes()).unwrap();
+  }
+  // wat2wasm a.wat
+  let assemble = std::process::Command::new("wat2wasm")
+    .arg(output)
+    .output()
+    .expect("failed to execute process");
+  assert!(assemble.status.success());
 }
 
 pub fn emcc_codegen(irname: &String, output: &String) {
