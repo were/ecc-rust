@@ -415,7 +415,7 @@ fn cleanup(module: &mut Module, workspace: &Vec<DomInfo>, phi_to_alloc: &HashMap
       let mut mutator = InstMutator::new(&mut module.context, &elem);
       mutator.erase_from_parent();
     }
-    simplify::remove_trivial_phi(module);
+    simplify::remove_trivial_inst(module);
     dce::transform(module);
   }
 }

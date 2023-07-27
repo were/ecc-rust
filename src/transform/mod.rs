@@ -5,8 +5,9 @@ mod dce;
 mod cse;
 mod simplify;
 
-pub fn optimize(module: Module) -> Module {
+pub fn optimize(mut module: Module) -> Module {
   // eprintln!("{}", module);
+  simplify::const_propagate(&mut module);
   let (ssa, dom) = ssa::transform(module);
   let cse = cse::transform(ssa, &dom);
   cse
