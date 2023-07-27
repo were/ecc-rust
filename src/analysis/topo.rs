@@ -163,18 +163,18 @@ pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) 
   visited[entry.get_skey()] = true;
   dfs_topology(func.ctx, &entry, visited, &mut loop_stack, &mut finalized_loops, &mut res);
 
-  // println!("Function {}:", func.get_name());
-  // for elem in res.iter() {
-  //   match elem {
-  //     Either::Left(block) => {
-  //       let block = Block::from_skey(*block).as_ref::<Block>(func.ctx).unwrap();
-  //       println!(" Block: {}", block.get_name());
-  //     }
-  //     Either::Right(li) => {
-  //       print_loop_info(li, 1)
-  //     }
-  //   }
-  // }
+  println!("[TOPO] Analyzed topology of func @{}", func.get_name());
+  for elem in res.iter() {
+    match elem {
+      Either::Left(block) => {
+        let block = Block::from_skey(*block).as_ref::<Block>(func.ctx).unwrap();
+        println!(" Block: {}", block.get_name());
+      }
+      Either::Right(li) => {
+        print_loop_info(li, 1)
+      }
+    }
+  }
 
   assert!(finalized_loops.is_empty(), "There are still some loops not finalized!");
 

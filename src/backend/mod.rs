@@ -5,7 +5,8 @@ use trinity::ir::module::Module;
 mod wasm;
 
 pub fn myown_codegen(module: &Module, output: &String) {
-  let asm = wasm::emit(module);
+  let mut cg = wasm::Codegen::new(module);
+  let asm = cg.emit();
   let tmpdir = env::temp_dir().to_str().unwrap().to_string();
   let wat = format!("{}/{}.wat", tmpdir, output);
   eprintln!("ASM text output to: {}", wat);
