@@ -1,19 +1,23 @@
-use std::io::Write;
+use std::{io::Write, env};
 
 use trinity::ir::module::Module;
 
 mod wasm;
 
 pub fn myown_codegen(module: &Module, output: &String) {
-  eprintln!("Output to: {}", output);
   let asm = wasm::emit(module);
+  let tmpdir = env::temp_dir().to_str().unwrap().to_string();
+  let wat = format!("{}/{}.wat", tmpdir, output);
+  eprintln!("ASM text output to: {}", wat);
   {
-    output.strip_suffix(".wat").unwrap();
-    let mut fd = std::fs::File::create(&output).unwrap();
+    let mut fd = std::fs::File::create(&wat).unwrap();
     fd.write(format!("{}", asm).as_bytes()).unwrap();
   }
+  eprintln!("Binary output to: {}", output);
   // wat2wasm a.wat
   let assemble = std::process::Command::new("wat2wasm")
+    .arg(&wat)
+    .arg("-o")
     .arg(output)
     .output()
     .expect("failed to execute process");
