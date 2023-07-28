@@ -216,14 +216,14 @@ impl CodeGen {
       .as_ref::<Function>(&self.tg.builder.module.context)
       .unwrap();
     let entry_block = func.get_block(0).unwrap();
-    let entry_block = Block::from_skey(entry_block.get_skey());
+    let entry_block = entry_block.as_super();
     // Insert to the 1st entry block.
     self.tg.builder.set_current_block(entry_block.clone());
     let entry_block = entry_block
       .as_ref::<Block>(&self.tg.builder.module.context)
       .unwrap();
     if let Some(first_inst) = entry_block.get_inst(0) {
-      self.tg.builder.set_insert_before(first_inst);
+      self.tg.builder.set_insert_before(first_inst.as_super());
     }
     let alloca = self.tg.builder.create_alloca(ty.0);
     // Restore block and instruction
@@ -319,7 +319,7 @@ impl CodeGen {
     let then_block = self.builder_mut().add_block(format!("then.{}", cond.skey));
     let else_block = self.builder_mut().add_block(format!("else.{}", cond.skey));
     let converge = self.builder_mut().add_block(format!("converge.{}", cond.skey));
-    self.builder_mut().create_conditional_branch(cond, then_block.clone(), else_block.clone());
+    self.builder_mut().create_conditional_branch(cond, then_block.clone(), else_block.clone(), false);
     self.builder_mut().set_current_block(then_block.clone());
     self.generate_compound_stmt(&if_stmt.then_body, true);
     self.builder_mut().create_unconditional_branch(converge.clone());
@@ -338,12 +338,13 @@ impl CodeGen {
     let cond_block = self.builder_mut().add_block("while.cond".to_string());
     let body_block = self.builder_mut().add_block("while.body".to_string());
     let end_block = self.builder_mut().add_block("while.end".to_string());
+    let cond = self.generate_expr(&while_stmt.cond, false);
+    self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
     // Set it to the inner most loop.
     self.loop_cond_and_end = (cond_block.clone(), end_block.clone()).into();
-    self.builder_mut().create_unconditional_branch(cond_block.clone());
     self.builder_mut().set_current_block(cond_block.clone());
     let cond = self.generate_expr(&while_stmt.cond, false);
-    self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone());
+    self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
     self.builder_mut().set_current_block(body_block);
     self.generate_compound_stmt(&while_stmt.body, false);
     self.builder_mut().create_unconditional_branch(cond_block.clone());
@@ -358,22 +359,26 @@ impl CodeGen {
     let old = self.loop_cond_and_end.clone();
     self.cache_stack.push();
     self.generate_var_decl(&for_stmt.var);
-    let cond_block = self.builder_mut().add_block("for.cond".to_string());
     let body_block = self.builder_mut().add_block("for.body".to_string());
+    let cond_block = self.builder_mut().add_block("for.cond".to_string());
     let end_block = self.builder_mut().add_block("for.end".to_string());
     // Set it to the inner most loop.
     self.loop_cond_and_end = (cond_block.clone(), end_block.clone()).into();
     let extent = self.generate_expr(&for_stmt.end, false);
-    self.builder_mut().create_unconditional_branch(cond_block.clone());
+    let i32ty = self.tg.builder.context().int_type(32);
+    let zero = self.tg.builder.context().const_value(i32ty.clone(), 0);
+    // If extent <= 0, just skip the loop.
+    let precond = self.builder_mut().create_sle(extent.clone(), zero);
+    self.builder_mut().create_conditional_branch(precond, end_block.clone(), body_block.clone(), false);
+    // Generate the loop conditions.
     self.builder_mut().set_current_block(cond_block.clone());
     let loop_var_addr = self.cache_stack.get(&for_stmt.var.id.literal).unwrap();
     let loop_var_value = self.builder_mut().create_load(loop_var_addr.clone());
     let cond = self.builder_mut().create_slt(loop_var_value, extent);
-    self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone());
+    self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
     self.builder_mut().set_current_block(body_block);
     self.generate_compound_stmt(&for_stmt.body, false);
     let loop_var_value = self.builder_mut().create_load(loop_var_addr.clone());
-    let i32ty = self.tg.builder.context().int_type(32);
     let one = self.tg.builder.context().const_value(i32ty.clone(), 1);
     let added = self.builder_mut().create_add(loop_var_value, one);
     self.builder_mut().create_store(added, loop_var_addr).unwrap();
