@@ -181,7 +181,7 @@ impl WASMInst {
     WASMInst {
       _skey: skey,
       opcode: WASMOpcode::Return,
-      operands: if val.is_some() { vec![Box::new(val.unwrap())] } else { Vec::new() },
+      operands: if val.is_some() { vec![Box::new(val.unwrap())] } else { vec![] },
       comment: String::new(),
     }
   }

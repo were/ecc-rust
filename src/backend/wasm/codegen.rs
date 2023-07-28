@@ -107,7 +107,8 @@ impl <'ctx>Codegen<'ctx> {
             let mut ret_val = self.emit_value(val, false);
             vec![WASMInst::ret(inst.get_skey(), Some(ret_val.remove(0)))]
           } else {
-            vec![WASMInst::plain(format!(";; ret void as a noop: {}", inst.to_string(false)))]
+            vec![WASMInst::ret(inst.get_skey(), None)]
+            // vec![WASMInst::plain(format!(";; ret void as a noop: {}", inst.to_string(false)))]
           }
         }
         InstOpcode::Phi => {
@@ -391,10 +392,12 @@ impl <'ctx>Codegen<'ctx> {
     res.push_str(" (type (;0;) (func (param i32) (result i32)))\n"); // malloc
     res.push_str(" (type (;1;) (func (param i32 i32)))\n");
     res.push_str(" (type (;2;) (func (param i32)))\n");
+    res.push_str(" (type (;3;) (func (result i32)))\n");
     res.push_str(" (import \"env\" \"__linear_memory\" (memory (;0;) 1))\n");
     res.push_str(" (import \"env\" \"malloc\" (func $malloc (type 0)))\n");
     res.push_str(" (import \"env\" \"__print_str__\" (func $__print_str__ (type 1)))\n");
     res.push_str(" (import \"env\" \"__print_int__\" (func $__print_int__ (type 2)))\n");
+    res.push_str(" (import \"env\" \"nextInt\" (func $nextInt (type 3)))\n");
     self.initialize_global_values();
     for i in 0..module.get_num_functions() {
       let func = module.get_function(i).unwrap();
