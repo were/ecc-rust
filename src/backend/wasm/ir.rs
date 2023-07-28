@@ -333,7 +333,7 @@ impl WASMInst {
         };
         let indent = " ".repeat(*indent);
         let bits = if *bits == 32 { "".to_string() } else { bits.to_string() };
-        format!("{}(i32.store{}\n{}\n{}\n{})", indent, bits, value, addr, indent)
+        format!("{}(i32.store{}\n{}\n{}\n{})", indent, bits, addr, value, indent)
       }
     };
     if !self.comment.is_empty() {

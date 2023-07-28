@@ -57,8 +57,8 @@ impl <'ctx>Codegen<'ctx> {
             let raw_false = br.false_label().unwrap();
             let mut cond = self.emit_value(cond, false);
             let mut res = vec![
-              WASMInst::br_if(inst.get_skey(), namify(&raw_false.get_name()), cond.remove(0)),
-              WASMInst::br(inst.get_skey(), namify(&raw_true.get_name()))];
+              WASMInst::br_if(inst.get_skey(), namify(&raw_true.get_name()), cond.remove(0)),
+              WASMInst::br(inst.get_skey(), namify(&raw_false.get_name()))];
             res[0].comment = br.to_string();
             res
           } else {
@@ -390,9 +390,11 @@ impl <'ctx>Codegen<'ctx> {
     res.push_str("(module\n");
     res.push_str(" (type (;0;) (func (param i32) (result i32)))\n"); // malloc
     res.push_str(" (type (;1;) (func (param i32 i32)))\n");
+    res.push_str(" (type (;2;) (func (param i32)))\n");
     res.push_str(" (import \"env\" \"__linear_memory\" (memory (;0;) 1))\n");
     res.push_str(" (import \"env\" \"malloc\" (func $malloc (type 0)))\n");
     res.push_str(" (import \"env\" \"__print_str__\" (func $__print_str__ (type 1)))\n");
+    res.push_str(" (import \"env\" \"__print_int__\" (func $__print_int__ (type 2)))\n");
     self.initialize_global_values();
     for i in 0..module.get_num_functions() {
       let func = module.get_function(i).unwrap();
