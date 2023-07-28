@@ -133,12 +133,37 @@ impl WASMInst {
   }
 
   pub(super) fn binop(skey: usize, op: &BinaryOp, lhs: WASMInst, rhs: WASMInst) -> WASMInst {
-    WASMInst {
+    let mut res = WASMInst {
       _skey: skey,
       opcode: WASMOpcode::Binary(op.clone()),
       operands: vec![Box::new(lhs), Box::new(rhs)],
       comment: String::new(),
+    };
+
+    if op == &BinaryOp::Add {
+      for i in 0..2 {
+        if let WASMOpcode::Const(_, _, value) = res.operands[i].opcode {
+          if value == 0 {
+            return *res.operands.remove(1 - i)
+          }
+        }
+      }
     }
+
+    if op == &BinaryOp::Mul {
+      for i in 0..2 {
+        if let WASMOpcode::Const(_, _, value) = res.operands[i].opcode {
+          if value == 1 {
+            return *res.operands.remove(1 - i)
+          }
+          if value == 0 {
+            return Self::iconst(skey, 0);
+          }
+        }
+      }
+    }
+
+    res
   }
 
   pub(super) fn call(skey: usize, name: String, args: Vec<WASMInst>) -> WASMInst {

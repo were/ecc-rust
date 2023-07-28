@@ -24,6 +24,21 @@ pub(super) fn gather_locals(func: &FunctionRef) -> HashMap<usize, String> {
         },
         _ => {}
       }
+      if let InstOpcode::Phi = inst.get_opcode() {
+        // If this is not a Phi
+      } else {
+        let mut user_iter = inst.user_iter();
+        // If we have a user
+        if let Some(user) = user_iter.next() {
+          // But just a single user
+          if user_iter.next().is_none() {
+            // And this user belongs to this block
+            if user.get_parent().get_skey() == inst.get_parent().get_skey() {
+              continue;
+            }
+          }
+        }
+      }
       res.insert(inst.get_skey(), namify(&inst.get_name()));
       // // eprintln!("[WASM-CG] {} has {} user(s)", inst.to_string(false), inst.user_iter().count());
       // if inst.user_iter().count() > 1 {
@@ -45,11 +60,13 @@ pub(super) fn gather_locals(func: &FunctionRef) -> HashMap<usize, String> {
 
 pub(super) fn gather_block_downstreams<'ctx>(block: &'ctx BlockRef) -> Vec<(InstructionRef<'ctx>, ValueRef)> {
   let mut res = vec![];
-  for elem in block.user_iter() {
-    if let Some(phi) = elem.as_sub::<PhiNode>() {
+  eprintln!("[CODEGEN] block: {}", block.get_name());
+  for inst in block.user_iter() {
+    if let Some(phi) = inst.as_sub::<PhiNode>() {
+      eprintln!("[CODEGEN]  phi: {}", inst.to_string(false));
       for (incoming_block, value) in phi.iter() {
         if incoming_block.get_skey() == block.get_skey() {
-          let inst = elem.as_super();
+          let inst = inst.as_super();
           let inst = inst.as_ref::<Instruction>(block.ctx).unwrap();
           res.push((inst, value.clone()));
         }

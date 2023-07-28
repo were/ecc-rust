@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use trinity::ir::{module::Module, value::instruction::{BinaryInst, InstMutator}, Instruction, ValueRef};
+use trinity::ir::{module::Module, value::instruction::{InstMutator, InstOpcode}, Instruction, ValueRef};
 
 use super::{ssa::{DomInfo, a_dominates_b}, dce};
 
@@ -9,12 +9,18 @@ fn analysis<'ctx>(module: &'ctx Module, dom: &Vec<DomInfo>) -> Vec<(ValueRef, Ve
   for func in module.func_iter() {
     for block in func.block_iter() {
       for inst in block.inst_iter() {
-        if let Some(bin) = inst.as_sub::<BinaryInst>() {
-          let key = (bin.get_op(), bin.lhs().clone(), bin.rhs().clone());
-          if !to_eliminate.contains_key(&key) {
-            to_eliminate.insert(key.clone(), Vec::new());
-          }
-          to_eliminate.get_mut(&key).unwrap().push(Instruction::from_skey(inst.get_skey()));
+        match inst.get_opcode() {
+          InstOpcode::BinaryOp(_) | InstOpcode::GetElementPtr(_) | InstOpcode::CastInst(_) | InstOpcode::ICompare(_) => {
+            let operands = (0..inst.get_num_operands())
+              .map(|i| inst.get_operand(i).unwrap().clone())
+              .collect::<Vec<_>>();
+            let key = (inst.get_opcode().clone(), operands);
+            if !to_eliminate.contains_key(&key) {
+              to_eliminate.insert(key.clone(), Vec::new());
+            }
+            to_eliminate.get_mut(&key).unwrap().push(Instruction::from_skey(inst.get_skey()));
+          },
+          _ => {}
         }
       }
     }
