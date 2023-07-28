@@ -231,19 +231,25 @@ impl <'ctx>Codegen<'ctx> {
         Either::Left(block) => {
           func.insts.push(WASMInst::block_end(block.get_skey()));
           func.insts.last_mut().unwrap().comment = block.get_name();
+
           // Gather the constant changes in this block.
           let downstreams = gather_block_downstreams(block);
-          for (phi, raw_value) in downstreams {
-            let var_name = namify(&phi.get_name());
-            let mut value = self.emit_value(&raw_value, false);
-            let mut inst = WASMInst::local_set(phi.get_skey(), var_name.clone(), value.remove(0));
-            inst.comment = format!("{} of {}", block.get_name(), phi.to_string(false));
-            func.insts.push(inst);
-          }
+
           for inst in block.inst_iter() {
             let emit = match inst.get_opcode() {
-              InstOpcode::Branch(_) | InstOpcode::Return | InstOpcode::Store(_) => {
-                // These are side-effect ones.
+              // These are side-effect ones.
+              InstOpcode::Branch(_) => {
+                for (phi, raw_value) in downstreams.iter() {
+                  let var_name = namify(&phi.get_name());
+                  let mut value = self.emit_value(&raw_value, false);
+                  let mut inst = WASMInst::local_set(phi.get_skey(), var_name.clone(), value.remove(0));
+                  inst.comment = format!("{} of {}", block.get_name(), phi.to_string(false));
+                  func.insts.push(inst);
+                }
+                true
+              }
+              // These are side-effect ones.
+              InstOpcode::Return | InstOpcode::Store(_) => {
                 true
               }
               InstOpcode::Call => {
@@ -272,8 +278,8 @@ impl <'ctx>Codegen<'ctx> {
             } else {
               func.insts.push(WASMInst::plain(format!(";; Skip for now: {}", inst.to_string(false))));
             }
-
           }
+
         }
         Either::Right(li) => {
           let head = li.get_head();

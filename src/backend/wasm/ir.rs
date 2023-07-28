@@ -250,7 +250,7 @@ impl WASMInst {
         format!("{}{}", " ".repeat(*indent), s)
       }
       WASMOpcode::Const(_, dbits, i) => {
-        format!("{}(i{}.const {})", " ".repeat(*indent), dbits, i)
+        format!("{}(i{}.const {})", " ".repeat(*indent), dbits, *i as i32)
       }
       WASMOpcode::Compare(dtype, pred) => {
         let pred = pred.to_string();

@@ -70,6 +70,10 @@ WebAssembly.instantiate(fd, imports).then(function (result) {
   // memory = result.instance.exports.memory
   mem_i8view = new Int8Array(__linear_memory.buffer)
 
+
+  let start_time = new Date().getTime();
   result.instance.exports.main(0, 0)
+  let end_time = new Date().getTime();
+  console.error("Time: " + (end_time - start_time) + "ms")
 })
 
