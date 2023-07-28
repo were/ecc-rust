@@ -4,16 +4,8 @@ use trinity::ir::{
   value::{
     function::FunctionRef, instruction::{PhiNode, InstructionRef, InstOpcode, Call}, block::BlockRef
   },
-  module::{namify, Module}, ValueRef, Instruction, TKindCode
+  module::namify, ValueRef, Instruction, TKindCode
 };
-
-pub(super) fn calculate_offset(m: &Module) -> HashMap<usize, Vec<usize>> {
-  let mut res = HashMap::new();
-  for elem in 0..m.num_structs() {
-    let mut offset = 0;
-  }
-  res
-}
 
 pub(super) fn gather_locals(func: &FunctionRef) -> HashMap<usize, String> {
   let mut res = HashMap::new();

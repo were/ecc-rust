@@ -27,6 +27,10 @@ pub(super) enum WASMOpcode {
   LocalSet(String),
   /// Local store instruction.
   Call(String),
+  /// Store value to memory.
+  Store(usize),
+  /// Load value to memory.
+  Load,
   /// Return instruction.
   Return,
 }
@@ -53,7 +57,11 @@ impl WASMFunc {
 
   pub(super) fn to_string(&self) -> String {
     let mut indent = 2;
-    let mut res = format!(" (func ${}\n", self.name);
+    let mut res = if self.name == "main" {
+      " (func (export \"main\")\n".to_string()
+    } else {
+      format!(" (func ${}\n", self.name)
+    };
     res.push_str(self.args.iter().map(|x| format!("  (param ${} i32)", x)).collect::<Vec<String>>().join("\n").as_str());
     res.push('\n');
     if !self.rty.is_empty() {
@@ -84,6 +92,24 @@ impl WASMInst {
       _skey: skey,
       opcode: WASMOpcode::LoopBegin(label),
       operands: Vec::new(),
+      comment: String::new(),
+    }
+  }
+
+  pub(super) fn store(skey: usize, bits: usize, value: WASMInst, addr: WASMInst) -> WASMInst {
+    WASMInst {
+      _skey: skey,
+      opcode: WASMOpcode::Store(bits),
+      operands: vec![Box::new(value), Box::new(addr)],
+      comment: String::new(),
+    }
+  }
+
+  pub(super) fn load(skey: usize, addr: WASMInst) -> WASMInst {
+    WASMInst {
+      _skey: skey,
+      opcode: WASMOpcode::Load,
+      operands: vec![Box::new(addr)],
       comment: String::new(),
     }
   }
@@ -281,6 +307,33 @@ impl WASMInst {
         };
         let indent = " ".repeat(*indent);
         format!("{}(call ${}\n{}\n{})", indent, callee, operands, indent)
+      }
+      WASMOpcode::Load => {
+        let addr = {
+          *indent += 1;
+          let addr = self.operands[0].to_string(indent);
+          *indent -= 1;
+          addr
+        };
+        let indent = " ".repeat(*indent);
+        format!("{}(i32.load\n{}\n{})", indent, addr, indent)
+      },
+      WASMOpcode::Store(bits) => {
+        let value = {
+          *indent += 1;
+          let value = self.operands[0].to_string(indent);
+          *indent -= 1;
+          value
+        };
+        let addr = {
+          *indent += 1;
+          let addr = self.operands[1].to_string(indent);
+          *indent -= 1;
+          addr
+        };
+        let indent = " ".repeat(*indent);
+        let bits = if *bits == 32 { "".to_string() } else { bits.to_string() };
+        format!("{}(i32.store{}\n{}\n{}\n{})", indent, bits, value, addr, indent)
       }
     };
     if !self.comment.is_empty() {

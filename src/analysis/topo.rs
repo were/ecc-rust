@@ -68,10 +68,6 @@ impl <'ctx>LoopInfo<'ctx> {
     return exit;
   }
 
-  pub fn child_iter(&'ctx self) -> impl Iterator<Item=&Either<BlockRef<'ctx>, Box<LoopInfo<'ctx>>>> {
-    self.children.iter()
-  }
-
   pub fn children(&'ctx self) -> &Vec<Either<BlockRef<'ctx>, Box<LoopInfo<'ctx>>>> {
     &self.children
   }

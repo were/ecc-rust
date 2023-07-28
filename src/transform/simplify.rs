@@ -15,10 +15,26 @@ fn has_trivial_inst(module: &Module) -> Option<(usize, ValueRef)> {
         if let Some(binary) = inst.as_sub::<BinaryInst>() {
           match binary.get_op() {
             BinaryOp::Add => {
-              if let const_scalar = binary.lhs().as_ref::<ConstScalar>(&module.context) {
+              for i in 0..2 {
+                if let Some(const_scalar) = inst.get_operand(i).unwrap().as_ref::<ConstScalar>(&module.context) {
+                  if const_scalar.get_value() == 0 {
+                    let value = inst.get_operand(1 - i).unwrap().clone();
+                    eprintln!("[SIMP] Find a trivial add: {}, replace by: {}", inst.to_string(false), value.to_string(&module.context, true));
+                    return Some((inst.get_skey(), value));
+                  }
+                }
               }
             }
             BinaryOp::Mul => {
+              for i in 0..2 {
+                if let Some(const_scalar) = inst.get_operand(i).unwrap().as_ref::<ConstScalar>(&module.context) {
+                  if const_scalar.get_value() == 1 {
+                    let value = inst.get_operand(1 - i).unwrap().clone();
+                    eprintln!("[SIMP] Find a trivial mul: {}, replace by: {}", inst.to_string(false), value.to_string(&module.context, true));
+                    return Some((inst.get_skey(), value));
+                  }
+                }
+              }
             }
             _ => {}
           }
