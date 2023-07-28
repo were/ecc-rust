@@ -2,6 +2,10 @@ fs = require('fs');
 
 wasm_binary = process.argv[2]
 
+let vbs = process.argv.find(function(x) {
+  return x == '--verbose'
+});
+
 fd = fs.readFileSync(wasm_binary, undefined)
 
 input_buffer = []
@@ -70,10 +74,14 @@ WebAssembly.instantiate(fd, imports).then(function (result) {
   // memory = result.instance.exports.memory
   mem_i8view = new Int8Array(__linear_memory.buffer)
 
-
-  let start_time = new Date().getTime();
+  var start_time = null;
+  if (vbs) {
+    start_time = new Date().getTime();
+  }
   result.instance.exports.main(0, 0)
-  let end_time = new Date().getTime();
-  console.error("Time: " + (end_time - start_time) + "ms")
+  if (vbs) {
+    let end_time = new Date().getTime();
+    console.error("Time: " + (end_time - start_time) + "ms")
+  }
 })
 

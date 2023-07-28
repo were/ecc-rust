@@ -84,7 +84,7 @@ fn test_frontend(#[case] fname: &str) {
   // Load the source file
   let (src, meta, obj_output) = load_source(&fname.to_string());
   // Compile it
-  invoke(&fname.to_string(), &obj_output, src, 0, &"emcc".to_string()).unwrap();
+  invoke(&fname.to_string(), &obj_output, src, 0, &"emcc".to_string(), 2).unwrap();
   run_binary(&obj_output, &meta);
   // Compare the output
   std::process::Command::new("rm")
@@ -114,7 +114,7 @@ fn test_e2e(#[case] fname: &str) {
   // Load the source file
   let (src, meta, obj_output) = load_source(&fname.to_string());
   // Compile it
-  invoke(&fname.to_string(), &obj_output, src, 0, &"myown".to_string()).unwrap();
+  invoke(&fname.to_string(), &obj_output, src, 0, &"myown".to_string(), 2).unwrap();
   run_binary(&obj_output, &meta);
   // Compare the output
   std::process::Command::new("rm")
