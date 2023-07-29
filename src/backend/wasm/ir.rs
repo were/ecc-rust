@@ -38,12 +38,29 @@ pub(super) enum WASMOpcode {
 pub(super) struct WASMFunc {
   name: String,
   args: Vec<String>,
-  pub(super) insts: Vec<WASMInst>,
+  insts: Vec<WASMInst>,
   pub(super) locals: HashMap<usize, String>,
   rty: String
 }
 
 impl WASMFunc {
+
+  pub(super) fn push(&mut self, inst: WASMInst) {
+    if let Some(last_inst) = self.insts.last() {
+      if let WASMOpcode::BlockBegin(_) = last_inst.opcode {
+        if let WASMOpcode::BlockEnd = inst.opcode {
+          // Remove a trivial block.
+          self.insts.pop();
+          return;
+        }
+      }
+    }
+    self.insts.push(inst);
+  }
+
+  pub(super) fn extend(&mut self, insts: Vec<WASMInst>) {
+    self.insts.extend(insts);
+  }
 
   pub(super) fn new(name: String, args: Vec<String>, rty: String) -> Self {
     Self {
@@ -133,12 +150,37 @@ impl WASMInst {
   }
 
   pub(super) fn binop(skey: usize, op: &BinaryOp, lhs: WASMInst, rhs: WASMInst) -> WASMInst {
-    WASMInst {
+    let mut res = WASMInst {
       _skey: skey,
       opcode: WASMOpcode::Binary(op.clone()),
       operands: vec![Box::new(lhs), Box::new(rhs)],
       comment: String::new(),
+    };
+
+    if op == &BinaryOp::Add {
+      for i in 0..2 {
+        if let WASMOpcode::Const(_, _, value) = res.operands[i].opcode {
+          if value == 0 {
+            return *res.operands.remove(1 - i)
+          }
+        }
+      }
     }
+
+    if op == &BinaryOp::Mul {
+      for i in 0..2 {
+        if let WASMOpcode::Const(_, _, value) = res.operands[i].opcode {
+          if value == 1 {
+            return *res.operands.remove(1 - i)
+          }
+          if value == 0 {
+            return Self::iconst(skey, 0);
+          }
+        }
+      }
+    }
+
+    res
   }
 
   pub(super) fn call(skey: usize, name: String, args: Vec<WASMInst>) -> WASMInst {
@@ -181,7 +223,7 @@ impl WASMInst {
     WASMInst {
       _skey: skey,
       opcode: WASMOpcode::Return,
-      operands: if val.is_some() { vec![Box::new(val.unwrap())] } else { Vec::new() },
+      operands: if val.is_some() { vec![Box::new(val.unwrap())] } else { vec![] },
       comment: String::new(),
     }
   }
@@ -250,7 +292,7 @@ impl WASMInst {
         format!("{}{}", " ".repeat(*indent), s)
       }
       WASMOpcode::Const(_, dbits, i) => {
-        format!("{}(i{}.const {})", " ".repeat(*indent), dbits, i)
+        format!("{}(i{}.const {})", " ".repeat(*indent), dbits, *i as i32)
       }
       WASMOpcode::Compare(dtype, pred) => {
         let pred = pred.to_string();
@@ -333,7 +375,7 @@ impl WASMInst {
         };
         let indent = " ".repeat(*indent);
         let bits = if *bits == 32 { "".to_string() } else { bits.to_string() };
-        format!("{}(i32.store{}\n{}\n{}\n{})", indent, bits, value, addr, indent)
+        format!("{}(i32.store{}\n{}\n{}\n{})", indent, bits, addr, value, indent)
       }
     };
     if !self.comment.is_empty() {

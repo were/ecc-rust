@@ -123,13 +123,13 @@ fn parse_operator_expr(tokenizer: &mut Lexer, operators: &[(i32, &[TokenType])])
       return parse_expr_term(tokenizer);
     }
     Some((1, parsing_operator)) => {
-      let mut res = parse_operator_expr(tokenizer, &operators[1..]).unwrap();
-      while tokenizer.tok().is_one_of(parsing_operator) {
+      if tokenizer.tok().is_one_of(&parsing_operator) {
         let op = tokenizer.consume_any();
-        let expr = parse_operator_expr(tokenizer, &operators[1..]).unwrap();
-        res = Expr::UnaryOp(Rc::new(UnaryOp{op, expr}));
+        let res = parse_operator_expr(tokenizer, &operators[1..]).unwrap();
+        return Ok(Expr::UnaryOp(Rc::new(UnaryOp{op, expr: res})));
+      } else {
+        return parse_operator_expr(tokenizer, &operators[1..]);
       }
-      return Ok(res)
     }
     Some((2, parsing_operator)) => {
       let mut res = parse_operator_expr(tokenizer, &operators[1..]).unwrap();
@@ -156,10 +156,10 @@ fn parse_rval(tokenizer: &mut Lexer) -> Result<Expr, String> {
   } else {
     parse_operator_expr(tokenizer,
       &[(2, &[TokenType::LogicAnd, TokenType::LogicOr]),
-        (2, &[TokenType::LE, TokenType::LT, TokenType::GE, TokenType::GT, TokenType::EQ]),
+        (2, &[TokenType::LE, TokenType::LT, TokenType::GE, TokenType::GT, TokenType::EQ, TokenType::NE]),
         (2, &[TokenType::Add, TokenType::Sub]),
         (2, &[TokenType::Mod, TokenType::Div, TokenType::Mul]),
-        (1, &[TokenType::LogicNot])])
+        (1, &[TokenType::LogicNot, TokenType::Sub])])
   };
   if tokenizer.lookahead(TokenType::KeywordCastAs) {
     let token = tokenizer.consume(TokenType::KeywordCastAs);

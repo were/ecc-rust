@@ -13,7 +13,8 @@ pub fn invoke(
   output: &String,
   src: String,
   print_ast: i32,
-  backend: &String) -> Result<(), String> {
+  backend: &String,
+  opt_level: i32) -> Result<(), String> {
   let ast = parse(&fname, src);
   let ast = match ast {
     Ok(ast) => ast,
@@ -24,7 +25,7 @@ pub fn invoke(
   }
   let ast = semantic_check(&ast, print_ast)?;
   let module = codegen_llvm(&ast);
-  let optimized = optimize(module);
+  let optimized = optimize(module, opt_level);
   let mangled = fname.chars().into_iter().map(
     |x| if x.is_alphanumeric() { x } else { '_' }).collect::<String>();
   let tmpdir = env::temp_dir().to_str().unwrap().to_string();

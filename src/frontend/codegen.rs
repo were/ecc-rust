@@ -481,17 +481,38 @@ impl CodeGen {
             self.tg.builder.create_sdiv(lhs, rhs)
           }
           super::lexer::TokenType::AssignEq => {
-            self.tg.builder.create_store(rhs, lhs).unwrap()
+            eprintln!("lhs: {}", lhs.to_string(&self.tg.builder.module.context, true));
+            eprintln!("rhs: {}", rhs.to_string(&self.tg.builder.module.context, true));
+            match self.tg.builder.create_store(rhs, lhs) {
+              Ok(res) => { res }
+              Err(_) => {
+                panic!("Failed to cg: {}", expr);
+              }
+            }
           }
           super::lexer::TokenType::LT => self.tg.builder.create_slt(lhs, rhs),
+          super::lexer::TokenType::LE => self.tg.builder.create_sle(lhs, rhs),
           super::lexer::TokenType::GT => self.tg.builder.create_sgt(lhs, rhs),
+          super::lexer::TokenType::GE => self.tg.builder.create_sge(lhs, rhs),
           super::lexer::TokenType::EQ => self.tg.builder.create_eq(lhs, rhs),
+          super::lexer::TokenType::NE => self.tg.builder.create_ne(lhs, rhs),
           _ => { panic!("Unknown binary op {}", binop.op); }
         }
       }
       ast::Expr::UnaryOp(unary) => {
         let expr = self.generate_expr(&unary.expr, false);
-        expr
+        let res = match &unary.op.value {
+          super::lexer::TokenType::Sub => {
+            let i32ty = self.tg.builder.context().int_type(32);
+            let zero = self.tg.builder.context().const_value(i32ty, 0);
+            self.tg.builder.create_sub(zero, expr)
+          }
+          super::lexer::TokenType::LogicNot => {
+            expr
+          }
+          _ => { panic!("Unknown unary op {}", unary.op); }
+        };
+        res
       }
       ast::Expr::NewExpr(ne) => {
         let malloc = self.cache_stack.get(&"malloc".to_string()).unwrap().clone();
@@ -526,7 +547,11 @@ impl CodeGen {
         let array_ty = array.get_type(self.tg.builder.context());
         // let ptr_ref = array_ty.as_ref::<PointerType>(self.tg.builder.context()).unwrap();
         // let elem_ty = ptr_ref.get_pointee_ty();
-        self.tg.builder.create_gep(array_ty, array, indices, true)
+        let mut res = self.tg.builder.create_gep(array_ty, array, indices, true);
+        if !is_lval {
+          res = self.tg.builder.create_load(res);
+        }
+        res
       }
       ast::Expr::Cast(cast) => {
         let value = self.generate_expr(&cast.expr, false);

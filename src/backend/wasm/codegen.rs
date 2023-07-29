@@ -57,8 +57,8 @@ impl <'ctx>Codegen<'ctx> {
             let raw_false = br.false_label().unwrap();
             let mut cond = self.emit_value(cond, false);
             let mut res = vec![
-              WASMInst::br_if(inst.get_skey(), namify(&raw_false.get_name()), cond.remove(0)),
-              WASMInst::br(inst.get_skey(), namify(&raw_true.get_name()))];
+              WASMInst::br_if(inst.get_skey(), namify(&raw_true.get_name()), cond.remove(0)),
+              WASMInst::br(inst.get_skey(), namify(&raw_false.get_name()))];
             res[0].comment = br.to_string();
             res
           } else {
@@ -75,7 +75,7 @@ impl <'ctx>Codegen<'ctx> {
           let mut lhs = self.emit_value(inst.get_operand(0).unwrap(), false);
           let mut rhs = self.emit_value(inst.get_operand(1).unwrap(), false);
           let mut res = match cmp.get_pred() {
-            CmpPred::SLT | CmpPred::SGT | CmpPred::SLE | CmpPred::SGE | CmpPred::EQ => {
+            CmpPred::SLT | CmpPred::SGT | CmpPred::SLE | CmpPred::SGE | CmpPred::EQ | CmpPred::NE => {
               vec![WASMInst::cmp(inst.get_skey(), cmp.get_pred().clone(), lhs.remove(0), rhs.remove(0))]
             }
           };
@@ -107,7 +107,8 @@ impl <'ctx>Codegen<'ctx> {
             let mut ret_val = self.emit_value(val, false);
             vec![WASMInst::ret(inst.get_skey(), Some(ret_val.remove(0)))]
           } else {
-            vec![WASMInst::plain(format!(";; ret void as a noop: {}", inst.to_string(false)))]
+            vec![WASMInst::ret(inst.get_skey(), None)]
+            // vec![WASMInst::plain(format!(";; ret void as a noop: {}", inst.to_string(false)))]
           }
         }
         InstOpcode::Phi => {
@@ -215,12 +216,15 @@ impl <'ctx>Codegen<'ctx> {
     for elem in blocks.iter() {
       match elem {
         Either::Left(block) => {
-          func.insts.push(WASMInst::block_begin(block.get_skey(), namify(&block.get_name())));
-          func.insts.last_mut().unwrap().comment = block.get_name();
+          let mut label = WASMInst::block_begin(block.get_skey(), namify(&block.get_name()));
+          label.comment = block.get_name();
+          func.push(label);
         }
         Either::Right(li) => {
           let head = li.get_head();
-          func.insts.push(WASMInst::block_begin(head.get_skey(), namify(&head.get_name())));
+          let mut label = WASMInst::block_begin(head.get_skey(), namify(&head.get_name()));
+          label.comment = head.get_name();
+          func.push(label);
         }
       }
     }
@@ -228,21 +232,28 @@ impl <'ctx>Codegen<'ctx> {
     for elem in blocks.iter().rev() {
       match elem {
         Either::Left(block) => {
-          func.insts.push(WASMInst::block_end(block.get_skey()));
-          func.insts.last_mut().unwrap().comment = block.get_name();
+          let mut block_end = WASMInst::block_end(block.get_skey());
+          block_end.comment = block.get_name();
+          func.push(block_end);
+
           // Gather the constant changes in this block.
           let downstreams = gather_block_downstreams(block);
-          for (phi, raw_value) in downstreams {
-            let var_name = namify(&phi.get_name());
-            let mut value = self.emit_value(&raw_value, false);
-            let mut inst = WASMInst::local_set(phi.get_skey(), var_name.clone(), value.remove(0));
-            inst.comment = format!("{} of {}", block.get_name(), phi.to_string(false));
-            func.insts.push(inst);
-          }
+
           for inst in block.inst_iter() {
             let emit = match inst.get_opcode() {
-              InstOpcode::Branch(_) | InstOpcode::Return | InstOpcode::Store(_) => {
-                // These are side-effect ones.
+              // These are side-effect ones.
+              InstOpcode::Branch(_) => {
+                for (phi, raw_value) in downstreams.iter() {
+                  let var_name = namify(&phi.get_name());
+                  let mut value = self.emit_value(&raw_value, false);
+                  let mut inst = WASMInst::local_set(phi.get_skey(), var_name.clone(), value.remove(0));
+                  inst.comment = format!("{} of {}", block.get_name(), phi.to_string(false));
+                  func.push(inst);
+                }
+                true
+              }
+              // These are side-effect ones.
+              InstOpcode::Return | InstOpcode::Store(_) => {
                 true
               }
               InstOpcode::Call => {
@@ -267,19 +278,19 @@ impl <'ctx>Codegen<'ctx> {
             };
             if emit {
               let value = inst.as_super();
-              func.insts.extend(self.emit_value(&value, true));
+              func.extend(self.emit_value(&value, true));
             } else {
-              func.insts.push(WASMInst::plain(format!(";; Skip for now: {}", inst.to_string(false))));
+              func.push(WASMInst::plain(format!(";; Skip for now: {}", inst.to_string(false))));
             }
-
           }
+
         }
         Either::Right(li) => {
           let head = li.get_head();
-          func.insts.push(WASMInst::block_end(head.get_skey()));
-          func.insts.push(WASMInst::loop_begin(head.get_skey(), namify(&head.get_name())));
+          func.push(WASMInst::block_end(head.get_skey()));
+          func.push(WASMInst::loop_begin(head.get_skey(), namify(&head.get_name())));
           self.emit_loop_or_block(func, li.children());
-          func.insts.push(WASMInst::block_end(head.get_skey()));
+          func.push(WASMInst::block_end(head.get_skey()));
         }
       }
     }
@@ -390,9 +401,13 @@ impl <'ctx>Codegen<'ctx> {
     res.push_str("(module\n");
     res.push_str(" (type (;0;) (func (param i32) (result i32)))\n"); // malloc
     res.push_str(" (type (;1;) (func (param i32 i32)))\n");
+    res.push_str(" (type (;2;) (func (param i32)))\n");
+    res.push_str(" (type (;3;) (func (result i32)))\n");
     res.push_str(" (import \"env\" \"__linear_memory\" (memory (;0;) 1))\n");
     res.push_str(" (import \"env\" \"malloc\" (func $malloc (type 0)))\n");
     res.push_str(" (import \"env\" \"__print_str__\" (func $__print_str__ (type 1)))\n");
+    res.push_str(" (import \"env\" \"__print_int__\" (func $__print_int__ (type 2)))\n");
+    res.push_str(" (import \"env\" \"nextInt\" (func $nextInt (type 3)))\n");
     self.initialize_global_values();
     for i in 0..module.get_num_functions() {
       let func = module.get_function(i).unwrap();
