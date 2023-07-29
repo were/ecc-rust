@@ -306,10 +306,18 @@ impl Expr {
       }
       Expr::ArrayIndex(array) => {
         if let Type::Array(x) = array.array.dtype(symbols) {
-          Type::Array(Rc::new(ArrayType {
-            scalar_ty: x.scalar_ty.clone(),
-            dims: [0..x.dims.len() - array.indices.len()].iter().map(|_| Expr::UnknownRef(Token::new())).collect::<Vec<Expr>>()
-          }))
+          let dims = x.dims.len() - array.indices.len();
+          if dims == 0 {
+            x.scalar_ty.clone()
+          } else {
+            let dims = (0..dims)
+              .map(|_| Expr::UnknownRef(Token::new()))
+              .collect::<Vec<Expr>>();
+            Type::Array(Rc::new(ArrayType {
+              scalar_ty: x.scalar_ty.clone(),
+              dims
+            }))
+          }
         } else {
           panic!("Cannot index non-array type");
         }

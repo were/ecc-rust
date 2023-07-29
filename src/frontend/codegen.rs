@@ -484,7 +484,9 @@ impl CodeGen {
             self.tg.builder.create_store(rhs, lhs).unwrap()
           }
           super::lexer::TokenType::LT => self.tg.builder.create_slt(lhs, rhs),
+          super::lexer::TokenType::LE => self.tg.builder.create_sle(lhs, rhs),
           super::lexer::TokenType::GT => self.tg.builder.create_sgt(lhs, rhs),
+          super::lexer::TokenType::GE => self.tg.builder.create_sge(lhs, rhs),
           super::lexer::TokenType::EQ => self.tg.builder.create_eq(lhs, rhs),
           super::lexer::TokenType::NE => self.tg.builder.create_ne(lhs, rhs),
           _ => { panic!("Unknown binary op {}", binop.op); }

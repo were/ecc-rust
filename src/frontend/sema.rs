@@ -397,12 +397,13 @@ impl Visitor for SymbolResolver {
     let func = find_in_scope!(self.scopes, &call.fname.literal, WithID::Function(func) => Some(func.clone()));
     if let Some(callee) = &func {
       if callee.args.len() != params.len() {
-        panic!("Expect {} args, but got {}", callee.args.len(), params.len());
+        panic!("Function @{} expect {} args, but got {}",
+          call.fname, callee.args.len(), params.len());
       }
       if self.check_func_sig {
         for (i, (arg, param)) in Iterator::zip(callee.args.iter(), params.iter()).enumerate() {
           if !type_eq(&arg.ty, &param.dtype(&self.scopes)) {
-            panic!("Expect argument {} to be {}, but {}", i, arg.ty, param.dtype(&self.scopes));
+            panic!("Expect argument {} to be {}, but parameter's type is {}", i, arg.ty, param);
           }
         }
       }
