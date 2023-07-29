@@ -481,7 +481,14 @@ impl CodeGen {
             self.tg.builder.create_sdiv(lhs, rhs)
           }
           super::lexer::TokenType::AssignEq => {
-            self.tg.builder.create_store(rhs, lhs).unwrap()
+            eprintln!("lhs: {}", lhs.to_string(&self.tg.builder.module.context, true));
+            eprintln!("rhs: {}", rhs.to_string(&self.tg.builder.module.context, true));
+            match self.tg.builder.create_store(rhs, lhs) {
+              Ok(res) => { res }
+              Err(_) => {
+                panic!("Failed to cg: {}", expr);
+              }
+            }
           }
           super::lexer::TokenType::LT => self.tg.builder.create_slt(lhs, rhs),
           super::lexer::TokenType::LE => self.tg.builder.create_sle(lhs, rhs),
@@ -540,7 +547,11 @@ impl CodeGen {
         let array_ty = array.get_type(self.tg.builder.context());
         // let ptr_ref = array_ty.as_ref::<PointerType>(self.tg.builder.context()).unwrap();
         // let elem_ty = ptr_ref.get_pointee_ty();
-        self.tg.builder.create_gep(array_ty, array, indices, true)
+        let mut res = self.tg.builder.create_gep(array_ty, array, indices, true);
+        if !is_lval {
+          res = self.tg.builder.create_load(res);
+        }
+        res
       }
       ast::Expr::Cast(cast) => {
         let value = self.generate_expr(&cast.expr, false);
