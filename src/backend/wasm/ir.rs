@@ -38,12 +38,29 @@ pub(super) enum WASMOpcode {
 pub(super) struct WASMFunc {
   name: String,
   args: Vec<String>,
-  pub(super) insts: Vec<WASMInst>,
+  insts: Vec<WASMInst>,
   pub(super) locals: HashMap<usize, String>,
   rty: String
 }
 
 impl WASMFunc {
+
+  pub(super) fn push(&mut self, inst: WASMInst) {
+    if let Some(last_inst) = self.insts.last() {
+      if let WASMOpcode::BlockBegin(_) = last_inst.opcode {
+        if let WASMOpcode::BlockEnd = inst.opcode {
+          // Remove a trivial block.
+          self.insts.pop();
+          return;
+        }
+      }
+    }
+    self.insts.push(inst);
+  }
+
+  pub(super) fn extend(&mut self, insts: Vec<WASMInst>) {
+    self.insts.extend(insts);
+  }
 
   pub(super) fn new(name: String, args: Vec<String>, rty: String) -> Self {
     Self {
