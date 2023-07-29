@@ -486,12 +486,24 @@ impl CodeGen {
           super::lexer::TokenType::LT => self.tg.builder.create_slt(lhs, rhs),
           super::lexer::TokenType::GT => self.tg.builder.create_sgt(lhs, rhs),
           super::lexer::TokenType::EQ => self.tg.builder.create_eq(lhs, rhs),
+          super::lexer::TokenType::NE => self.tg.builder.create_ne(lhs, rhs),
           _ => { panic!("Unknown binary op {}", binop.op); }
         }
       }
       ast::Expr::UnaryOp(unary) => {
         let expr = self.generate_expr(&unary.expr, false);
-        expr
+        let res = match &unary.op.value {
+          super::lexer::TokenType::Sub => {
+            let i32ty = self.tg.builder.context().int_type(32);
+            let zero = self.tg.builder.context().const_value(i32ty, 0);
+            self.tg.builder.create_sub(zero, expr)
+          }
+          super::lexer::TokenType::LogicNot => {
+            expr
+          }
+          _ => { panic!("Unknown unary op {}", unary.op); }
+        };
+        res
       }
       ast::Expr::NewExpr(ne) => {
         let malloc = self.cache_stack.get(&"malloc".to_string()).unwrap().clone();
