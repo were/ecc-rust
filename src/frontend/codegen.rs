@@ -366,9 +366,13 @@ impl CodeGen {
     self.loop_cond_and_end = (cond_block.clone(), end_block.clone()).into();
     let extent = self.generate_expr(&for_stmt.end, false);
     let i32ty = self.tg.builder.context().int_type(32);
-    let zero = self.tg.builder.context().const_value(i32ty.clone(), 0);
-    // If extent <= 0, just skip the loop.
-    let precond = self.builder_mut().create_sle(extent.clone(), zero);
+    // If extent <= loop start, just skip the loop.
+    let init = {
+      let init = self.cache_stack.get(&for_stmt.var.id.literal).unwrap();
+      let init = self.builder_mut().create_load(init);
+      init
+    };
+    let precond = self.builder_mut().create_sle(extent.clone(), init);
     self.builder_mut().create_conditional_branch(precond, end_block.clone(), body_block.clone(), false);
     // Generate the loop conditions.
     self.builder_mut().set_current_block(cond_block.clone());
@@ -481,8 +485,6 @@ impl CodeGen {
             self.tg.builder.create_sdiv(lhs, rhs)
           }
           super::lexer::TokenType::AssignEq => {
-            eprintln!("lhs: {}", lhs.to_string(&self.tg.builder.module.context, true));
-            eprintln!("rhs: {}", rhs.to_string(&self.tg.builder.module.context, true));
             match self.tg.builder.create_store(rhs, lhs) {
               Ok(res) => { res }
               Err(_) => {
@@ -508,7 +510,9 @@ impl CodeGen {
             self.tg.builder.create_sub(zero, expr)
           }
           super::lexer::TokenType::LogicNot => {
-            expr
+            let i1ty = self.tg.builder.context().int_type(1);
+            let one = self.tg.builder.context().const_value(i1ty, 1);
+            self.tg.builder.create_xor(one, expr)
           }
           _ => { panic!("Unknown unary op {}", unary.op); }
         };
