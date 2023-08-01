@@ -1,9 +1,73 @@
 
+use std::collections::HashMap;
+
 use trinity::ir::{
   module::Module,
   value::instruction::{PhiNode, InstMutator, BranchInst, SubInst, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst},
   ValueRef, Instruction, ConstScalar, TypeRef, Function
 };
+
+fn add_sub_fuse(inst: &InstructionRef) -> Option<(InstOpcode, ValueRef, ValueRef)> {
+  let mut count = HashMap::new();
+  if let Some(binary) = inst.as_sub::<BinaryInst>() {
+    let coef = match binary.get_op() {
+      BinaryOp::Add => 1,
+      BinaryOp::Sub => -1,
+      _ => return None
+    };
+    if let Some(lhs) = binary.lhs().as_ref::<Instruction>(inst.ctx) {
+      if let Some(bin_lhs) = lhs.as_sub::<BinaryInst>() {
+        if let Some(rhs) = binary.rhs().as_ref::<Instruction>(inst.ctx) {
+          if let Some(bin_rhs) = rhs.as_sub::<BinaryInst>() {
+            eprintln!("[SIMP] A = BinOp (B, C)");
+            eprintln!("[SIMP] A = {}", inst.to_string(false));
+            eprintln!("[SIMP] B = {}", lhs.to_string(false));
+            eprintln!("[SIMP] C = {}", rhs.to_string(false));
+            // (a +/- b) +/- (c +/- d)
+            let (b, b_coef) = if bin_lhs.get_op() == BinaryOp::Add {
+              (bin_lhs.rhs().clone(), 1)
+            } else if bin_lhs.get_op() == BinaryOp::Sub {
+              (bin_lhs.rhs().clone(), -1)
+            } else {
+              return None;
+            };
+            let (c, c_coef, d, d_coef) = if bin_rhs.get_op() == BinaryOp::Add {
+              (bin_rhs.lhs().clone(), coef, bin_rhs.rhs().clone(), coef)
+            } else if bin_rhs.get_op() == BinaryOp::Sub {
+              (bin_rhs.lhs().clone(), coef, bin_rhs.rhs().clone(), -coef)
+            } else {
+              return None;
+            };
+            let (a, a_coef) = (bin_lhs.lhs().clone(), 1);
+            for (v, coef) in [(a, a_coef), (b, b_coef), (c, c_coef), (d, d_coef)].iter() {
+              if let Some(count) = count.get_mut(v) {
+                *count = *count + *coef;
+              } else {
+                count.insert(v.clone(), *coef);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  let res = count.clone().into_iter().filter(|(_, coef)| *coef != 0).collect::<Vec<_>>();
+  for (v, coef) in count.iter() {
+    eprintln!("[SIMP] Coef: {} x {}", v.to_string(inst.ctx, false), *coef);
+  }
+  if res.len() == 2 {
+    match (res.get(0).unwrap(), res.get(1).unwrap()) {
+      ((a, 1), (b, 1)) => {
+        return Some((InstOpcode::BinaryOp(BinaryOp::Add), a.clone(), b.clone()))
+      }
+      ((a, 1), (b, -1)) | ((b, -1), (a, 1)) => {
+        return Some((InstOpcode::BinaryOp(BinaryOp::Sub), a.clone(), b.clone()))
+      }
+      _ => {}
+    }
+  }
+  None
+}
 
 fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef, ValueRef)> {
   for func in module.func_iter() {
@@ -28,32 +92,18 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
                   }
                 }
               }
+              if let Some((op, a, b)) = add_sub_fuse(&inst) { eprintln!("[SIMP] Sub a value {}, can be fused into add: {}",
+                  inst.to_string(false),
+                  inst.to_string(false));
+                return Some((inst.get_skey(), op, a, b));
+              }
             }
+            // TODO(@were): Should have more principle way to do this.
             BinaryOp::Sub => {
-              // (a + x) - (b + x) = a - b
-              if let Some(lhs) = binary.lhs().as_ref::<Instruction>(inst.ctx) {
-                if let Some(bin_lhs) = lhs.as_sub::<BinaryInst>() {
-                  if let BinaryOp::Add = bin_lhs.get_op() {
-                    if let Some(rhs) = binary.rhs().as_ref::<Instruction>(inst.ctx) {
-                      if let Some(bin_rhs) = rhs.as_sub::<BinaryInst>() {
-                        if let BinaryOp::Add = bin_rhs.get_op() {
-                          for x in 0..2 {
-                            for y in 0..2 {
-                              if lhs.get_operand(x).unwrap().skey == rhs.get_operand(y).unwrap().skey {
-                                eprintln!("[SIMP] A+x {}", lhs.to_string(false));
-                                eprintln!("[SIMP] B+x {}", rhs.to_string(false));
-                                eprintln!("[SIMP] C: {}", inst.to_string(false));
-                                let a = lhs.get_operand(1 - x).unwrap().clone();
-                                let b = rhs.get_operand(1 - y).unwrap().clone();
-                                return Some((inst.get_skey(), InstOpcode::BinaryOp(BinaryOp::Sub), a, b));
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
+              if let Some((op, a, b)) = add_sub_fuse(&inst) { eprintln!("[SIMP] Sub a value {}, can be fused into add: {}",
+                  inst.to_string(false),
+                  inst.to_string(false));
+                return Some((inst.get_skey(), op, a, b));
               }
             }
             _ => {}
@@ -119,6 +169,16 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
                 eprintln!("[SIMP] Find a trivial sub: {}, replace by: {}", inst.to_string(false), 0);
                 const_replace_tuple = Some((inst.get_skey(), inst.get_type().clone(), 0));
                 break;
+              }
+              if let Some(lhs_bin) = binary.lhs().as_ref::<Instruction>(inst.ctx) {
+                if let InstOpcode::BinaryOp(BinaryOp::Add) = lhs_bin.get_opcode() {
+                  for i in 0..2 {
+                    if lhs_bin.get_operand(i).unwrap().skey == binary.rhs().skey {
+                      eprintln!("[SIMP] a + x - x = a: {}", inst.to_string(false));
+                      return Some((inst.get_skey(), lhs_bin.get_operand(1 - i).unwrap().clone()));
+                    }
+                  }
+                }
               }
             }
             BinaryOp::Mul => {
