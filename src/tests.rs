@@ -37,6 +37,7 @@ fn metadata(src: &String) -> E2EMetadata {
 fn run_binary(binary_name: &String, meta: &E2EMetadata) {
   // Run it
   let mut exec = std::process::Command::new("node")
+    .arg("--stack-size=1048576")
     .arg("builtins/host.js")
     .arg(&binary_name)
     .stdin(std::process::Stdio::piped())
@@ -48,6 +49,7 @@ fn run_binary(binary_name: &String, meta: &E2EMetadata) {
   let mut output = String::new();
   exec.stdout.take().unwrap().read_to_string(&mut output).unwrap();
   let status = exec.wait().unwrap();
+  eprintln!("echo {}; status: {}", binary_name, status);
   assert!(status.success());
   assert_eq!(output, meta.stdout);
 }
@@ -135,6 +137,8 @@ fn test_e2e(#[case] fname: &str) {
 #[rstest]
 #[case("01-cse.ecc")]
 #[case("02-bulgarian.ecc")]
+#[case("03-inflate.ecc")]
+#[case("04-hanoi.ecc")]
 fn test_pressure(#[case] fname: &str) {
   // Load the source file
   let (src, meta, obj_output) = load_source("../tests/performance/", &fname.to_string());

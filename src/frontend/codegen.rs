@@ -529,18 +529,16 @@ impl CodeGen {
         for (i, elem) in dest.1.iter().enumerate() {
           let dim = self.generate_expr(elem, false);
           flat_size = self.tg.builder.create_mul(dim, flat_size.clone());
-          flat_size
-            .as_mut::<Instruction>(&mut self.tg.builder.module.context)
-            .unwrap()
-            .set_comment(format!("dim {}", i));
+          if let Some(flat_mut) = flat_size.as_mut::<Instruction>(&mut self.tg.builder.module.context) {
+            flat_mut.set_comment(format!("dim {}", i));
+          }
         }
         let size = self.tg.builder.context().const_value(i32ty, (size / 8) as u64);
         flat_size = self.tg.builder.create_mul(flat_size, size);
         let scalar_cmt = dest.0.to_string(&self.tg.builder.module.context);
-        flat_size
-          .as_mut::<Instruction>(&mut self.tg.builder.module.context)
-          .unwrap()
-          .set_comment(format!("x scalar {}", scalar_cmt));
+        if let Some(flat_mut) = flat_size.as_mut::<Instruction>(&mut self.tg.builder.module.context) {
+          flat_mut.set_comment(format!("x scalar {}", scalar_cmt));
+        }
         let params = vec![flat_size];
         let call = self.tg.builder.create_func_call(malloc, params);
         self.tg.builder.create_bitcast(call, dest.0)
