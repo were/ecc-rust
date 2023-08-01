@@ -24,8 +24,8 @@ pub(super) fn gather_locals(func: &FunctionRef) -> HashMap<usize, String> {
         },
         _ => {}
       }
-      if let InstOpcode::Phi = inst.get_opcode() {
-        // If this is not a Phi
+      if let InstOpcode::Phi = inst.get_opcode() { // If this is not a Phi
+      } else if let InstOpcode::Load(_) = inst.get_opcode() { // If this is not a Load
       } else {
         let mut user_iter = inst.user_iter();
         // If we have a user

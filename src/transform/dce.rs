@@ -25,11 +25,13 @@ fn analysis(module: &Module) -> Vec<ValueRef> {
   res
 }
 
-pub fn transform(module: &mut Module) {
+pub fn transform(module: &mut Module) -> bool {
   let mut iterative = true;
+  let mut modified = false;
   while iterative {
     let to_remove = analysis(&module);
     iterative = to_remove.len() != 0;
+    modified |= iterative;
     for elem in to_remove {
       let log = elem.as_ref::<Instruction>(&module.context).unwrap().to_string(false);
       eprintln!("[DCE] Remove {}, due to no user.", log);
@@ -37,4 +39,5 @@ pub fn transform(module: &mut Module) {
       mutator.erase_from_parent();
     }
   }
+  return modified;
 }
