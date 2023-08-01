@@ -14,7 +14,8 @@ pub fn optimize(mut module: Module, opt_level: i32) -> Module {
   let (mut ssa, dom) = ssa::transform(module);
   simplify::merge_trivial_branches(&mut ssa);
   if opt_level == 2 {
-    let cse = cse::transform(ssa, &dom);
+    let mut cse = cse::transform(ssa, &dom);
+    simplify::transform(&mut cse);
     cse
   } else {
     ssa
