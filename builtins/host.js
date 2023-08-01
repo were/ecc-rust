@@ -70,16 +70,14 @@ imports = {
 }
 
 WebAssembly.instantiate(fd, imports).then(function (result) {
-
-  // memory = result.instance.exports.memory
   mem_i8view = new Int8Array(__linear_memory.buffer)
-
   if (vbs) {
-    console.time('wasm');
+    console.time('Exec time');
   }
-  result.instance.exports.main(0, 0)
+  var res = result.instance.exports.main(0, 0)
   if (vbs) {
-    console.timeEnd('wasm');
+    console.timeEnd('Exec time');
+    console.log('Exit code:', res);
   }
 })
 
