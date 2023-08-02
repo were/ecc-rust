@@ -8,7 +8,10 @@ use trinity::ir::{
   value::Function, PointerType, Block, Instruction
 };
 use trinity::builder::Builder;
-use super::{ast::{self, ForStmt, WhileStmt, IfStmt, ReturnStmt, Expr}, lexer::TokenType};
+use super::{
+  ast::{self, ForStmt, WhileStmt, IfStmt, ReturnStmt, Expr},
+  lexer::TokenType
+};
 
 struct TypeGen {
   pub builder: Builder,
@@ -132,7 +135,8 @@ impl CacheStack {
 struct CodeGen {
   tg: TypeGen,
   cache_stack: CacheStack,
-  loop_cond_and_end: Option<(ValueRef, ValueRef)>,
+  true_or_false: Option<(ValueRef, ValueRef)>,
+  loop_cond_or_end: Option<(ValueRef, ValueRef)>,
 }
  
 impl CodeGen {
@@ -299,12 +303,12 @@ impl CodeGen {
   }
 
   fn generate_loop_jump(&mut self, jump: &ast::LoopJump) {
-    if let Some((cond, end)) = &self.loop_cond_and_end {
+    if let Some((cond, end)) = &self.true_or_false {
       match &jump.loc.value {
-        super::lexer::TokenType::KeywordBreak => {
+        TokenType::KeywordBreak => {
           self.tg.builder.create_unconditional_branch(end.clone());
         }
-        super::lexer::TokenType::KeywordContinue => {
+        TokenType::KeywordContinue => {
           self.tg.builder.create_unconditional_branch(cond.clone());
         }
         _ => {}
@@ -318,6 +322,8 @@ impl CodeGen {
     let cond = self.generate_expr(&if_stmt.cond, false);
     let then_block = self.builder_mut().add_block(format!("then.{}", cond.skey));
     let else_block = self.builder_mut().add_block(format!("else.{}", cond.skey));
+    let old_true_or_false = self.true_or_false.clone();
+    self.true_or_false = Some((then_block.clone(), else_block.clone()));
     let converge = self.builder_mut().add_block(format!("converge.{}", cond.skey));
     self.builder_mut().create_conditional_branch(cond, then_block.clone(), else_block.clone(), false);
     self.builder_mut().set_current_block(then_block.clone());
@@ -329,11 +335,12 @@ impl CodeGen {
     }
     self.builder_mut().create_unconditional_branch(converge.clone());
     self.builder_mut().set_current_block(converge.clone());
+    self.true_or_false = old_true_or_false;
   }
 
   fn generate_while_stmt(&mut self, while_stmt: &WhileStmt) {
     // Save the nested condition and end blocks.
-    let old = self.loop_cond_and_end.clone();
+    let old = self.loop_cond_or_end.clone();
     self.cache_stack.push();
     let cond_block = self.builder_mut().add_block("while.cond".to_string());
     let body_block = self.builder_mut().add_block("while.body".to_string());
@@ -341,7 +348,7 @@ impl CodeGen {
     let cond = self.generate_expr(&while_stmt.cond, false);
     self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
     // Set it to the inner most loop.
-    self.loop_cond_and_end = (cond_block.clone(), end_block.clone()).into();
+    self.true_or_false = (cond_block.clone(), end_block.clone()).into();
     self.builder_mut().set_current_block(cond_block.clone());
     let cond = self.generate_expr(&while_stmt.cond, false);
     self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
@@ -350,20 +357,20 @@ impl CodeGen {
     self.builder_mut().create_unconditional_branch(cond_block.clone());
     self.cache_stack.pop();
     // Restore the nested condition and end blocks.
-    self.loop_cond_and_end = old;
+    self.loop_cond_or_end = old;
     self.builder_mut().set_current_block(end_block)
   }
 
   fn generate_for_stmt(&mut self, for_stmt: &ForStmt) {
     // Save the nested condition and end blocks.
-    let old = self.loop_cond_and_end.clone();
+    let old = self.true_or_false.clone();
     self.cache_stack.push();
     self.generate_var_decl(&for_stmt.var);
     let body_block = self.builder_mut().add_block("for.body".to_string());
     let cond_block = self.builder_mut().add_block("for.cond".to_string());
     let end_block = self.builder_mut().add_block("for.end".to_string());
     // Set it to the inner most loop.
-    self.loop_cond_and_end = (cond_block.clone(), end_block.clone()).into();
+    self.loop_cond_or_end = (cond_block.clone(), end_block.clone()).into();
     let extent = self.generate_expr(&for_stmt.end, false);
     let i32ty = self.tg.builder.context().int_type(32);
     // If extent <= loop start, just skip the loop.
@@ -389,7 +396,7 @@ impl CodeGen {
     self.builder_mut().create_unconditional_branch(cond_block.clone());
     self.cache_stack.pop();
     // Restore the nested condition and end blocks.
-    self.loop_cond_and_end = old;
+    self.loop_cond_or_end = old;
     self.builder_mut().set_current_block(end_block)
   }
 
@@ -465,51 +472,95 @@ impl CodeGen {
         }
       }
       ast::Expr::BinaryOp(binop) => {
-        let is_lval = binop.op.value == super::lexer::TokenType::AssignEq;
+        let is_lval = binop.op.value == TokenType::AssignEq;
         let lhs = self.generate_expr(&binop.lhs, is_lval);
-        let rhs = self.generate_expr(&binop.rhs, false);
-        match &binop.op.value {
-          super::lexer::TokenType::Add => {
-            self.tg.builder.create_add(lhs, rhs)
+        let logic = match &binop.op.value {
+          TokenType::LogicAnd | TokenType::LogicOr => {
+            let func = self.tg.builder
+              .get_current_function().unwrap()
+              .as_ref::<Function>(&self.tg.builder.module.context).unwrap();
+            // Restore the current block.
+            let current = self.tg.builder.get_current_block().unwrap();
+            // Create a local variable for the result.
+            let entry = func.get_block(0).unwrap().as_super();
+            self.tg.builder.set_current_block(entry);
+            let i1ty = self.tg.builder.context().int_type(1);
+            let alloca = self.tg.builder.create_alloca(i1ty.clone());
+            // Prepare the values
+            let one = self.tg.builder.context().const_value(i1ty.clone(), 1);
+            let zero = self.tg.builder.context().const_value(i1ty.clone(), 0);
+            // Create two blocks for the short-circuit evaluation.
+            let true_block = self.tg.builder.add_block(format!("sc.true.{}", alloca.skey));
+            let false_block = self.tg.builder.add_block(format!("sc.false.{}", alloca.skey));
+            self.tg.builder.set_current_block(current);
+            self.tg.builder.create_conditional_branch(lhs.clone(), true_block.clone(), false_block.clone(), false);
+            let (finalize, finalized_value, compute) = if let &TokenType::LogicAnd = &binop.op.value {
+              (false_block, zero, true_block)
+            } else {
+              (true_block, one, false_block)
+            };
+            self.tg.builder.set_current_block(compute);
+            let rhs = self.generate_expr(&binop.rhs, false);
+            self.tg.builder.create_store(rhs, alloca.clone()).unwrap();
+            let converge = self.tg.builder.add_block(format!("sc.converge.{}", alloca.skey));
+            self.tg.builder.create_unconditional_branch(converge.clone());
+            // Create the false block.
+            self.tg.builder.set_current_block(finalize);
+            self.tg.builder.create_store(finalized_value, alloca.clone()).unwrap();
+            self.tg.builder.create_unconditional_branch(converge.clone());
+            // Create the converge block.
+            self.tg.builder.set_current_block(converge);
+            Some(self.tg.builder.create_load(alloca))
           }
-          super::lexer::TokenType::Sub => {
-            self.tg.builder.create_sub(lhs, rhs)
-          }
-          super::lexer::TokenType::Mul => {
-            self.tg.builder.create_mul(lhs, rhs)
-          }
-          super::lexer::TokenType::Mod => {
-            self.tg.builder.create_srem(lhs, rhs)
-          }
-          super::lexer::TokenType::Div => {
-            self.tg.builder.create_sdiv(lhs, rhs)
-          }
-          super::lexer::TokenType::AssignEq => {
-            match self.tg.builder.create_store(rhs, lhs) {
-              Ok(res) => { res }
-              Err(_) => {
-                panic!("Failed to cg: {}", expr);
+          _ => None
+        };
+        if let Some(res) = logic {
+          res
+        } else {
+          let rhs = self.generate_expr(&binop.rhs, false);
+          match &binop.op.value {
+            TokenType::Add => {
+              self.tg.builder.create_add(lhs, rhs)
+            }
+            TokenType::Sub => {
+              self.tg.builder.create_sub(lhs, rhs)
+            }
+            TokenType::Mul => {
+              self.tg.builder.create_mul(lhs, rhs)
+            }
+            TokenType::Mod => {
+              self.tg.builder.create_srem(lhs, rhs)
+            }
+            TokenType::Div => {
+              self.tg.builder.create_sdiv(lhs, rhs)
+            }
+            TokenType::AssignEq => {
+              match self.tg.builder.create_store(rhs, lhs) {
+                Ok(res) => { res }
+                Err(_) => {
+                  panic!("Failed to cg: {}", expr);
+                }
               }
             }
+            TokenType::LT => self.tg.builder.create_slt(lhs, rhs),
+            TokenType::LE => self.tg.builder.create_sle(lhs, rhs),
+            TokenType::GT => self.tg.builder.create_sgt(lhs, rhs),
+            TokenType::GE => self.tg.builder.create_sge(lhs, rhs),
+            TokenType::EQ => self.tg.builder.create_eq(lhs, rhs),
+            TokenType::NE => self.tg.builder.create_ne(lhs, rhs),
+            _ => { panic!("Unknown binary op {}", binop.op); }
           }
-          super::lexer::TokenType::LT => self.tg.builder.create_slt(lhs, rhs),
-          super::lexer::TokenType::LE => self.tg.builder.create_sle(lhs, rhs),
-          super::lexer::TokenType::GT => self.tg.builder.create_sgt(lhs, rhs),
-          super::lexer::TokenType::GE => self.tg.builder.create_sge(lhs, rhs),
-          super::lexer::TokenType::EQ => self.tg.builder.create_eq(lhs, rhs),
-          super::lexer::TokenType::NE => self.tg.builder.create_ne(lhs, rhs),
-          _ => { panic!("Unknown binary op {}", binop.op); }
         }
       }
       ast::Expr::UnaryOp(unary) => {
         let expr = self.generate_expr(&unary.expr, false);
         let res = match &unary.op.value {
-          super::lexer::TokenType::Sub => {
+          TokenType::Sub => {
             let i32ty = self.tg.builder.context().int_type(32);
             let zero = self.tg.builder.context().const_value(i32ty, 0);
             self.tg.builder.create_sub(zero, expr)
           }
-          super::lexer::TokenType::LogicNot => {
+          TokenType::LogicNot => {
             let i1ty = self.tg.builder.context().int_type(1);
             let one = self.tg.builder.context().const_value(i1ty, 1);
             self.tg.builder.create_xor(one, expr)
@@ -613,7 +664,8 @@ pub fn codegen(ast: &Rc<ast::Linkage>, tt: String, layout: String) -> ir::module
     cache_stack: CacheStack {
       stack: Vec::new(),
     },
-    loop_cond_and_end: None
+    true_or_false: None,
+    loop_cond_or_end: None,
   };
 
   cg.generate_linkage(ast);
