@@ -86,6 +86,8 @@ fn load_source(prefix: &str, fname: &String) -> (String, E2EMetadata, String) {
 #[case("17-argorder.ecc")]
 #[case("18-arraymove.ecc")]
 #[case("19-swap.ecc")]
+#[case("20-swap1.ecc")]
+#[case("21-shortcircuit.ecc")]
 fn test_frontend(#[case] fname: &str) {
   // Load the source file
   let (src, meta, obj_output) = load_source("../tests/function/", &fname.to_string());
@@ -120,6 +122,8 @@ fn test_frontend(#[case] fname: &str) {
 #[case("17-argorder.ecc")]
 #[case("18-arraymove.ecc")]
 #[case("19-swap.ecc")]
+#[case("20-swap1.ecc")]
+#[case("21-shortcircuit.ecc")]
 fn test_e2e(#[case] fname: &str) {
   // Load the source file
   let (src, meta, obj_output) = load_source("../tests/function/", &fname.to_string());
