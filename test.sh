@@ -29,4 +29,6 @@ if diff -q output reference > /dev/null; then
   echo "Everything cleaned up!"
 else
   echo "Output wrong!"
+  echo "Please check the following files: input, output, reference, compile.log"
+  exit 1
 fi
