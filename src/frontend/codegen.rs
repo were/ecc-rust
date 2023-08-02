@@ -135,7 +135,6 @@ impl CacheStack {
 struct CodeGen {
   tg: TypeGen,
   cache_stack: CacheStack,
-  true_or_false: Option<(ValueRef, ValueRef)>,
   loop_cond_or_end: Option<(ValueRef, ValueRef)>,
 }
  
@@ -303,7 +302,7 @@ impl CodeGen {
   }
 
   fn generate_loop_jump(&mut self, jump: &ast::LoopJump) {
-    if let Some((cond, end)) = &self.true_or_false {
+    if let Some((cond, end)) = &self.loop_cond_or_end {
       match &jump.loc.value {
         TokenType::KeywordBreak => {
           self.tg.builder.create_unconditional_branch(end.clone());
@@ -322,8 +321,6 @@ impl CodeGen {
     let cond = self.generate_expr(&if_stmt.cond, false);
     let then_block = self.builder_mut().add_block(format!("then.{}", cond.skey));
     let else_block = self.builder_mut().add_block(format!("else.{}", cond.skey));
-    let old_true_or_false = self.true_or_false.clone();
-    self.true_or_false = Some((then_block.clone(), else_block.clone()));
     let converge = self.builder_mut().add_block(format!("converge.{}", cond.skey));
     self.builder_mut().create_conditional_branch(cond, then_block.clone(), else_block.clone(), false);
     self.builder_mut().set_current_block(then_block.clone());
@@ -335,7 +332,6 @@ impl CodeGen {
     }
     self.builder_mut().create_unconditional_branch(converge.clone());
     self.builder_mut().set_current_block(converge.clone());
-    self.true_or_false = old_true_or_false;
   }
 
   fn generate_while_stmt(&mut self, while_stmt: &WhileStmt) {
@@ -348,7 +344,7 @@ impl CodeGen {
     let cond = self.generate_expr(&while_stmt.cond, false);
     self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
     // Set it to the inner most loop.
-    self.true_or_false = (cond_block.clone(), end_block.clone()).into();
+    self.loop_cond_or_end = (cond_block.clone(), end_block.clone()).into();
     self.builder_mut().set_current_block(cond_block.clone());
     let cond = self.generate_expr(&while_stmt.cond, false);
     self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
@@ -363,7 +359,7 @@ impl CodeGen {
 
   fn generate_for_stmt(&mut self, for_stmt: &ForStmt) {
     // Save the nested condition and end blocks.
-    let old = self.true_or_false.clone();
+    let old = self.loop_cond_or_end.clone();
     self.cache_stack.push();
     self.generate_var_decl(&for_stmt.var);
     let body_block = self.builder_mut().add_block("for.body".to_string());
@@ -483,7 +479,13 @@ impl CodeGen {
             let current = self.tg.builder.get_current_block().unwrap();
             // Create a local variable for the result.
             let entry = func.get_block(0).unwrap().as_super();
-            self.tg.builder.set_current_block(entry);
+            self.tg.builder.set_current_block(entry.clone());
+            {
+              let entry = entry.as_ref::<Block>(&self.tg.builder.module.context).unwrap();
+              if let Some(first_inst) = entry.get_inst(0) {
+                self.tg.builder.set_insert_before(first_inst.as_super());
+              }
+            }
             let i1ty = self.tg.builder.context().int_type(1);
             let alloca = self.tg.builder.create_alloca(i1ty.clone());
             // Prepare the values
@@ -664,7 +666,6 @@ pub fn codegen(ast: &Rc<ast::Linkage>, tt: String, layout: String) -> ir::module
     cache_stack: CacheStack {
       stack: Vec::new(),
     },
-    true_or_false: None,
     loop_cond_or_end: None,
   };
 

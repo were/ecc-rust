@@ -43,66 +43,70 @@ fn analyze_dominators(ctx: &Context, func: &FunctionRef, workspace: &mut Vec<Dom
     q.push_back(block.as_super());
     while let Some(front) = q.pop_front() {
       let block = front.as_ref::<Block>(ctx).unwrap();
+      let mut new_dom = HashSet::new();
+      let mut first = true;
+      for pred in block.pred_iter() {
+        let pred = pred.get_parent();
+        if first {
+          new_dom = workspace[pred.get_skey()].dominators.clone();
+          first = false;
+        } else if !workspace[pred.get_skey()].dominators.is_empty() {
+          new_dom = new_dom
+            .intersection(&workspace[pred.get_skey()].dominators)
+            .cloned()
+            .collect::<HashSet<_>>();
+        }
+      }
+      new_dom.insert(front.skey);
+      if new_dom != workspace[front.skey].dominators {
+        changed = true;
+        workspace[front.skey].dominators = new_dom;
+      }
       for succ in block.succ_iter() {
-        let succ_skey = succ.get_skey();
-        if !visited.contains(&succ_skey) {
-          visited.insert(succ_skey);
-          let (new_set, diff) = if workspace[succ_skey].dominators.is_empty() {
-            let mut new_set = workspace[front.skey].dominators.clone();
-            new_set.insert(succ_skey);
-            (new_set, true)
-          } else {
-            let mut new_set = workspace[succ_skey].dominators
-              .intersection(&workspace[front.skey].dominators)
-              .cloned()
-              .collect::<HashSet<_>>();
-            new_set.insert(succ_skey);
-            let diff = new_set != workspace[succ_skey].dominators;
-            (new_set, diff)
-          };
-          if diff {
-            changed = true;
-            workspace[succ_skey].dominators = new_set;
-            let (idom, deepest) = workspace[succ_skey]
-              .dominators
-              .iter()
-              .fold((0, 0),
-              |acc, elem| {
-              if workspace[*elem].depth + 1 > acc.1 {
-                (*elem, workspace[*elem].depth + 1)
-              } else {
-                acc
-              }
-            });
-            // Find the deepest one as the immediate dominator
-            if deepest > workspace[succ_skey].depth {
-              workspace[succ_skey].depth = deepest;
-              workspace[succ_skey].idom = idom;
-            }
+        if visited.contains(&succ.get_skey()) {
+          continue;
+        }
+        q.push_back(succ.as_super());
+        visited.insert(succ.get_skey());
+      }
+    }
+  }
+  {
+    changed = true;
+    while changed {
+      changed = false;
+      for block in func.block_iter() {
+        for dom in workspace[block.get_skey()].dominators.clone().iter() {
+          let dom = Block::from_skey(*dom);
+          let dom = dom.as_ref::<Block>(ctx).unwrap();
+          if block.get_skey() == dom.get_skey() {
+            continue;
           }
-          q.push_back(succ.as_super());
+          if workspace[block.get_skey()].depth < workspace[dom.get_skey()].depth + 1 {
+            workspace[block.get_skey()].depth = workspace[dom.get_skey()].depth + 1;
+            workspace[block.get_skey()].idom = dom.get_skey();
+            changed = true;
+          }
         }
       }
     }
   }
-  // eprintln!("In function {}:", func.get_name());
-  // for i in 0..func.get_num_blocks() {
-  //   let block = func.get_block(i).unwrap();
-  //   let entry = &workspace[block.skey];
-  //   eprintln!("  Block {} (Depth: {}) dominated by:", block.to_string(ctx, false), entry.depth);
-  //   for dom in entry.dominators.iter() {
-  //     let block_ref= ValueRef{
-  //       skey: *dom,
-  //       kind: trinity::ir::VKindCode::Block
-  //     };
-  //     eprint!("    {}", block_ref.to_string(ctx, false));
-  //     if *dom == entry.idom {
-  //       eprintln!(" *")
-  //     } else {
-  //       eprintln!("")
-  //     }
-  //   }
-  // }
+  eprintln!("In function {}:", func.get_name());
+  for i in 0..func.get_num_blocks() {
+    let block = func.get_block(i).unwrap();
+    let entry = &workspace[block.get_skey()];
+    eprintln!("  Block {} (Depth: {}), Pred: [{}] dominated by:", block.get_name(), entry.depth,
+      block.pred_iter().map(|x| x.get_parent().get_name()).collect::<Vec<_>>().join(", "));
+    for dom in entry.dominators.iter() {
+      let block_ref= Block::from_skey(*dom);
+      eprint!("    {}", block_ref.to_string(ctx, false));
+      if *dom == entry.idom {
+        eprintln!(" *")
+      } else {
+        eprintln!("")
+      }
+    }
+  }
 }
 
 pub fn a_dominates_b(workspace: &Vec<DomInfo>, a: &InstructionRef, b: &InstructionRef) -> bool {
@@ -197,7 +201,7 @@ fn find_value_dominator(
       }
     }
     // End at root node.
-    if workspace[runner].depth == 1 {
+    if workspace[runner].idom == 0 {
       break;
     }
     runner = workspace[runner].idom;
