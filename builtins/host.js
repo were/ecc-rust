@@ -8,11 +8,14 @@ let vbs = process.argv.find(function(x) {
 
 fd = fs.readFileSync(wasm_binary, undefined)
 
-input_buffer = []
+input_buffer = null
 
 process.stdin.on('data', function (data) {
-  input_buffer = new Int8Array(data);
-  input_buffer.length = data.length;
+  if (input_buffer == null) {
+    input_buffer = data;
+  } else {
+    input_buffer = Buffer.concat([input_buffer, data])
+  }
 })
 
 function __print_int__(x) {
@@ -23,7 +26,7 @@ memory = null
 mem_i8view = null
 input_i8view = null
 
-memory_size = (1 << 20)
+memory_size = 65536 
 static_size = (1 << 10)
 heap_size = static_size
 
@@ -55,7 +58,7 @@ function nextInt() {
   return res;
 }
 
-__linear_memory = new WebAssembly.Memory({initial: 65536})
+__linear_memory = new WebAssembly.Memory({initial: memory_size})
 __stack_pointer = new WebAssembly.Global({value: "i32", mutable: true}, memory_size)
 
 imports = {
@@ -70,16 +73,14 @@ imports = {
 }
 
 WebAssembly.instantiate(fd, imports).then(function (result) {
-
-  // memory = result.instance.exports.memory
   mem_i8view = new Int8Array(__linear_memory.buffer)
-
   if (vbs) {
-    console.time('wasm');
+    console.time('Exec time');
   }
-  result.instance.exports.main(0, 0)
+  var res = result.instance.exports.main(0, 0)
   if (vbs) {
-    console.timeEnd('wasm');
+    console.timeEnd('Exec time');
+    console.log('Exit code:', res);
   }
 })
 

@@ -44,6 +44,10 @@ class string {
     return 0;
   }
 
+  func at(i32 i) -> i32 {
+    return self.data_[i] as i32;
+  }
+
   i32 length_;
   i8[] data_;
 }

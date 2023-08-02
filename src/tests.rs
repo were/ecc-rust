@@ -37,6 +37,7 @@ fn metadata(src: &String) -> E2EMetadata {
 fn run_binary(binary_name: &String, meta: &E2EMetadata) {
   // Run it
   let mut exec = std::process::Command::new("node")
+    .arg("--stack-size=1048576")
     .arg("builtins/host.js")
     .arg(&binary_name)
     .stdin(std::process::Stdio::piped())
@@ -48,12 +49,13 @@ fn run_binary(binary_name: &String, meta: &E2EMetadata) {
   let mut output = String::new();
   exec.stdout.take().unwrap().read_to_string(&mut output).unwrap();
   let status = exec.wait().unwrap();
+  eprintln!("echo {}; status: {}", binary_name, status);
   assert!(status.success());
   assert_eq!(output, meta.stdout);
 }
 
-fn load_source(fname: &String) -> (String, E2EMetadata, String) {
-  let src_path = format!("../tests/function/{}", fname);
+fn load_source(prefix: &str, fname: &String) -> (String, E2EMetadata, String) {
+  let src_path = format!("{}/{}", prefix, fname);
   let mut file = File::open(&src_path).unwrap();
   let mut src = String::new();
   file.read_to_string(&mut src).unwrap();
@@ -86,7 +88,7 @@ fn load_source(fname: &String) -> (String, E2EMetadata, String) {
 #[case("19-swap.ecc")]
 fn test_frontend(#[case] fname: &str) {
   // Load the source file
-  let (src, meta, obj_output) = load_source(&fname.to_string());
+  let (src, meta, obj_output) = load_source("../tests/function/", &fname.to_string());
   // Compile it
   invoke(&fname.to_string(), &obj_output, src, 0, &"emcc".to_string(), 2).unwrap();
   run_binary(&obj_output, &meta);
@@ -120,7 +122,7 @@ fn test_frontend(#[case] fname: &str) {
 #[case("19-swap.ecc")]
 fn test_e2e(#[case] fname: &str) {
   // Load the source file
-  let (src, meta, obj_output) = load_source(&fname.to_string());
+  let (src, meta, obj_output) = load_source("../tests/function/", &fname.to_string());
   // Compile it
   invoke(&fname.to_string(), &obj_output, src, 0, &"myown".to_string(), 2).unwrap();
   run_binary(&obj_output, &meta);
@@ -131,3 +133,21 @@ fn test_e2e(#[case] fname: &str) {
     .unwrap();
 }
 
+/// This uses my own backend, all the cases are tested end-to-end.
+#[rstest]
+#[case("01-cse.ecc")]
+#[case("02-bulgarian.ecc")]
+#[case("03-inflate.ecc")]
+#[case("04-hanoi.ecc")]
+fn test_pressure(#[case] fname: &str) {
+  // Load the source file
+  let (src, meta, obj_output) = load_source("../tests/performance/", &fname.to_string());
+  // Compile it
+  invoke(&fname.to_string(), &obj_output, src, 0, &"myown".to_string(), 2).unwrap();
+  run_binary(&obj_output, &meta);
+  // Compare the output
+  std::process::Command::new("rm")
+    .arg(obj_output)
+    .spawn()
+    .unwrap();
+}
