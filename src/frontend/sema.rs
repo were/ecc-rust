@@ -290,9 +290,9 @@ impl Visitor for SymbolResolver {
   fn visit_compound_stmt(&mut self, block: &Rc<super::ast::CompoundStmt>) -> Rc<super::ast::CompoundStmt> {
     let pushed = if self.new_scope {
       self.scopes.push(SymbolTable::new());
-      self.new_scope = false;
       true
     } else {
+      self.new_scope = true;
       false
     };
     let stmts:Vec<Stmt> = block.stmts.iter().map(|stmt| { self.visit_stmt(stmt) }).collect();

@@ -34,6 +34,9 @@ fn analysis<'ctx>(module: &'ctx Module, dom: &Vec<DomInfo>) -> Vec<(ValueRef, Ve
       let a = inst.as_ref::<Instruction>(&module.context).unwrap();
       if insts.iter().all(|b| {
         let b = b.as_ref::<Instruction>(&module.context).unwrap();
+        eprintln!("A: {}", a.to_string(false));
+        eprintln!("B: {}", b.to_string(false));
+        eprintln!("dom? {}", a_dominates_b(dom, &a, &b));
         a_dominates_b(dom, &a, &b)
       }) {
         let x = insts.iter()
