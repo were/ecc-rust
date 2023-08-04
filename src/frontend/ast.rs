@@ -375,6 +375,7 @@ pub struct StrImm {
 
 #[derive(Clone)]
 pub struct FuncCall {
+  pub rewrite: bool,
   pub fname : Token,
   pub params : Vec<Expr>,
 }

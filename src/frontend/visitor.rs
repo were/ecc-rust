@@ -183,6 +183,7 @@ pub trait Visitor {
     let params:Vec<Expr> = call.params.iter().map(|x| self.visit_expr(x)).collect();
     if mutated!(params, call.params, expr_eq) {
       return Rc::new(FuncCall{
+        rewrite: call.rewrite,
         fname: call.fname.clone(),
         params,
       })

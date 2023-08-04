@@ -360,21 +360,22 @@ impl Visitor for SymbolResolver {
           }
           Expr::FuncCall(call) => {
             let ty = lhs.dtype(&self.scopes);
-            if let Type::Class(class) = ty {
-              let callee = format!("{}::{}", class.id(), call.fname.literal);
-              if let WithID::Function(_) = self.scopes.find(&callee).unwrap() {
-                let mut params = call.params.clone();
-                params.insert(0, lhs);
-                let fname = Token{
-                  literal: callee, row:0, col: 0,
-                  value: TokenType::Identifier
-                };
-                return Expr::FuncCall(Rc::new(FuncCall{fname, params}));
-              }
-              panic!("{} not founded as a function", call.fname);
-            } else {
-              panic!("Expect {} to be a class, but {}", lhs, lhs.dtype(&self.scopes));
+            let ty_name = match ty {
+              Type::Class(class) => class.id().clone(),
+              Type::Array(_) => "string".to_string(),
+              _ => panic!("Expect {} to be a class, but {}", lhs, lhs.dtype(&self.scopes))
+            };
+            let callee = format!("{}::{}", ty_name, call.fname.literal);
+            if let WithID::Function(_) = self.scopes.find(&callee).unwrap() {
+              let mut params = call.params.clone();
+              params.insert(0, lhs);
+              let fname = Token{
+                literal: callee, row:0, col: 0,
+                value: TokenType::Identifier
+              };
+              return Expr::FuncCall(Rc::new(FuncCall{rewrite:true, fname, params}));
             }
+            panic!("{} not founded as a function", call.fname);
           }
           _ => {
             panic!("Expect {} to be an class attribute", op.rhs);
@@ -400,10 +401,10 @@ impl Visitor for SymbolResolver {
         panic!("Function @{} expect {} args, but got {}",
           call.fname, callee.args.len(), params.len());
       }
-      if self.check_func_sig {
+      if self.check_func_sig && !call.rewrite {
         for (i, (arg, param)) in Iterator::zip(callee.args.iter(), params.iter()).enumerate() {
           if !type_eq(&arg.ty, &param.dtype(&self.scopes)) {
-            panic!("Expect argument {} to be {}, but parameter's type is {}", i, arg.ty, param);
+            panic!("Expect argument {} to be {}, but parameter's type is {}", i, arg.ty, param.dtype(&self.scopes));
           }
         }
       }
@@ -414,6 +415,7 @@ impl Visitor for SymbolResolver {
       return call.clone();
     }
     Rc::new(FuncCall{
+      rewrite: call.rewrite,
       fname: call.fname.clone(),
       params
     })
