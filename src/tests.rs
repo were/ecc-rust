@@ -101,42 +101,42 @@ fn test_frontend(#[case] fname: &str) {
     .unwrap();
 }
 
-// /// This uses my own backend, all the cases are tested end-to-end.
-// #[rstest]
-// #[case("01-return0.ecc")]
-// #[case("02-helloworld.ecc")]
-// #[case("03-crossclasses.ecc")]
-// #[case("04-aplusb.ecc")]
-// #[case("05-parsearray.ecc")]
-// #[case("06-method.ecc")]
-// #[case("07-printab.ecc")]
-// #[case("08-for.ecc")]
-// #[case("09-if.ecc")]
-// #[case("10-while.ecc")]
-// #[case("11-break.ecc")]
-// #[case("12-readint.ecc")]
-// #[case("13-print0.ecc")]
-// #[case("14-recursion.ecc")]
-// #[case("15-expr.ecc")]
-// #[case("16-neg.ecc")]
-// #[case("17-argorder.ecc")]
-// #[case("18-arraymove.ecc")]
-// #[case("19-swap.ecc")]
-// #[case("20-swap1.ecc")]
-// #[case("21-shortcircuit.ecc")]
-// fn test_e2e(#[case] fname: &str) {
-//   // Load the source file
-//   let (src, meta, obj_output) = load_source("../tests/function/", &fname.to_string());
-//   // Compile it
-//   invoke(&fname.to_string(), &obj_output, src, 0, &"myown".to_string(), 2).unwrap();
-//   run_binary(&obj_output, &meta);
-//   // Compare the output
-//   std::process::Command::new("rm")
-//     .arg(obj_output)
-//     .spawn()
-//     .unwrap();
-// }
-// 
+/// This uses my own backend, all the cases are tested end-to-end.
+#[rstest]
+#[case("01-return0.ecc")]
+#[case("02-helloworld.ecc")]
+#[case("03-crossclasses.ecc")]
+#[case("04-aplusb.ecc")]
+#[case("05-parsearray.ecc")]
+#[case("06-method.ecc")]
+#[case("07-printab.ecc")]
+#[case("08-for.ecc")]
+#[case("09-if.ecc")]
+#[case("10-while.ecc")]
+#[case("11-break.ecc")]
+#[case("12-readint.ecc")]
+#[case("13-print0.ecc")]
+#[case("14-recursion.ecc")]
+#[case("15-expr.ecc")]
+#[case("16-neg.ecc")]
+#[case("17-argorder.ecc")]
+#[case("18-arraymove.ecc")]
+#[case("19-swap.ecc")]
+#[case("20-swap1.ecc")]
+#[case("21-shortcircuit.ecc")]
+fn test_e2e(#[case] fname: &str) {
+  // Load the source file
+  let (src, meta, obj_output) = load_source("../tests/function/", &fname.to_string());
+  // Compile it
+  invoke(&fname.to_string(), &obj_output, src, 0, &"myown".to_string(), 2).unwrap();
+  run_binary(&obj_output, &meta);
+  // Compare the output
+  std::process::Command::new("rm")
+    .arg(obj_output)
+    .spawn()
+    .unwrap();
+}
+
 // /// This uses my own backend, all the cases are tested end-to-end.
 // #[rstest]
 // #[case("01-cse.ecc")]

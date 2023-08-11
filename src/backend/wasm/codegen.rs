@@ -355,7 +355,12 @@ impl <'ctx>Codegen<'ctx> {
           while res.len() < n {
             res.push(0);
           }
-          res.extend(self.to_linear_buffer(x))
+          if let Some(obj_init) = x.as_ref::<ConstObject>(&self.module.context) {
+            let value = self.allocated_globals.get(&obj_init.get_skey()).unwrap();
+            res.extend(value.to_le_bytes().to_vec());
+          } else {
+            res.extend(self.to_linear_buffer(x))
+          }
         });
         res
       }
