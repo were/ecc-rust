@@ -473,10 +473,12 @@ impl CodeGen {
         let len = value.value.len();
         let i32ty = self.tg.builder.context().int_type(32);
         let len = self.tg.builder.context().const_value(i32ty.clone(), len as u64);
-        let i8array = self.tg.builder.create_global_struct(i8array, vec![len, str_value]);
-        let str_ref = self.tg.class_cache.get("string").unwrap().clone();
-        let str_ptr = self.tg.builder.get_struct_field(i8array, 0).unwrap();
-        self.tg.builder.create_global_struct(str_ref, vec![str_ptr])
+        let zero = self.tg.builder.context().const_value(i32ty.clone(), 0);
+        let i8array_ptr = self.tg.builder.create_gep(i8ptr, str_value, vec![zero.clone(), zero.clone()], true);
+        let i8array_obj = self.tg.builder.create_global_struct(i8array, vec![len, i8array_ptr]);
+        let string_ty = self.tg.class_cache.get("string").unwrap().clone();
+        // let str_ptr = self.tg.builder.get_struct_field(i8array, 0).unwrap();
+        self.tg.builder.create_global_struct(string_ty, vec![i8array_obj])
       }
       ast::Expr::Variable(var) => {
         let value = self.cache_stack.get(&var.id());

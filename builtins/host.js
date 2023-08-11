@@ -30,7 +30,17 @@ memory_size = 65536
 static_size = (1 << 10)
 heap_size = static_size
 
-function __print_str__(offset, len) {
+function __print_str__(array) {
+  var len =
+    mem_i8view[array + 0] + 
+    (mem_i8view[array + 1] << 8) +
+    (mem_i8view[array + 2] << 16) +
+    (mem_i8view[array + 3] << 24);
+  var offset =
+    mem_i8view[array + 4] + 
+    (mem_i8view[array + 5] << 8) +
+    (mem_i8view[array + 6] << 16) +
+    (mem_i8view[array + 7] << 24);
   for (i = 0; i < len; ++i) {
     process.stdout.write(String.fromCharCode(mem_i8view[offset + i]))
   }
@@ -74,6 +84,7 @@ imports = {
 
 WebAssembly.instantiate(fd, imports).then(function (result) {
   mem_i8view = new Int8Array(__linear_memory.buffer)
+  // mem_i32view = new Int32Array(__linear_memory.buffer)
   if (vbs) {
     console.time('Exec time');
   }
