@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use trinity::ir::module::Module;
 
-use self::{ast::Linkage, sema::ScopeStack};
+use self::ast::Linkage;
 
 mod lexer;
 mod ast;

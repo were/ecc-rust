@@ -5,17 +5,18 @@ use trinity::ir::{
   self,
   value::ValueRef,
   types::{StructType, TypeRef},
-  value::Function, PointerType, Block, Instruction,
+  value::Function, PointerType, Block, TKindCode, Instruction,
 };
 use trinity::builder::Builder;
 use super::{
-  ast::{self, ForStmt, WhileStmt, IfStmt, ReturnStmt, Expr},
+  ast::{self, ForStmt, WhileStmt, IfStmt, ReturnStmt},
   lexer::TokenType
 };
 
 struct TypeGen {
   pub builder: Builder,
   pub class_cache: HashMap<String, TypeRef>,
+  array_types: HashMap<TypeRef, TypeRef>,
 }
 
 impl TypeGen {
@@ -41,6 +42,7 @@ impl TypeGen {
   fn type_to_llvm(&mut self, ty: &ast::Type) -> ir::types::TypeRef {
     match ty {
       ast::Type::Class(class) => {
+        // NOTE: Here we generate a pointer type for class type
         let res = self.class_cache.get(&class.id.literal).unwrap();
         return res.ptr_type(self.builder.context());
       }
@@ -78,8 +80,49 @@ impl TypeGen {
     for _ in 0..array.dims.len() {
       res = res.ptr_type(self.builder.context());
     }
-    return res
+    let array = self.generate_array_runtime(res);
+    self.builder.context().pointer_type(array)
   }
+
+  fn extract_array_type_name(&self, scalar_ty: &TypeRef) -> String {
+    return scalar_ty
+      .to_string(&self.builder.module.context)
+      .chars()
+      .filter(|c| *c != ' ')
+      .map(|c| if c == '*' { "ptr".to_string() } else { c.to_string() })
+      .collect::<Vec<String>>()
+      .join("");
+  }
+
+
+  fn generate_array_runtime(&mut self, ty: TypeRef) -> TypeRef {
+    if let Some(ptr_ty) = ty.as_ref::<PointerType>(&self.builder.module.context) {
+      if let Some(res) = self.array_types.get(&ty) {
+        res.clone()
+      } else if let &TKindCode::StructType = ptr_ty.get_pointee_ty().kind() {
+        return ty;
+      } else {
+        let raw = ptr_ty.get_pointee_ty();
+        let scalar_ty = self.generate_array_runtime(raw.clone());
+        let type_name = self.extract_array_type_name(&raw);
+        let type_name = format!("array.{}", type_name);
+        // Declare the array type.
+        let array_ty = self.builder.create_struct(type_name.clone());
+        let length = self.builder.context().int_type(32);
+        let array_ptr = self.builder.context().pointer_type(scalar_ty.clone());
+        array_ty
+          .as_mut::<StructType>(self.builder.context())
+          .unwrap()
+          .set_body(vec![length, array_ptr]);
+        self.class_cache.insert(type_name, array_ty.clone());
+        self.array_types.insert(ty.clone(), array_ty.clone());
+        array_ty
+      }
+    } else {
+      ty
+    }
+  }
+
 
 }
 
@@ -108,6 +151,10 @@ struct CacheStack {
 }
 
 impl CacheStack {
+
+  fn new() -> Self {
+    Self { stack: vec![], }
+  }
 
   fn push(&mut self) {
     self.stack.push(ValueCache { cache: HashMap::new() });
@@ -151,52 +198,6 @@ impl CodeGen {
   fn builder_mut(&mut self) -> &mut Builder {
     &mut self.tg.builder
   }
-
-  fn expr_type(&mut self, expr: &ast::Expr) -> ir::types::TypeRef {
-    match expr {
-      Expr::Cast(cast) => {
-        self.tg.type_to_llvm(&cast.dtype)
-      }
-      Expr::StrImm(_) => {
-        let string_ty = self.tg.class_cache.get("string").unwrap();
-        self.tg.builder.context().pointer_type(string_ty.clone())
-      }
-      Expr::IntImm(_) => {
-        self.tg.builder.context().int_type(32)
-      }
-      Expr::FuncCall(func_call) => {
-        let value = self.cache_stack.get(&func_call.fname.literal).unwrap();
-        let func = value.as_ref::<Function>(&self.tg.builder.module.context).unwrap();
-        func.get_ret_ty()
-      }
-      Expr::Variable(var) => {
-        self.tg.type_to_llvm(&var.decl.ty)
-      }
-      Expr::BinaryOp(binop) => {
-        self.expr_type(&binop.lhs)
-      }
-      Expr::UnaryOp(unop) => {
-        self.expr_type(&unop.expr)
-      }
-      Expr::AttrAccess(attr) => {
-        self.expr_type(&attr.this)
-      }
-      Expr::ArrayIndex(array_access) => {
-        let mut ty = self.expr_type(&array_access.array);
-        for _ in 0..array_access.indices.len() {
-          ty = ty.ptr_type(self.tg.builder.context());
-        }
-        ty
-      }
-      Expr::NewExpr(ne) => {
-        self.tg.type_to_llvm(&ne.dtype)
-      }
-      Expr::UnknownRef(_) => {
-        panic!("UnknownRef")
-      }
-    }
-  }
-
 
   fn generate_translation_unit(&mut self, tu: &Rc<ast::TranslateUnit>) {
     for decl in &tu.decls {
@@ -465,16 +466,17 @@ impl CodeGen {
         }
       }
       ast::Expr::StrImm(value) => {
-        let len = value.value.len();
-        let str_value = self.tg.builder.create_string(value.value.clone());
-        let str_ref = self.tg.class_cache.get("string").unwrap().clone();
-        let i32ty = self.tg.builder.context().int_type(32);
-        let zero = self.tg.builder.context().const_value(i32ty.clone(), 0);
-        let str_len = self.tg.builder.context().const_value(i32ty.clone(), len as u64);
         let i8ty = self.tg.builder.context().int_type(8);
         let i8ptr = i8ty.ptr_type(self.tg.builder.context());
-        let str_ptr = self.tg.builder.create_gep(i8ptr, str_value, vec![zero.clone(), zero.clone()], true);
-        self.tg.builder.create_global_struct(str_ref, vec![str_len, str_ptr])
+        let str_value = self.tg.builder.create_string(value.value.clone());
+        let i8array = self.tg.generate_array_runtime(i8ptr.clone());
+        let len = value.value.len();
+        let i32ty = self.tg.builder.context().int_type(32);
+        let len = self.tg.builder.context().const_value(i32ty.clone(), len as u64);
+        let i8array = self.tg.builder.create_global_struct(i8array, vec![len, str_value]);
+        let str_ref = self.tg.class_cache.get("string").unwrap().clone();
+        let str_ptr = self.tg.builder.get_struct_field(i8array, 0).unwrap();
+        self.tg.builder.create_global_struct(str_ref, vec![str_ptr])
       }
       ast::Expr::Variable(var) => {
         let value = self.cache_stack.get(&var.id());
@@ -495,18 +497,7 @@ impl CodeGen {
         // "This" is expected to be a pointer to a struct.
         let this = self.generate_expr(&aa.this, false);
         // Get the pointer's underlying struct type.
-        let ptr_ty_ref = this.get_type(&self.tg.builder.module.context);
-        let ptr_ty = ptr_ty_ref.as_ref::<PointerType>(&self.tg.builder.module.context).unwrap();
-        let sty_ref = ptr_ty.get_pointee_ty();
-        let sty = sty_ref.as_ref::<StructType>(self.tg.builder.context()).unwrap();
-        // Get the struct type for the corresponding struct attr.
-        let attr_ty = sty.get_attr(aa.idx);
-        let attr_ptr = attr_ty.ptr_type(self.tg.builder.context());
-        // Compute the pointer.
-        let i32ty = self.tg.builder.context().int_type(32);
-        let zero = self.tg.builder.context().const_value(i32ty.clone(), 0);
-        let idx = self.tg.builder.context().const_value(i32ty.clone(), aa.idx as u64);
-        let res = self.tg.builder.create_gep(attr_ptr, this, vec![zero, idx], true);
+        let res = self.tg.builder.get_struct_field(this, aa.idx).unwrap();
         if is_lval {
           res
         } else {
@@ -583,10 +574,12 @@ impl CodeGen {
               self.tg.builder.create_sdiv(lhs, rhs)
             }
             TokenType::AssignEq => {
-              match self.tg.builder.create_store(rhs, lhs) {
+              match self.tg.builder.create_store(rhs.clone(), lhs.clone()) {
                 Ok(res) => { res }
-                Err(_) => {
-                  panic!("Failed to cg: {}", expr);
+                Err(msg) => {
+                  eprintln!("Failed to store:\n{}", lhs.to_string(&self.tg.builder.module.context, true));
+                  eprintln!("Failed to store:\n{}", rhs.to_string(&self.tg.builder.module.context, true));
+                  panic!("Failed to cg:\n{}, msg: {}", expr, msg);
                 }
               }
             }
@@ -620,72 +613,71 @@ impl CodeGen {
       ast::Expr::NewExpr(ne) => {
         let malloc = self.cache_stack.get(&"malloc".to_string()).unwrap().clone();
         let i32ty = self.tg.builder.context().int_type(32);
-        let i8ptr = self.tg.builder.context().int_type(8);
-        let zero = self.tg.builder.context().const_value(i32ty.clone(), 0);
-        let one = self.tg.builder.context().const_value(i32ty.clone(), 1);
-        // TODO(@were): Support the size of malloc.
-        let (dest, array_size, array_obj) = if let ast::Type::Array(array) = &ne.dtype {
-          let ty = self.tg.type_to_llvm(&array.scalar_ty);
-          // self.tg.type_to_llvm(&ne.dtype);
-          let size = self.generate_expr(&array.dims[0], false);
+        let ty = self.tg.type_to_llvm(&ne.dtype);
+        let size = ty.get_scalar_size_in_bits(&self.tg.builder.module) / 8;
+        let size = self.tg.builder.context().const_value(i32ty.clone(), (size / 8) as u64);
+        let obj = self.tg.builder.create_func_call(malloc.clone(), vec![size]);
 
-          // Malloc the array struct.
-          let string_ty = self.tg.class_cache.get("string").unwrap().clone();
-          let string_size = string_ty.get_scalar_size_in_bits(&self.tg.builder.module) / 8;
-          let string_size = self.tg.builder.context().const_value(i32ty.clone(), string_size as u64);
-          let array_obj = self.tg.builder.create_func_call(malloc.clone(), vec![string_size]);
-          let array_obj = self.tg.builder.create_bitcast(array_obj, string_ty);
-
-          (ty, size, Some(array_obj))
-        } else {
-          (self.tg.type_to_llvm(&ne.dtype), one.clone(), None)
-        };
-
-        let scalar_ty = dest.as_ref::<PointerType>(&self.tg.builder.module.context).unwrap();
-        let size = scalar_ty.get_pointee_ty().get_scalar_size_in_bits(&self.tg.builder.module);
-        let size = self.tg.builder.context().const_value(i32ty, (size / 8) as u64);
-        let flat_size = self.tg.builder.create_mul(size.clone(), array_size);
-        let scalar_cmt = dest.to_string(&self.tg.builder.module.context);
-        if let Some(flat_mut) = flat_size.as_mut::<Instruction>(&mut self.tg.builder.module.context) {
-          flat_mut.set_comment(format!("x scalar {}", scalar_cmt));
+        if let ast::Type::Array(array) = &ne.dtype {
+          // Array type.
+          let ptr_ty = ty.as_ref::<PointerType>(&self.tg.builder.module.context).unwrap();
+          let array_ty = ptr_ty.get_pointee_ty();
+          // Array length.
+          let array_len = self.generate_expr(&array.dims[0], false);
+          // Write array length to object's first field.
+          let obj_len = self.tg.builder.get_struct_field(obj.clone(), 0).unwrap();
+          self.tg.builder.create_store(array_len.clone(), obj_len).unwrap();
+          // Array size.
+          let obj_size = array_ty.get_scalar_size_in_bits(&self.tg.builder.module) / 8;
+          let obj_size = self.tg.builder.context().const_value(i32ty.clone(), obj_size as u64);
+          // Allocate array buffer.
+          let array_size = self.tg.builder.create_mul(array_len, obj_size);
+          let payload = self.tg.builder.create_func_call(malloc, vec![array_size]);
+          // Write array buffer to object's second field.
+          let obj_ptr_ty = array_ty
+            .as_ref::<StructType>(&self.tg.builder.module.context)
+            .unwrap()
+            .get_attr(1);
+          let payload = self.tg.builder.create_bitcast(payload, obj_ptr_ty.clone());
+          let payload_ptr = self.tg.builder.get_struct_field(obj.clone(), 1).unwrap();
+          self.tg.builder.create_store(payload, payload_ptr).unwrap();
         }
-        let params = vec![flat_size];
-        let call = self.tg.builder.create_func_call(malloc, params);
-        if let Some(array_obj) = array_obj {
-          let array_size_ptr = self.tg.builder.create_gep(i8ptr.clone(), array_obj.clone(), vec![zero.clone(), zero.clone()], true);
-          self.tg.builder.create_store(size.clone(), array_size_ptr).unwrap();
-          let array_ptr = self.tg.builder.create_gep(i8ptr, array_obj.clone(), vec![zero.clone(), one.clone()], true);
-          self.tg.builder.create_store(call.clone(), array_ptr).unwrap();
-          array_obj
-        } else {
-          self.tg.builder.create_bitcast(call, dest)
-        }
+
+        self.tg.builder.create_bitcast(obj, ty)
       }
       ast::Expr::ArrayIndex(array_idx) => {
         let mut array_obj = self.generate_expr(&array_idx.array, false);
+        // eprintln!("array obj: {}", array_obj.to_string(&self.tg.builder.module.context, true));
         let indices = array_idx.indices.iter().map(|x| self.generate_expr(x, false)).collect::<Vec<_>>();
-        let mut array_ty = self.expr_type(&array_idx.array);
-        let i32ty = self.tg.builder.context().int_type(32);
-        let one = self.tg.builder.context().const_value(i32ty.clone(), 1);
-        let zero = self.tg.builder.context().const_value(i32ty.clone(), 0);
-        let string_ty = self.tg.class_cache.get("string").unwrap();
+        // for (i, elem) in indices.iter().enumerate() {
+        //   eprintln!("idx_{}: {}", i, elem.to_string(&self.tg.builder.module.context, true));
+        // }
         for (i, idx) in indices.iter().enumerate() {
-          let mut array_ptr = self.tg.builder.create_gep(array_ty.clone(), array_obj.clone(), vec![zero.clone(), one.clone()], true);
-          array_ptr = self.tg.builder.create_bitcast(array_ptr, array_ty.clone());
-          array_obj = self.tg.builder.create_gep(array_ty.clone(), array_ptr, vec![idx.clone()], true);
-          array_ty = {
-            let ptr_ty = array_ty.as_ref::<PointerType>(self.tg.builder.context()).unwrap();
-            ptr_ty.get_pointee_ty()
-          };
+          // array_obj = struct { length=i32, payload=ptr } where ptr is the pointer to the array.
+          let payload_ptr = self.tg.builder.get_struct_field(array_obj.clone(), 1).unwrap();
+          eprintln!("get array-attr: {}", payload_ptr.as_ref::<Instruction>(&self.tg.builder.module.context).unwrap().to_string(false));
+          eprintln!("attr_ty {}", payload_ptr.get_type(&self.tg.builder.module.context).to_string(&self.tg.builder.module.context));
+          // Dereference &array_obj.payload where payload = array_obj.payload
+          let payload = self.tg.builder.create_load(payload_ptr);
+          eprintln!("get array-ptr: {}", payload.as_ref::<Instruction>(&self.tg.builder.module.context).unwrap().to_string(false));
+          eprintln!("array_ptr_ty {}", payload.get_type(&self.tg.builder.module.context).to_string(&self.tg.builder.module.context));
+          // &array_ptr[idx]
+          array_obj = self.tg.builder.index_array(payload, idx.clone()).unwrap();
+          eprintln!("array_obj_ty {}", array_obj.get_type(&self.tg.builder.module.context).to_string(&self.tg.builder.module.context));
+          // If we have further indices, we need to use it as a right-value.
+          // Dereference the address.
           if i != indices.len() - 1 {
             array_obj = self.tg.builder.create_load(array_obj);
-            array_obj = self.tg.builder.create_bitcast(array_obj, string_ty.clone());
+            eprintln!("load array[i]: {}", array_obj.as_ref::<Instruction>(&self.tg.builder.module.context).unwrap().to_string(false));
           }
         }
         if !is_lval {
-          self.tg.builder.create_load(array_obj.clone());
+          let res = self.tg.builder.create_load(array_obj);
+          eprintln!("rval array[i]: {}", res.as_ref::<Instruction>(&self.tg.builder.module.context).unwrap().to_string(false));
+          res
+        } else {
+          array_obj
         }
-        array_obj
       }
       ast::Expr::Cast(cast) => {
         let value = self.generate_expr(&cast.expr, false);
@@ -715,6 +707,14 @@ impl CodeGen {
       let expr = self.generate_expr(&arg, false);
       expr
     }).collect();
+
+    // Manually inline array::length.
+    if call.fname.literal == "array::length".to_string() {
+      let array = params.get(0).unwrap().clone();
+      let len_ptr = self.tg.builder.get_struct_field(array, 0).unwrap();
+      return self.tg.builder.create_load(len_ptr);
+    }
+
     let callee = self.cache_stack.get(&call.fname.literal).unwrap().clone();
     self.tg.builder.create_func_call(callee, params)
   }
@@ -732,19 +732,22 @@ pub fn codegen(ast: &Rc<ast::Linkage>, tt: String, layout: String) -> ir::module
     for decl in &tu.decls {
       if let ast::Decl::Class(class) = decl {
         let sty_ref = builder.create_struct(class.id().clone());
+        // Note: We insert the struct type into the cache, NOT the pointer of the struct type.
         class_cache.insert(class.id().clone(), sty_ref);
       }
     }
   }
 
-  let mut tg = TypeGen{ builder, class_cache };
+  let mut tg = TypeGen{
+    builder,
+    class_cache,
+    array_types: HashMap::new()
+  };
   tg.enter_linkage(ast);
 
   let mut cg = CodeGen{
     tg,
-    cache_stack: CacheStack {
-      stack: Vec::new(),
-    },
+    cache_stack: CacheStack::new(),
     loop_cond_or_end: None,
   };
 

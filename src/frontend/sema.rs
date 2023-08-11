@@ -133,15 +133,18 @@ impl Visitor for MethodHoister {
   fn visit_func(&mut self, method: &Rc<FuncDecl>) -> Rc<FuncDecl> {
     let mut new_args = method.args.clone();
     if let Some(ty) = self.under_class.clone() {
+      let row = ty.id.row;
+      let col = ty.id.col;
+      let class_name = ty.id.literal.clone();
       let ty_ref = ClassRef{
         id: ty.id.clone(),
-        class: None
+        class: Some(ty)
       };
       new_args.insert(0, Rc::new(VarDecl{
         ty: Type::Class(Rc::new(ty_ref)),
         id: Token{
-          row: ty.id.row,
-          col: ty.id.col,
+          row,
+          col,
           literal: "self".to_string(),
           value: TokenType::Identifier,
         },
@@ -152,7 +155,7 @@ impl Visitor for MethodHoister {
         id: Token{
           row: method.id.row,
           col: method.id.col,
-          literal: format!("{}::{}", ty.id.literal, method.id.literal).to_string(),
+          literal: format!("{}::{}", class_name, method.id.literal).to_string(),
           value: method.id.value.clone(),
         },
         args: new_args,
@@ -331,7 +334,7 @@ impl Visitor for SymbolResolver {
       Expr::Variable(var) => self.visit_var(var),
       Expr::BinaryOp(op) => self.visit_binary_op(op),
       Expr::UnaryOp(op) => self.visit_unary_op(op),
-      Expr::AttrAccess(_) => expr.clone(),
+      Expr::AttrAccess(aa) => self.visit_attr_access(aa),
       Expr::ArrayIndex(array_idx) => self.visit_array_index(array_idx),
       Expr::NewExpr(ne) => self.visit_new_expr(ne),
       Expr::Cast(cast) => self.visit_cast(cast),
@@ -360,22 +363,33 @@ impl Visitor for SymbolResolver {
           }
           Expr::FuncCall(call) => {
             let ty = lhs.dtype(&self.scopes);
-            let ty_name = match ty {
-              Type::Class(class) => class.id().clone(),
-              Type::Array(_) => "string".to_string(),
-              _ => panic!("Expect {} to be a class, but {}", lhs, lhs.dtype(&self.scopes))
+            let callee = match ty {
+              Type::Class(class) => {
+                let callee = class.id().clone();
+                let callee = format!("{}::{}", callee, call.fname.literal);
+                if let Some(WithID::Function(_)) = self.scopes.find(&callee) {
+                } else {
+                  panic!("{} not founded as a function", call.fname);
+                }
+                callee
+              }
+              Type::Array(_) => {
+                if call.fname.literal.eq("length") {
+                  "array::length".to_string()
+                } else {
+                  panic!("Array has no member {}", call.fname.literal);
+                }
+              }
+              _ => panic!("Expect {} to be a class, but\n{}", lhs, ty)
             };
-            let callee = format!("{}::{}", ty_name, call.fname.literal);
-            if let WithID::Function(_) = self.scopes.find(&callee).unwrap() {
-              let mut params = call.params.clone();
-              params.insert(0, lhs);
-              let fname = Token{
-                literal: callee, row:0, col: 0,
-                value: TokenType::Identifier
-              };
-              return Expr::FuncCall(Rc::new(FuncCall{rewrite:true, fname, params}));
-            }
-            panic!("{} not founded as a function", call.fname);
+            let mut params = call.params.clone();
+            // Use the "self." as the first parameter of a class method.
+            params.insert(0, lhs);
+            let fname = Token{
+              literal: callee, row:0, col: 0,
+              value: TokenType::Identifier
+            };
+            return Expr::FuncCall(Rc::new(FuncCall{rewrite:true, fname, params}));
           }
           _ => {
             panic!("Expect {} to be an class attribute", op.rhs);
@@ -396,6 +410,16 @@ impl Visitor for SymbolResolver {
   fn visit_func_call(&mut self, call: &Rc<super::ast::FuncCall>) -> Rc<super::ast::FuncCall> {
     let params:Vec<Expr> = call.params.iter().map(|arg| self.visit_expr(arg)).collect();
     let func = find_in_scope!(self.scopes, &call.fname.literal, WithID::Function(func) => Some(func.clone()));
+    // Special case for array::length
+    if call.fname.literal == "array::length" {
+      if self.check_func_sig && !call.rewrite {
+        if params.len() != 1 {
+          panic!("Function @{} expect 1 args, but got {}",
+            call.fname, params.len());
+        }
+      }
+      return call.clone()
+    }
     if let Some(callee) = &func {
       if callee.args.len() != params.len() {
         panic!("Function @{} expect {} args, but got {}",

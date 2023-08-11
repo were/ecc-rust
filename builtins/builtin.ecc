@@ -30,14 +30,13 @@ func toString(i32 x) -> string {
     res.data_[neg + cnt - 1 - i] = (x % 10 + 48) as i8;
     x = x / 10;
   }
-  res.length_ = cnt + neg;
   return res;
 }
 
 class string {
 
   func length() -> i32 {
-    return self.length_;
+    return self.data_.length() - 1;
   }
 
   func parseInt() -> i32 {
@@ -48,7 +47,6 @@ class string {
     return self.data_[i] as i32;
   }
 
-  i32 length_;
   i8[] data_;
 }
 
