@@ -92,7 +92,12 @@ impl <'ctx>Codegen<'ctx> {
             CastOp::Bitcast => {
               let mut src = self.emit_value(inst.get_operand(0).unwrap(), false);
               src.last_mut().unwrap().comment = "Bitcast is a noop".to_string();
-              vec![src.remove(0)]
+              src
+            }
+            CastOp::SignExt => {
+              let mut src = self.emit_value(inst.get_operand(0).unwrap(), false);
+              src.last_mut().unwrap().comment = "SignExt is a noop".to_string();
+              src
             }
             _ => {
               let mut res = vec![WASMInst::iconst(value.skey, 0)];
@@ -163,9 +168,14 @@ impl <'ctx>Codegen<'ctx> {
         InstOpcode::Load(_) => {
           let load = inst.as_sub::<Load>().unwrap();
           let mut value = self.emit_value(load.get_ptr(), false);
-          let mut res = WASMInst::load(inst.get_skey(), value.remove(0));
+          let bits = inst.get_type().get_scalar_size_in_bits(self.module);
+          let mut res = WASMInst::load(inst.get_skey(), bits, value.remove(0));
           res.comment = format!("load: {}", inst.to_string(false));
-          vec![res]
+          if bits == 8 {
+            vec![WASMInst::binop(inst.get_skey(), &BinaryOp::And, res, WASMInst::iconst(0, 255))]
+          } else {
+            vec![res]
+          }
         }
         _ => {
           let mut res = vec![WASMInst::iconst(value.skey, 0)];

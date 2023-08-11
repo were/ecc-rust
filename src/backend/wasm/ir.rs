@@ -30,7 +30,7 @@ pub(super) enum WASMOpcode {
   /// Store value to memory.
   Store(usize),
   /// Load value to memory.
-  Load,
+  Load(usize),
   /// Return instruction.
   Return,
 }
@@ -122,10 +122,10 @@ impl WASMInst {
     }
   }
 
-  pub(super) fn load(skey: usize, addr: WASMInst) -> WASMInst {
+  pub(super) fn load(skey: usize, bits: usize, addr: WASMInst) -> WASMInst {
     WASMInst {
       _skey: skey,
-      opcode: WASMOpcode::Load,
+      opcode: WASMOpcode::Load(bits),
       operands: vec![Box::new(addr)],
       comment: String::new(),
     }
@@ -350,7 +350,7 @@ impl WASMInst {
         let indent = " ".repeat(*indent);
         format!("{}(call ${}\n{}\n{})", indent, callee, operands, indent)
       }
-      WASMOpcode::Load => {
+      WASMOpcode::Load(_) => {
         let addr = {
           *indent += 1;
           let addr = self.operands[0].to_string(indent);
