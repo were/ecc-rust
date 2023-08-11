@@ -644,22 +644,26 @@ impl CodeGen {
           // Array type.
           let ptr_ty = ty.as_ref::<PointerType>(&self.tg.builder.module.context).unwrap();
           let array_ty = ptr_ty.get_pointee_ty();
+          let obj_ptr_ty = array_ty
+            .as_ref::<StructType>(&self.tg.builder.module.context)
+            .unwrap()
+            .get_attr(1);
           // Array length.
           let array_len = self.generate_expr(&array.dims[0], false);
           // Write array length to object's first field.
           let obj_len = self.tg.builder.get_struct_field(obj.clone(), 0, "array.length").unwrap();
           self.tg.builder.create_store(array_len.clone(), obj_len).unwrap();
           // Array size.
-          let obj_size = array_ty.get_scalar_size_in_bits(&self.tg.builder.module) / 8;
+          let elem_ty = obj_ptr_ty
+            .as_ref::<PointerType>(&self.tg.builder.module.context)
+            .unwrap()
+            .get_pointee_ty();
+          let obj_size = elem_ty.get_scalar_size_in_bits(&self.tg.builder.module) / 8;
           let obj_size = self.tg.builder.context().const_value(i32ty.clone(), obj_size as u64);
           // Allocate array buffer.
           let array_size = self.tg.builder.create_mul(array_len, obj_size);
           let payload = self.tg.builder.create_func_call(malloc, vec![array_size]);
           // Write array buffer to object's second field.
-          let obj_ptr_ty = array_ty
-            .as_ref::<StructType>(&self.tg.builder.module.context)
-            .unwrap()
-            .get_attr(1);
           let payload = self.tg.builder.create_bitcast(payload, obj_ptr_ty.clone());
           let payload_ptr = self.tg.builder.get_struct_field(obj.clone(), 1, "array.payload").unwrap();
           self.tg.builder.create_store(payload, payload_ptr).unwrap();

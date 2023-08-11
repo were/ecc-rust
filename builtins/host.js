@@ -23,7 +23,7 @@ function __print_int__(x) {
 }
 
 memory = null
-mem_i8view = null
+mem_u8view = null
 input_i8view = null
 
 memory_size = 65536 
@@ -32,24 +32,30 @@ heap_size = static_size
 
 function __print_str__(array) {
   var len =
-    mem_i8view[array + 0] + 
-    (mem_i8view[array + 1] << 8) +
-    (mem_i8view[array + 2] << 16) +
-    (mem_i8view[array + 3] << 24);
+    (mem_u8view[array + 0]) + 
+    (mem_u8view[array + 1] * 256) +
+    (mem_u8view[array + 2] * 65536) +
+    (mem_u8view[array + 3] * 16777216);
   var offset =
-    mem_i8view[array + 4] + 
-    (mem_i8view[array + 5] << 8) +
-    (mem_i8view[array + 6] << 16) +
-    (mem_i8view[array + 7] << 24);
-  // console.log('len:', len, 'offset:', offset);
+    (mem_u8view[array + 4]) + 
+    (mem_u8view[array + 5] * 256) +
+    (mem_u8view[array + 6] * 65536) +
+    (mem_u8view[array + 7] * 16777216);
+  // console.log(mem_u8view[array + 0], mem_u8view[array + 1], mem_u8view[array + 2], mem_u8view[array + 3]);
+  // console.log(mem_u8view[array + 4], mem_u8view[array + 5], mem_u8view[array + 6], mem_u8view[array + 7]);
+  // console.log('array: ', array, 'len:', len, 'offset:', offset);
   for (i = 0; i < len; ++i) {
-    process.stdout.write(String.fromCharCode(mem_i8view[offset + i]))
+    process.stdout.write(String.fromCharCode(mem_u8view[offset + i]))
   }
 }
 
 function __malloc__(size) {
-  res = heap_size
-  heap_size += size
+  if (heap_size % 8 != 0) {
+    heap_size += 8 - heap_size % 8;
+  }
+  res = heap_size;
+  heap_size += size;
+  // console.log('malloc', res, 'size', size);
   return res
 }
 
@@ -84,8 +90,7 @@ imports = {
 }
 
 WebAssembly.instantiate(fd, imports).then(function (result) {
-  mem_i8view = new Int8Array(__linear_memory.buffer)
-  // mem_i32view = new Int32Array(__linear_memory.buffer)
+  mem_u8view = new Uint8Array(__linear_memory.buffer)
   if (vbs) {
     console.time('Exec time');
   }

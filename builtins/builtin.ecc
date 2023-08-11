@@ -28,7 +28,9 @@ func toString(i32 x) -> string {
     x = 0 - x;
   }
   for i in 0..cnt {
-    res.data_[neg + cnt - 1 - i] = (x % 10 + 48) as i8;
+    let i32 value = (x % 10 + 48);
+    let i32 idx = neg + cnt - 1 - i;
+    res.data_[idx] = value as i8;
     x = x / 10;
   }
   return res;
