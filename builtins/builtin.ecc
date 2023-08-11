@@ -20,8 +20,9 @@ func toString(i32 x) -> string {
     cnt = 1;
   }
   let string res = new string;
-  res.data_ = new i8[cnt + 1 + neg];
-  res.data_[cnt + neg] = 0 as i8;
+  let i32 length = cnt + neg;
+  res.data_ = new i8[length];
+  // res.data_[cnt + neg] = 0 as i8;
   if neg == 1 {
     res.data_[0] = 45 as i8;
     x = 0 - x;
@@ -36,7 +37,7 @@ func toString(i32 x) -> string {
 class string {
 
   func length() -> i32 {
-    return self.data_.length() - 1;
+    return self.data_.length();
   }
 
   func parseInt() -> i32 {

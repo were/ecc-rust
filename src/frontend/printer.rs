@@ -230,20 +230,32 @@ fn print_inline_asm(asm: &InlineAsm, f: &mut fmt::Formatter, indent: &String) ->
   Ok(())
 }
 
+impl fmt::Display for FuncCall {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    return print_func_call(&self, f, &"".to_string());
+  }
+}
+
 fn print_func_call(call: &FuncCall, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
   write!(f, "Call\n{}|->Func={}\n{}`->Params\n", indent, call.fname.literal, indent).unwrap();
   let new_indent = format!("{}   ", indent);
   for (i, elem) in call.params.iter().enumerate() {
     if i != call.params.len() - 1 {
-      write!(f, "{}|->Param_{}=", new_indent, i).unwrap();
+      write!(f, "{}|->{}=", new_indent, i).unwrap();
       print_expr(&elem, f, &format!("{}|  ", new_indent)).unwrap();
       write!(f, "\n").unwrap();
     } else {
-      write!(f, "{}`->Param_{}=", new_indent, i).unwrap();
+      write!(f, "{}`->{}=", new_indent, i).unwrap();
       print_expr(&elem, f, &format!("{}   ", new_indent)).unwrap();
     }
   }
   Ok(())
+}
+
+impl fmt::Display for ReturnStmt {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    return print_ret(&self, f, &"".to_string());
+  }
 }
 
 fn print_ret(ret: &ReturnStmt, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {

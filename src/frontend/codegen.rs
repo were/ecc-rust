@@ -202,7 +202,14 @@ impl CodeGen {
   fn generate_translation_unit(&mut self, tu: &Rc<ast::TranslateUnit>) {
     for decl in &tu.decls {
       if let ast::Decl::Func(func) = decl {
-        let ret_ty = self.tg.type_to_llvm(&func.ty);
+        let ret_ty = if func.id.literal == "malloc".to_string() {
+          // If it is "malloc", return a raw pointer.
+          let i8ty = self.tg.builder.context().int_type(8);
+          self.tg.builder.context().pointer_type(i8ty)
+        } else {
+          // If not, respect the compiler.
+          self.tg.type_to_llvm(&func.ty)
+        };
         let args_ty :Vec<TypeRef> = func.args.iter().map(|arg| {
           let res = self.tg.type_to_llvm(&arg.ty);
           if *res.kind() == ir::types::TKindCode::StructType {
@@ -313,7 +320,12 @@ impl CodeGen {
       self.tg.builder.create_return(None);
       self.tg.builder.module.context.void_type()
     };
-    assert!(expr_ty == func_ret_ty);
+    if expr_ty != func_ret_ty {
+      let func = self.tg.builder.get_current_function().unwrap();
+      let func = func.as_ref::<Function>(&self.tg.builder.module.context).unwrap();
+      panic!("return type mismatch {} while function @{} returns {}",
+        ret, func.get_name(), func_ret_ty.to_string(&self.tg.builder.module.context));
+    }
   }
 
   fn generate_stmt(&mut self, stmt: &ast::Stmt) {
@@ -474,7 +486,7 @@ impl CodeGen {
         let i32ty = self.tg.builder.context().int_type(32);
         let len = self.tg.builder.context().const_value(i32ty.clone(), len as u64);
         let zero = self.tg.builder.context().const_value(i32ty.clone(), 0);
-        let i8array_ptr = self.tg.builder.create_gep(i8ptr, str_value, vec![zero.clone(), zero.clone()], true);
+        let i8array_ptr = self.tg.builder.create_gep(i8ptr, str_value, vec![zero.clone(), zero.clone()], true, "arraycast".to_string());
         let i8array_obj = self.tg.builder.create_global_struct(i8array, vec![len, i8array_ptr]);
         let string_ty = self.tg.class_cache.get("string").unwrap().clone();
         // let str_ptr = self.tg.builder.get_struct_field(i8array, 0).unwrap();
@@ -499,7 +511,7 @@ impl CodeGen {
         // "This" is expected to be a pointer to a struct.
         let this = self.generate_expr(&aa.this, false);
         // Get the pointer's underlying struct type.
-        let res = self.tg.builder.get_struct_field(this, aa.idx).unwrap();
+        let res = self.tg.builder.get_struct_field(this, aa.idx, "").unwrap();
         if is_lval {
           res
         } else {
@@ -616,9 +628,17 @@ impl CodeGen {
         let malloc = self.cache_stack.get(&"malloc".to_string()).unwrap().clone();
         let i32ty = self.tg.builder.context().int_type(32);
         let ty = self.tg.type_to_llvm(&ne.dtype);
-        let size = ty.get_scalar_size_in_bits(&self.tg.builder.module) / 8;
-        let size = self.tg.builder.context().const_value(i32ty.clone(), (size / 8) as u64);
+        let size = {
+          let scalar_ty = ty
+            .as_ref::<PointerType>(&self.tg.builder.module.context).unwrap()
+            .get_pointee_ty();
+          let res = scalar_ty.get_scalar_size_in_bits(&self.tg.builder.module);
+          // eprintln!("{}: ty: {}, size: {}", line!(), scalar_ty.to_string(&self.tg.builder.module.context), res);
+          res / 8
+        };
+        let size = self.tg.builder.context().const_value(i32ty.clone(), size as u64);
         let obj = self.tg.builder.create_func_call(malloc.clone(), vec![size]);
+        let obj = self.tg.builder.create_bitcast(obj, ty.clone());
 
         if let ast::Type::Array(array) = &ne.dtype {
           // Array type.
@@ -627,7 +647,7 @@ impl CodeGen {
           // Array length.
           let array_len = self.generate_expr(&array.dims[0], false);
           // Write array length to object's first field.
-          let obj_len = self.tg.builder.get_struct_field(obj.clone(), 0).unwrap();
+          let obj_len = self.tg.builder.get_struct_field(obj.clone(), 0, "array.length").unwrap();
           self.tg.builder.create_store(array_len.clone(), obj_len).unwrap();
           // Array size.
           let obj_size = array_ty.get_scalar_size_in_bits(&self.tg.builder.module) / 8;
@@ -641,7 +661,7 @@ impl CodeGen {
             .unwrap()
             .get_attr(1);
           let payload = self.tg.builder.create_bitcast(payload, obj_ptr_ty.clone());
-          let payload_ptr = self.tg.builder.get_struct_field(obj.clone(), 1).unwrap();
+          let payload_ptr = self.tg.builder.get_struct_field(obj.clone(), 1, "array.payload").unwrap();
           self.tg.builder.create_store(payload, payload_ptr).unwrap();
         }
 
@@ -656,16 +676,11 @@ impl CodeGen {
         // }
         for (i, idx) in indices.iter().enumerate() {
           // array_obj = struct { length=i32, payload=ptr } where ptr is the pointer to the array.
-          let payload_ptr = self.tg.builder.get_struct_field(array_obj.clone(), 1).unwrap();
-          eprintln!("get array-attr: {}", payload_ptr.as_ref::<Instruction>(&self.tg.builder.module.context).unwrap().to_string(false));
-          eprintln!("attr_ty {}", payload_ptr.get_type(&self.tg.builder.module.context).to_string(&self.tg.builder.module.context));
+          let payload_ptr = self.tg.builder.get_struct_field(array_obj.clone(), 1, "array.payload").unwrap();
           // Dereference &array_obj.payload where payload = array_obj.payload
           let payload = self.tg.builder.create_load(payload_ptr);
-          eprintln!("get array-ptr: {}", payload.as_ref::<Instruction>(&self.tg.builder.module.context).unwrap().to_string(false));
-          eprintln!("array_ptr_ty {}", payload.get_type(&self.tg.builder.module.context).to_string(&self.tg.builder.module.context));
           // &array_ptr[idx]
           array_obj = self.tg.builder.index_array(payload, idx.clone()).unwrap();
-          eprintln!("array_obj_ty {}", array_obj.get_type(&self.tg.builder.module.context).to_string(&self.tg.builder.module.context));
           // If we have further indices, we need to use it as a right-value.
           // Dereference the address.
           if i != indices.len() - 1 {
@@ -713,7 +728,7 @@ impl CodeGen {
     // Manually inline array::length.
     if call.fname.literal == "array::length".to_string() {
       let array = params.get(0).unwrap().clone();
-      let len_ptr = self.tg.builder.get_struct_field(array, 0).unwrap();
+      let len_ptr = self.tg.builder.get_struct_field(array, 0, "array.length").unwrap();
       return self.tg.builder.create_load(len_ptr);
     }
 

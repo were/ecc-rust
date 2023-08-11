@@ -41,6 +41,7 @@ function __print_str__(array) {
     (mem_i8view[array + 5] << 8) +
     (mem_i8view[array + 6] << 16) +
     (mem_i8view[array + 7] << 24);
+  // console.log('len:', len, 'offset:', offset);
   for (i = 0; i < len; ++i) {
     process.stdout.write(String.fromCharCode(mem_i8view[offset + i]))
   }

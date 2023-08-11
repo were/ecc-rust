@@ -428,7 +428,7 @@ impl Visitor for SymbolResolver {
       if self.check_func_sig && !call.rewrite {
         for (i, (arg, param)) in Iterator::zip(callee.args.iter(), params.iter()).enumerate() {
           if !type_eq(&arg.ty, &param.dtype(&self.scopes)) {
-            panic!("Expect argument {} to be {}, but parameter's type is {}", i, arg.ty, param.dtype(&self.scopes));
+            panic!("Expect argument {} to be {}, but parameter's type is {}\n{}", i, arg.ty, param.dtype(&self.scopes), call);
           }
         }
       }
