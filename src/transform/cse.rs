@@ -2,9 +2,11 @@ use std::collections::HashMap;
 
 use trinity::ir::{module::Module, value::instruction::{InstMutator, InstOpcode}, Instruction, ValueRef};
 
-use super::{ssa::{DomInfo, a_dominates_b}, dce};
+use crate::analysis::dom_tree::DominatorTree;
 
-fn analysis<'ctx>(module: &'ctx Module, dom: &Vec<DomInfo>) -> Vec<(ValueRef, Vec<ValueRef>)> {
+use super::dce;
+
+fn analysis<'ctx>(module: &'ctx Module, dt: &DominatorTree) -> Vec<(ValueRef, Vec<ValueRef>)> {
   let mut to_eliminate = HashMap::new();
   for func in module.func_iter() {
     for block in func.block_iter() {
@@ -34,10 +36,7 @@ fn analysis<'ctx>(module: &'ctx Module, dom: &Vec<DomInfo>) -> Vec<(ValueRef, Ve
       let a = inst.as_ref::<Instruction>(&module.context).unwrap();
       if insts.iter().all(|b| {
         let b = b.as_ref::<Instruction>(&module.context).unwrap();
-        eprintln!("A: {}", a.to_string(false));
-        eprintln!("B: {}", b.to_string(false));
-        eprintln!("dom? {}", a_dominates_b(dom, &a, &b));
-        a_dominates_b(dom, &a, &b)
+        dt.a_dominates_b(&a, &b)
       }) {
         let x = insts.iter()
           .filter(|x| x.skey != inst.skey)
@@ -65,9 +64,9 @@ pub fn rewrite(module: &mut Module, to_replace: Vec<(ValueRef, Vec<ValueRef>)>) 
   return res;
 }
 
-pub fn transform(mut module: Module, dom: &Vec<DomInfo>) -> Module {
+pub fn transform(mut module: Module, dt: &DominatorTree) -> Module {
   loop {
-    let to_replace = analysis(&module, dom);
+    let to_replace = analysis(&module, dt);
     if !rewrite(&mut module, to_replace) {
       break;
     }
