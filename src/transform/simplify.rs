@@ -296,7 +296,7 @@ pub fn merge_trivial_branches(module: &mut Module) -> bool {
   let mut modified = false;
   while let Some((br, to_replace)) = has_trivial_branch(module) {
     let src = br.get_parent().as_super();
-    let func = br.get_parent().get_parent().get_skey();
+    let func_key = br.get_parent().get_parent().get_skey();
     let erase_br = br.as_super();
     let br = br.as_sub::<BranchInst>().unwrap();
     let dest = br.dest_label().unwrap();
@@ -315,8 +315,9 @@ pub fn merge_trivial_branches(module: &mut Module) -> bool {
       // let block = src.as_mut::<Block>(&mut module.context).unwrap();
       // block.add_user(&phi_value);
     }
-    let func = Function::from_skey(func).as_mut::<Function>(&mut module.context).unwrap();
+    let func = Function::from_skey(func_key).as_mut::<Function>(&mut module.context).unwrap();
     func.basic_blocks_mut().retain(|b| *b != dest);
+    module.context.dispose(dest);
     modified = true;
   }
   return modified;
