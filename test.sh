@@ -25,13 +25,17 @@ cat $FILE | sed '1,/\[Metadata.stdout\]/d' | sed '/\[Metadata.end\]/,$d' | awk '
 echo "Input data and reference output extracted!"
 echo "Run the compiled binaries!"
 
-node $REPO/./builtins/host.js a.wasm < input > output
+node $REPO/./builtins/host.js a.wasm --verbose < input > raw_output
+
+tail -n 2 raw_output
+
+head -n $(( $(cat raw_output | wc -l) - 2 )) raw_output > output
 
 echo "Check the result..."
 
 if diff -q output reference > /dev/null; then
   echo "Correct!"
-  rm -f a.wasm input output reference compile.log
+  rm -f a.wasm input output raw_output reference compile.log
   echo "Everything cleaned up!"
 else
   echo "Output wrong!"
