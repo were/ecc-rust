@@ -57,7 +57,7 @@ fn parse_id_and_suffix(tokenizer: &mut Lexer) -> Result<Expr, String> {
 
   if tokenizer.lookahead(TokenType::LPran) {
     let params = parse_params(tokenizer).unwrap();
-    return Ok(Expr::FuncCall(Rc::new(FuncCall{fname: id, params})));
+    return Ok(Expr::FuncCall(Rc::new(FuncCall{rewrite:false, fname: id, params})));
   }
 
   if tokenizer.lookahead(TokenType::LBracket) {

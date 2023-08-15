@@ -1,4 +1,4 @@
-func __print_str__(i8[] s, i32 len) -> void;
+func __print_str__(i8[] s) -> void;
 
 func __print_int__(i32 x) -> void;
 
@@ -7,7 +7,7 @@ func nextInt() -> i32;
 func malloc(i32 size) -> i8[];
 
 func print(string s) -> void {
-  __print_str__(s.data_, s.length_);
+  __print_str__(s.data_);
   return;
 }
 

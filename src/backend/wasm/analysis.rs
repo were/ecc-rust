@@ -24,17 +24,18 @@ pub(super) fn gather_locals(func: &FunctionRef) -> HashMap<usize, String> {
         },
         _ => {}
       }
-      if let InstOpcode::Phi = inst.get_opcode() { // If this is not a Phi
-      } else if let InstOpcode::Load(_) = inst.get_opcode() { // If this is not a Load
-      } else {
-        let mut user_iter = inst.user_iter();
-        // If we have a user
-        if let Some(user) = user_iter.next() {
-          // But just a single user
-          if user_iter.next().is_none() {
-            // And this user belongs to this block
-            if user.get_parent().get_skey() == inst.get_parent().get_skey() {
-              continue;
+      match inst.get_opcode() {
+        InstOpcode::Phi | InstOpcode::Load(_) | InstOpcode::Call => {}
+        _ => {
+          let mut user_iter = inst.user_iter();
+          // If we have a user
+          if let Some(user) = user_iter.next() {
+            // But just a single user
+            if user_iter.next().is_none() {
+              // And this user belongs to this block
+              if user.get_parent().get_skey() == inst.get_parent().get_skey() {
+                continue;
+              }
             }
           }
         }

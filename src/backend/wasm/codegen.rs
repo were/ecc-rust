@@ -92,7 +92,12 @@ impl <'ctx>Codegen<'ctx> {
             CastOp::Bitcast => {
               let mut src = self.emit_value(inst.get_operand(0).unwrap(), false);
               src.last_mut().unwrap().comment = "Bitcast is a noop".to_string();
-              vec![src.remove(0)]
+              src
+            }
+            CastOp::SignExt => {
+              let mut src = self.emit_value(inst.get_operand(0).unwrap(), false);
+              src.last_mut().unwrap().comment = "SignExt is a noop".to_string();
+              src
             }
             _ => {
               let mut res = vec![WASMInst::iconst(value.skey, 0)];
@@ -163,9 +168,14 @@ impl <'ctx>Codegen<'ctx> {
         InstOpcode::Load(_) => {
           let load = inst.as_sub::<Load>().unwrap();
           let mut value = self.emit_value(load.get_ptr(), false);
-          let mut res = WASMInst::load(inst.get_skey(), value.remove(0));
+          let bits = inst.get_type().get_scalar_size_in_bits(self.module);
+          let mut res = WASMInst::load(inst.get_skey(), bits, value.remove(0));
           res.comment = format!("load: {}", inst.to_string(false));
-          vec![res]
+          if bits == 8 {
+            vec![WASMInst::binop(inst.get_skey(), &BinaryOp::And, res, WASMInst::iconst(0, 255))]
+          } else {
+            vec![res]
+          }
         }
         _ => {
           let mut res = vec![WASMInst::iconst(value.skey, 0)];
@@ -355,7 +365,12 @@ impl <'ctx>Codegen<'ctx> {
           while res.len() < n {
             res.push(0);
           }
-          res.extend(self.to_linear_buffer(x))
+          if let Some(obj_init) = x.as_ref::<ConstObject>(&self.module.context) {
+            let value = self.allocated_globals.get(&obj_init.get_skey()).unwrap();
+            res.extend(value.to_le_bytes().to_vec());
+          } else {
+            res.extend(self.to_linear_buffer(x))
+          }
         });
         res
       }
@@ -400,14 +415,13 @@ impl <'ctx>Codegen<'ctx> {
     let mut visited = vec![false; module.context.capacity()];
     res.push_str("(module\n");
     res.push_str(" (type (;0;) (func (param i32) (result i32)))\n"); // malloc
-    res.push_str(" (type (;1;) (func (param i32 i32)))\n");
-    res.push_str(" (type (;2;) (func (param i32)))\n");
-    res.push_str(" (type (;3;) (func (result i32)))\n");
+    res.push_str(" (type (;1;) (func (param i32)))\n");
+    res.push_str(" (type (;2;) (func (result i32)))\n");
     res.push_str(" (import \"env\" \"__linear_memory\" (memory (;0;) 1))\n");
     res.push_str(" (import \"env\" \"malloc\" (func $malloc (type 0)))\n");
     res.push_str(" (import \"env\" \"__print_str__\" (func $__print_str__ (type 1)))\n");
-    res.push_str(" (import \"env\" \"__print_int__\" (func $__print_int__ (type 2)))\n");
-    res.push_str(" (import \"env\" \"nextInt\" (func $nextInt (type 3)))\n");
+    res.push_str(" (import \"env\" \"__print_int__\" (func $__print_int__ (type 1)))\n");
+    res.push_str(" (import \"env\" \"nextInt\" (func $nextInt (type 2)))\n");
     self.initialize_global_values();
     for i in 0..module.get_num_functions() {
       let func = module.get_function(i).unwrap();

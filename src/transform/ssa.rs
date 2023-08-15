@@ -212,45 +212,54 @@ fn find_value_dominator(
 }
 
 fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap<usize, usize>) {
+  let mut phi_to_alloc = HashMap::new();
+  let mut builder = Builder::new(module);
   let mut phis = HashMap::new();
-  // Register values to be phi-resolved
-  for func in module.func_iter() {
-    for block in func.block_iter() {
-      let predeccessors = block.pred_iter().collect::<Vec<_>>();
-      if predeccessors.len() > 1 {
-        // The current block is the frontier
-        let frontier = block.get_skey();
-        phis.insert(frontier, HashSet::new());
-        for user_inst in predeccessors.iter() {
-          let pred = user_inst;
-          let mut runner = pred.get_parent().get_skey();
-          while runner != workspace[block.get_skey()].idom {
-            let runner_block = Block::from_skey(runner);
-            let runner_block = runner_block.as_ref::<Block>(&module.context).unwrap();
-            runner_block.inst_iter().rev().for_each(|inst| {
-              if let Some(store) = inst.as_sub::<Store>() {
-                if let Some(store_addr) = store.get_ptr().as_ref::<Instruction>(&module.context) {
-                  if let InstOpcode::Alloca(_) = store_addr.get_opcode() {
-                    phis.get_mut(&frontier).unwrap().insert(store_addr.get_skey());
+  loop {
+    let mut to_inject = Vec::new();
+    // Register values to be phi-resolved
+    for func in builder.module.func_iter() {
+      for block in func.block_iter() {
+        let predeccessors = block.pred_iter().collect::<Vec<_>>();
+        if predeccessors.len() > 1 {
+          // The current block is the frontier
+          let frontier = block.get_skey();
+          if !phis.contains_key(&frontier) {
+            phis.insert(frontier, HashSet::new());
+          }
+          for user_inst in predeccessors.iter() {
+            let pred = user_inst;
+            let mut runner = pred.get_parent().get_skey();
+            while runner != workspace[block.get_skey()].idom {
+              let runner_block = Block::from_skey(runner);
+              let runner_block = runner_block.as_ref::<Block>(&builder.module.context).unwrap();
+              runner_block.inst_iter().rev().for_each(|inst| {
+                if let Some(store) = inst.as_sub::<Store>() {
+                  if let Some(store_addr) = store.get_ptr().as_ref::<Instruction>(&builder.module.context) {
+                    if let InstOpcode::Alloca(_) = store_addr.get_opcode() {
+                      if phis.get_mut(&frontier).unwrap().insert(store_addr.get_skey()) {
+                        eprintln!("Injecting PHI node for {}", inst.to_string(false));
+                        to_inject.push((frontier, store_addr.get_skey()));
+                      }
+                    }
                   }
                 }
+              });
+              if workspace[runner].depth == 1 {
+                break;
               }
-            });
-            if workspace[runner].depth == 1 {
-              break;
+              runner = workspace[runner].idom;
             }
-            runner = workspace[runner].idom;
           }
         }
       }
     }
-  }
-  let mut phi_to_alloc = HashMap::new();
-  // Inject preliminary PHI nodes.
-  let mut builder = Builder::new(module);
-  for (block_skey, addrs) in phis.iter() {
-    let block = Block::from_skey(*block_skey);
-    for alloc_skey in addrs.iter() {
+    if to_inject.is_empty() {
+      break;
+    }
+    // Inject preliminary PHI nodes.
+    for (block_skey, alloc_skey) in to_inject.iter() {
+      let block = Block::from_skey(*block_skey);
       let alloc = Instruction::from_skey(*alloc_skey);
       let ptr_ty = alloc.get_type(&builder.module.context);
       let ptr_ty = ptr_ty.as_ref::<PointerType>(&builder.module.context).unwrap();
@@ -266,6 +275,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap
         let phi = phi.as_mut::<Instruction>(builder.context()).unwrap();
         phi.set_comment(format!("derive from {}", comment));
       }
+      eprintln!("[SSA] {} from {}", phi.to_string(&builder.module.context, true), comment);
       builder.create_store(phi, alloc).unwrap();
     }
   }
@@ -300,8 +310,9 @@ fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap
                 workspace,
                 &phi_to_alloc,
                 false) {
-                eprintln!("[SSA] {}: [ {}, {} ]",
+                eprintln!("[SSA] {} @{}: [ {}, {} ]",
                   inst.get_name(),
+                  block.get_name(),
                   incoming_value.to_string(&builder.module.context, true),
                   incoming_block.as_ref::<Block>(&builder.module.context).unwrap().get_name());
                 (incoming_value, incoming_block)

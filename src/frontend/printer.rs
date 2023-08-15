@@ -64,7 +64,8 @@ fn print_decl(decl: &Decl, f: &mut fmt::Formatter, indent: &String) -> fmt::Resu
 fn print_new_expr(ne: &NewExpr, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
   write!(f, "New 0x{:x}\n", ne as *const NewExpr as usize).unwrap();
   write!(f, "{}`->Type=", indent).unwrap();
-  print_type(&ne.dtype, f, indent)
+  let indent = format!("{}     ", indent);
+  print_type(&ne.dtype, f, &indent)
 }
 
 fn print_class(class: &ClassDecl, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
@@ -229,20 +230,32 @@ fn print_inline_asm(asm: &InlineAsm, f: &mut fmt::Formatter, indent: &String) ->
   Ok(())
 }
 
+impl fmt::Display for FuncCall {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    return print_func_call(&self, f, &"".to_string());
+  }
+}
+
 fn print_func_call(call: &FuncCall, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
   write!(f, "Call\n{}|->Func={}\n{}`->Params\n", indent, call.fname.literal, indent).unwrap();
   let new_indent = format!("{}   ", indent);
   for (i, elem) in call.params.iter().enumerate() {
     if i != call.params.len() - 1 {
-      write!(f, "{}|->Param_{}=", new_indent, i).unwrap();
+      write!(f, "{}|->{}=", new_indent, i).unwrap();
       print_expr(&elem, f, &format!("{}|  ", new_indent)).unwrap();
       write!(f, "\n").unwrap();
     } else {
-      write!(f, "{}`->Param_{}=", new_indent, i).unwrap();
+      write!(f, "{}`->{}=", new_indent, i).unwrap();
       print_expr(&elem, f, &format!("{}   ", new_indent)).unwrap();
     }
   }
   Ok(())
+}
+
+impl fmt::Display for ReturnStmt {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    return print_ret(&self, f, &"".to_string());
+  }
 }
 
 fn print_ret(ret: &ReturnStmt, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
@@ -333,27 +346,26 @@ fn print_array_index(index: &ArrayIndex, f: &mut fmt::Formatter, indent: &String
 }
 
 fn print_attr_access(access: &AttrAccess, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
-  write!(f, "AttrAccess\n").unwrap();
+  write!(f, "AttrAccess \".\"\n").unwrap();
   write!(f, "{}|->This=", indent).unwrap();
-  print_expr(&access.this, f, &format!("{}|  ", indent)).unwrap();
+  print_expr(&access.this, f, &format!("{}|       ", indent)).unwrap();
   write!(f, "\n{}`->Attr={} ({})", indent, access.attr, access.idx)
 }
 
 fn print_binary_op(op: &BinaryOp, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
   write!(f, "BinaryOp {}\n", op.op).unwrap();
   write!(f, "{}|->A=", indent).unwrap();
-  print_expr(&op.lhs, f, &format!("{}|  ", indent)).unwrap();
+  print_expr(&op.lhs, f, &format!("{}|    ", indent)).unwrap();
   write!(f, "\n{}`->B=", indent).unwrap();
-  print_expr(&op.rhs, f, &format!("{}   ", indent))
+  print_expr(&op.rhs, f, &format!("{}     ", indent))
 }
 
-fn print_str_imm(s: &StrImm, f: &mut fmt::Formatter, _indent: &String) -> fmt::Result {
+fn print_str_imm(s: &StrImm, f: &mut fmt::Formatter, _: &String) -> fmt::Result {
   write!(f, "StringImm {}", s.token.literal)
 }
 
-fn print_var(var: &Variable, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
-  write!(f, "Variable {} 0x{:x}\n", var.id, (&*var.decl) as *const VarDecl as usize).unwrap();
-  write!(f, "{}`->Name={}", indent, var.id())
+fn print_var(var: &Variable, f: &mut fmt::Formatter, _: &String) -> fmt::Result {
+  write!(f, "Variable {} 0x{:x}", var.id, (&*var.decl) as *const VarDecl as usize)
 }
 
 fn print_type(ty: &Type, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
@@ -372,15 +384,20 @@ impl fmt::Display for Type {
 
 fn print_array_type(ty: &ArrayType, f: &mut fmt::Formatter, indent: &String) -> fmt::Result {
   write!(f, "ArrayType").unwrap();
+  let indent = format!("{}   ", indent);
   write!(f, "\n{}|->Scalar=", indent).unwrap();
-  print_type(&ty.scalar_ty, f, &format!("{}|  ", indent)).unwrap();
+  print_type(&ty.scalar_ty, f, &indent).unwrap();
   for (i, j) in ty.dims.iter().enumerate() {
+    let prefix = " ".repeat(i.to_string().len());
     if i == ty.dims.len() - 1 {
-      write!(f, "\n{}`->Dimension_{}=", indent, i).unwrap();
+      write!(f, "\n{}`->Dim_{}=", indent, i).unwrap();
+      let indent = format!("{}        {}", indent, prefix);
+      print_expr(j, f, &indent).unwrap();
     } else {
-      write!(f, "\n{}|->Dimension_{}=", indent, i).unwrap();
+      write!(f, "\n{}|->Dim_{}=", indent, i).unwrap();
+      let indent = format!("{}        {}", indent, prefix);
+      print_expr(j, f, &indent).unwrap();
     }
-    print_expr(j, f, indent).unwrap();
   }
   Ok(())
 }

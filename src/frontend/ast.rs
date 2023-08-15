@@ -252,6 +252,16 @@ impl Expr {
       Expr::FuncCall(f) => {
         if let Some(callee) = find_in_scope!(symbols, &f.fname.literal, WithID::Function(f) => Some(f.clone())) {
           callee.ty.clone()
+        } else if f.fname.literal == "array::length".to_string() {
+          Type::Builtin(Rc::new(BuiltinType {
+            token: Token {
+              literal: "i32".to_string(),
+              row: f.fname.row,
+              col: f.fname.col,
+              value: TokenType::KeywordI32,
+            },
+            code: BuiltinTypeCode::Int
+          }))
         } else {
           Type::Builtin(Rc::new(BuiltinType {
             token: f.fname.clone(),
@@ -375,6 +385,7 @@ pub struct StrImm {
 
 #[derive(Clone)]
 pub struct FuncCall {
+  pub rewrite: bool,
   pub fname : Token,
   pub params : Vec<Expr>,
 }
