@@ -94,6 +94,7 @@ fn load_source(prefix: &str, fname: &String) -> (String, E2EMetadata, String) {
 #[case("25-tostring1.ecc")]
 #[case("26-tostring2.ecc")]
 #[case("27-1ton.ecc")]
+#[case("28-2dloop.ecc")]
 fn test_frontend(#[case] fname: &str) {
   // Load the source file
   let (src, meta, obj_output) = load_source("../tests/function/", &fname.to_string());
@@ -136,6 +137,7 @@ fn test_frontend(#[case] fname: &str) {
 #[case("25-tostring1.ecc")]
 #[case("26-tostring2.ecc")]
 #[case("27-1ton.ecc")]
+#[case("28-2dloop.ecc")]
 fn test_e2e(#[case] fname: &str) {
   // Load the source file
   let (src, meta, obj_output) = load_source("../tests/function/", &fname.to_string());
@@ -149,21 +151,21 @@ fn test_e2e(#[case] fname: &str) {
     .unwrap();
 }
 
-// /// This uses my own backend, all the cases are tested end-to-end.
-// #[rstest]
-// #[case("01-cse.ecc")]
-// #[case("02-bulgarian.ecc")]
-// #[case("03-inflate.ecc")]
-// #[case("04-hanoi.ecc")]
-// fn test_pressure(#[case] fname: &str) {
-//   // Load the source file
-//   let (src, meta, obj_output) = load_source("../tests/performance/", &fname.to_string());
-//   // Compile it
-//   invoke(&fname.to_string(), &obj_output, src, 0, &"myown".to_string(), 2).unwrap();
-//   run_binary(&obj_output, &meta);
-//   // Compare the output
-//   std::process::Command::new("rm")
-//     .arg(obj_output)
-//     .spawn()
-//     .unwrap();
-// }
+/// This uses my own backend, all the cases are tested end-to-end.
+#[rstest]
+#[case("01-cse.ecc")]
+#[case("02-bulgarian.ecc")]
+#[case("03-inflate.ecc")]
+#[case("04-hanoi.ecc")]
+fn test_pressure(#[case] fname: &str) {
+  // Load the source file
+  let (src, meta, obj_output) = load_source("../tests/performance/", &fname.to_string());
+  // Compile it
+  invoke(&fname.to_string(), &obj_output, src, 0, &"myown".to_string(), 2).unwrap();
+  run_binary(&obj_output, &meta);
+  // Compare the output
+  std::process::Command::new("rm")
+    .arg(obj_output)
+    .spawn()
+    .unwrap();
+}
