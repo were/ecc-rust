@@ -212,42 +212,50 @@ fn find_value_dominator(
 }
 
 fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap<usize, usize>) {
+  let mut phi_to_alloc = HashMap::new();
+  let mut builder = Builder::new(module);
   let mut phis = HashMap::new();
-  // Register values to be phi-resolved
-  for func in module.func_iter() {
-    for block in func.block_iter() {
-      let predeccessors = block.pred_iter().collect::<Vec<_>>();
-      if predeccessors.len() > 1 {
-        // The current block is the frontier
-        let frontier = block.get_skey();
-        phis.insert(frontier, HashSet::new());
-        for user_inst in predeccessors.iter() {
-          let pred = user_inst;
-          let mut runner = pred.get_parent().get_skey();
-          while runner != workspace[block.get_skey()].idom {
-            let runner_block = Block::from_skey(runner);
-            let runner_block = runner_block.as_ref::<Block>(&module.context).unwrap();
-            runner_block.inst_iter().rev().for_each(|inst| {
-              if let Some(store) = inst.as_sub::<Store>() {
-                if let Some(store_addr) = store.get_ptr().as_ref::<Instruction>(&module.context) {
-                  if let InstOpcode::Alloca(_) = store_addr.get_opcode() {
-                    phis.get_mut(&frontier).unwrap().insert(store_addr.get_skey());
+  let mut iterative = true;
+  while iterative {
+    iterative = false;
+    // Register values to be phi-resolved
+    for func in builder.module.func_iter() {
+      for block in func.block_iter() {
+        let predeccessors = block.pred_iter().collect::<Vec<_>>();
+        if predeccessors.len() > 1 {
+          // The current block is the frontier
+          let frontier = block.get_skey();
+          phis.insert(frontier, HashSet::new());
+          for user_inst in predeccessors.iter() {
+            let pred = user_inst;
+            let mut runner = pred.get_parent().get_skey();
+            while runner != workspace[block.get_skey()].idom {
+              let runner_block = Block::from_skey(runner);
+              let runner_block = runner_block.as_ref::<Block>(&builder.module.context).unwrap();
+              runner_block.inst_iter().rev().for_each(|inst| {
+                if let Some(store) = inst.as_sub::<Store>() {
+                  if let Some(store_addr) = store.get_ptr().as_ref::<Instruction>(&builder.module.context) {
+                    if let InstOpcode::Alloca(_) = store_addr.get_opcode() {
+                      // iterative = iterative &&
+                      phis.get_mut(&frontier).unwrap().insert(store_addr.get_skey());
+                    }
                   }
                 }
+              });
+              if workspace[runner].depth == 1 {
+                break;
               }
-            });
-            if workspace[runner].depth == 1 {
-              break;
+              runner = workspace[runner].idom;
             }
-            runner = workspace[runner].idom;
           }
         }
       }
     }
+    if !iterative {
+      break;
+    }
   }
-  let mut phi_to_alloc = HashMap::new();
   // Inject preliminary PHI nodes.
-  let mut builder = Builder::new(module);
   for (block_skey, addrs) in phis.iter() {
     let block = Block::from_skey(*block_skey);
     for alloc_skey in addrs.iter() {
@@ -266,6 +274,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap
         let phi = phi.as_mut::<Instruction>(builder.context()).unwrap();
         phi.set_comment(format!("derive from {}", comment));
       }
+      eprintln!("[SSA] {} from {}", phi.to_string(&builder.module.context, true), comment);
       builder.create_store(phi, alloc).unwrap();
     }
   }
@@ -300,8 +309,9 @@ fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap
                 workspace,
                 &phi_to_alloc,
                 false) {
-                eprintln!("[SSA] {}: [ {}, {} ]",
+                eprintln!("[SSA] {} @{}: [ {}, {} ]",
                   inst.get_name(),
+                  block.get_name(),
                   incoming_value.to_string(&builder.module.context, true),
                   incoming_block.as_ref::<Block>(&builder.module.context).unwrap().get_name());
                 (incoming_value, incoming_block)

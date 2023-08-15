@@ -80,8 +80,7 @@ impl TypeGen {
     for _ in 0..array.dims.len() {
       res = res.ptr_type(self.builder.context());
     }
-    let array = self.generate_array_runtime(res);
-    self.builder.context().pointer_type(array)
+    self.generate_array_runtime(res)
   }
 
   fn extract_array_type_name(&self, scalar_ty: &TypeRef) -> String {
@@ -96,16 +95,17 @@ impl TypeGen {
 
 
   fn generate_array_runtime(&mut self, ty: TypeRef) -> TypeRef {
+    if let Some(res) = self.array_types.get(&ty) {
+      return res.clone()
+    }
     if let Some(ptr_ty) = ty.as_ref::<PointerType>(&self.builder.module.context) {
-      if let Some(res) = self.array_types.get(&ty) {
-        res.clone()
-      } else if let &TKindCode::StructType = ptr_ty.get_pointee_ty().kind() {
-        return ty;
+      if let &TKindCode::StructType = ptr_ty.get_pointee_ty().kind() {
       } else {
+        eprintln!("origin ty: {}", ty.to_string(&self.builder.module.context));
         let raw = ptr_ty.get_pointee_ty();
         let scalar_ty = self.generate_array_runtime(raw.clone());
-        let type_name = self.extract_array_type_name(&raw);
-        let type_name = format!("array.{}", type_name);
+        let type_name = self.extract_array_type_name(&scalar_ty);
+        let type_name = format!("array.{}", type_name.replace("%", "_"));
         // Declare the array type.
         let array_ty = self.builder.create_struct(type_name.clone());
         let length = self.builder.context().int_type(32);
@@ -115,14 +115,14 @@ impl TypeGen {
           .unwrap()
           .set_body(vec![length, array_ptr]);
         self.class_cache.insert(type_name, array_ty.clone());
-        self.array_types.insert(ty.clone(), array_ty.clone());
-        array_ty
+        let res = self.builder.module.context.pointer_type(array_ty.clone());
+        self.array_types.insert(ty.clone(), res.clone());
+        eprintln!("mapped to res: {}", array_ty.as_ref::<StructType>(&self.builder.module.context).unwrap().to_string());
+        return res;
       }
-    } else {
-      ty
     }
+    return ty;
   }
-
 
 }
 
@@ -249,7 +249,7 @@ impl CodeGen {
       };
       for (i, arg) in args.iter().enumerate() {
         let ty = arg.get_type(self.tg.builder.context());
-        let ptr = self.builder_mut().create_alloca(ty);
+        let ptr = self.builder_mut().create_alloca(ty, format!("arg_{}", i));
         self.builder_mut().create_store(arg.clone(), ptr.clone()).unwrap();
         self.cache_stack.insert(
           func.args[i].id.literal.clone(),
@@ -282,7 +282,7 @@ impl CodeGen {
     if let Some(first_inst) = entry_block.get_inst(0) {
       self.tg.builder.set_insert_before(first_inst.as_super());
     }
-    let alloca = self.tg.builder.create_alloca(ty);
+    let alloca = self.tg.builder.create_alloca(ty, var.id.literal.clone());
     // Restore block and instruction
     self.tg.builder.set_current_block(block);
     if let Some(insert_before) = insert_before {
@@ -482,6 +482,10 @@ impl CodeGen {
         let i8ptr = i8ty.ptr_type(self.tg.builder.context());
         let str_value = self.tg.builder.create_string(value.value.clone());
         let i8array = self.tg.generate_array_runtime(i8ptr.clone());
+        let i8array = {
+          let ptr = i8array.as_ref::<PointerType>(&self.tg.builder.module.context).unwrap();
+          ptr.get_pointee_ty()
+        };
         let len = value.value.len();
         let i32ty = self.tg.builder.context().int_type(32);
         let len = self.tg.builder.context().const_value(i32ty.clone(), len as u64);
@@ -538,7 +542,7 @@ impl CodeGen {
               }
             }
             let i1ty = self.tg.builder.context().int_type(1);
-            let alloca = self.tg.builder.create_alloca(i1ty.clone());
+            let alloca = self.tg.builder.create_alloca(i1ty.clone(), "sc.result".to_string());
             // Prepare the values
             let one = self.tg.builder.context().const_value(i1ty.clone(), 1);
             let zero = self.tg.builder.context().const_value(i1ty.clone(), 0);
