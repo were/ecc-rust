@@ -36,7 +36,7 @@ fn analysis<'ctx>(module: &'ctx Module, dt: &DominatorTree) -> Vec<(ValueRef, Ve
       let a = inst.as_ref::<Instruction>(&module.context).unwrap();
       if insts.iter().all(|b| {
         let b = b.as_ref::<Instruction>(&module.context).unwrap();
-        dt.a_dominates_b(&a, &b)
+        dt.i_dominates_i(&a, &b)
       }) {
         let x = insts.iter()
           .filter(|x| x.skey != inst.skey)

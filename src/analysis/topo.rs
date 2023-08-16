@@ -3,7 +3,7 @@ use either::Either;
 use trinity::{
   ir::{
     value::{
-      function::FunctionRef, block::BlockRef, instruction::{BranchInst, InstructionRef, PhiNode, BinaryOp, InstOpcode, CmpPred}
+      function::FunctionRef, block::BlockRef, instruction::{BranchInst, InstructionRef, InstOpcode, CmpPred}
     },
     Block, Instruction, ValueRef
   },

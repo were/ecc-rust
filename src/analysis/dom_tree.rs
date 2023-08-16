@@ -29,7 +29,16 @@ impl DominatorTree {
   pub fn new(module: &Module) -> Self {
     let mut dt = vec![];
     (0..module.context.capacity()).for_each(|_| dt.push(DomInfo::new()));
-    Self { dt }
+
+    let mut dt = Self { dt };
+
+    for func in module.func_iter() {
+      if func.get_num_blocks() != 0 {
+        dt.analyze_dominators(&func);
+      }
+    }
+
+    dt
   }
 
   pub fn block_idom(&self, block: &BlockRef) -> usize {
@@ -41,7 +50,7 @@ impl DominatorTree {
     return self.dt[block.get_skey()].depth == 1;
   }
 
-  pub fn a_dominates_b(&self, a: &InstructionRef, b: &InstructionRef) -> bool {
+  pub fn i_dominates_i(&self, a: &InstructionRef, b: &InstructionRef) -> bool {
     let workspace = &self.dt;
     let a_block = a.get_parent();
     let b_block = b.get_parent();

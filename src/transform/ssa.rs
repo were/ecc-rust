@@ -10,7 +10,7 @@ use trinity::{
   builder::Builder
 };
 
-use crate::analysis::dom_tree::DominatorTree;
+use crate::analysis::{dom_tree::DominatorTree, lifetime::VarLifetime};
 
 use super::{dce, simplify};
 
@@ -90,7 +90,7 @@ fn find_value_dominator(
   None
 }
 
-fn inject_phis(module: Module, dt: &DominatorTree) -> (Module, HashMap<usize, usize>) {
+fn inject_phis(module: Module, dt: &DominatorTree, vlt: &VarLifetime) -> (Module, HashMap<usize, usize>) {
   let mut phi_to_alloc = HashMap::new();
   let mut builder = Builder::new(module);
   let mut phis = HashMap::new();
@@ -116,9 +116,17 @@ fn inject_phis(module: Module, dt: &DominatorTree) -> (Module, HashMap<usize, us
                 if let Some(store) = inst.as_sub::<Store>() {
                   if let Some(store_addr) = store.get_ptr().as_ref::<Instruction>(&builder.module.context) {
                     if let InstOpcode::Alloca(_) = store_addr.get_opcode() {
-                      if phis.get_mut(&frontier).unwrap().insert(store_addr.get_skey()) {
-                        eprintln!("Injecting PHI node for {}", inst.to_string(false));
-                        to_inject.push((frontier, store_addr.get_skey()));
+                      if let Some((start, _)) = vlt.get(store_addr.get_skey()) {
+                        let start = start.as_ref::<Instruction>(&builder.module.context).unwrap();
+                        // let end = end.as_ref::<Instruction>(&builder.module.context).unwrap();
+                        if dt.i_dominates_i(&start, &block.get_inst(0).unwrap()) {
+
+                          if phis.get_mut(&frontier).unwrap().insert(store_addr.get_skey()) {
+                            eprintln!("Allocate PHI for {} @block.{}", inst.to_string(false), frontier);
+                            to_inject.push((frontier, store_addr.get_skey()));
+                          }
+
+                        }
                       }
                     }
                   }
@@ -317,13 +325,9 @@ fn cleanup(module: &mut Module, phi_to_alloc: &HashMap<usize, usize>, dt: &Domin
 
 pub fn transform(module: Module) -> (Module, DominatorTree) {
   // eprintln!("{}", module.to_string());
-  let mut dt = DominatorTree::new(&module);
-  for func in module.func_iter() {
-    if func.get_num_blocks() != 0 {
-      dt.analyze_dominators(&func);
-    }
-  }
-  let (mut injected, phi_to_alloc) = inject_phis(module, &dt);
+  let dt = DominatorTree::new(&module);
+  let vlt = VarLifetime::new(&module);
+  let (mut injected, phi_to_alloc) = inject_phis(module, &dt, &vlt);
   cleanup(&mut injected, &phi_to_alloc, &dt);
   (injected, dt)
 }
