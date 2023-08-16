@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use trinity::ir::{
   module::Module,
-  value::instruction::{PhiNode, InstMutator, BranchInst, SubInst, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst},
+  value::instruction::{PhiNode, InstMutator, BranchInst, SubInst, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, Call},
   ValueRef, Instruction, ConstScalar, TypeRef, Function
 };
 
@@ -85,7 +85,10 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
                           eprintln!("[SIMP] Add a negative value {}, can be fused into sub: {}",
                             operand_inst.to_string(false),
                             inst.to_string(false));
-                          return Some((inst.get_skey(), InstOpcode::BinaryOp(BinaryOp::Sub), inst.get_operand(1 - i).unwrap().clone(), operand_bin.rhs().clone()));
+                          let opcode = InstOpcode::BinaryOp(BinaryOp::Sub);
+                          let lhs = inst.get_operand(1 - i).unwrap().clone();
+                          let rhs = operand_bin.rhs().clone();
+                          return Some((inst.get_skey(), opcode, lhs, rhs));
                         }
                       }
                     }
@@ -296,7 +299,7 @@ pub fn merge_trivial_branches(module: &mut Module) -> bool {
   let mut modified = false;
   while let Some((br, to_replace)) = has_trivial_branch(module) {
     let src = br.get_parent().as_super();
-    let func = br.get_parent().get_parent().get_skey();
+    let func_key = br.get_parent().get_parent().get_skey();
     let erase_br = br.as_super();
     let br = br.as_sub::<BranchInst>().unwrap();
     let dest = br.dest_label().unwrap();
@@ -315,11 +318,37 @@ pub fn merge_trivial_branches(module: &mut Module) -> bool {
       // let block = src.as_mut::<Block>(&mut module.context).unwrap();
       // block.add_user(&phi_value);
     }
-    let func = Function::from_skey(func).as_mut::<Function>(&mut module.context).unwrap();
+    let func = Function::from_skey(func_key).as_mut::<Function>(&mut module.context).unwrap();
     func.basic_blocks_mut().retain(|b| *b != dest);
+    module.context.dispose(dest);
     modified = true;
   }
   return modified;
+}
+
+fn has_lifetime_hint(module: &Module) -> Option<ValueRef> {
+  for func in module.func_iter() {
+    for block in func.block_iter() {
+      for inst in block.inst_iter() {
+        if let Some(call) = inst.as_sub::<Call>() {
+          match call.get_callee().get_name().as_str() {
+            "llvm.lifetime.end" | "llvm.lifetime.start" => {
+              return Some(inst.as_super())
+            }
+            _ => {}
+          }
+        }
+      }
+    }
+  }
+  None
+}
+
+pub fn remove_lifetime_hint(module: &mut Module) {
+  while let Some(to_remove) = has_lifetime_hint(module) {
+    let mut inst = InstMutator::new(&mut module.context, &to_remove);
+    inst.erase_from_parent();
+  }
 }
 
 pub fn transform(module: &mut Module) -> bool {

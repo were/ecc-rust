@@ -1,145 +1,24 @@
-use std::collections::{HashSet, VecDeque, HashMap};
+use std::collections::{HashSet, HashMap};
 
 use trinity::{
   ir::{
     module::Module, Block,
-    value::{instruction::{Store, InstOpcode, Load, InstructionRef, InstMutator}, function::FunctionRef},
+    value::instruction::{Store, InstOpcode, Load, InstructionRef, InstMutator},
     Instruction, ValueRef, VKindCode, PointerType
   },
   context::Context,
   builder::Builder
 };
 
+use crate::analysis::{dom_tree::DominatorTree, lifetime::VarLifetime};
+
 use super::{dce, simplify};
-
-pub struct DomInfo {
-  dominators: HashSet<usize>,
-  idom: usize,
-  depth: usize,
-}
-
-impl DomInfo {
-  fn new() -> Self {
-    Self {
-      dominators: HashSet::new(),
-      idom: 0,
-      depth: 0,
-    }
-  }
-}
-
-
-fn analyze_dominators(ctx: &Context, func: &FunctionRef, workspace: &mut Vec<DomInfo>) {
-  // Calculate the dominators
-  let mut changed = true;
-  while changed {
-    changed = false;
-    let block = func.get_block(0).unwrap();
-    workspace[block.get_skey()].dominators.insert(block.get_skey());
-    workspace[block.get_skey()].depth = 1;
-    let mut visited = HashSet::new();
-    visited.insert(block.get_skey());
-    let mut q = VecDeque::new();
-    q.push_back(block.as_super());
-    while let Some(front) = q.pop_front() {
-      let block = front.as_ref::<Block>(ctx).unwrap();
-      let mut new_dom = HashSet::new();
-      let mut first = true;
-      for pred in block.pred_iter() {
-        let pred = pred.get_parent();
-        if first {
-          new_dom = workspace[pred.get_skey()].dominators.clone();
-          first = false;
-        } else if !workspace[pred.get_skey()].dominators.is_empty() {
-          new_dom = new_dom
-            .intersection(&workspace[pred.get_skey()].dominators)
-            .cloned()
-            .collect::<HashSet<_>>();
-        }
-      }
-      new_dom.insert(front.skey);
-      if new_dom != workspace[front.skey].dominators {
-        changed = true;
-        workspace[front.skey].dominators = new_dom;
-      }
-      for succ in block.succ_iter() {
-        if visited.contains(&succ.get_skey()) {
-          continue;
-        }
-        q.push_back(succ.as_super());
-        visited.insert(succ.get_skey());
-      }
-    }
-  }
-  {
-    changed = true;
-    while changed {
-      changed = false;
-      for block in func.block_iter() {
-        for dom in workspace[block.get_skey()].dominators.clone().iter() {
-          let dom = Block::from_skey(*dom);
-          let dom = dom.as_ref::<Block>(ctx).unwrap();
-          if block.get_skey() == dom.get_skey() {
-            continue;
-          }
-          if workspace[block.get_skey()].depth < workspace[dom.get_skey()].depth + 1 {
-            workspace[block.get_skey()].depth = workspace[dom.get_skey()].depth + 1;
-            workspace[block.get_skey()].idom = dom.get_skey();
-            changed = true;
-          }
-        }
-      }
-    }
-  }
-  eprintln!("In function {}:", func.get_name());
-  for i in 0..func.get_num_blocks() {
-    let block = func.get_block(i).unwrap();
-    let entry = &workspace[block.get_skey()];
-    eprintln!("  Block {} (Depth: {}), Pred: [{}] dominated by:", block.get_name(), entry.depth,
-      block.pred_iter().map(|x| x.get_parent().get_name()).collect::<Vec<_>>().join(", "));
-    for dom in entry.dominators.iter() {
-      let block_ref= Block::from_skey(*dom);
-      eprint!("    {}", block_ref.to_string(ctx, false));
-      if *dom == entry.idom {
-        eprintln!(" *")
-      } else {
-        eprintln!("")
-      }
-    }
-  }
-}
-
-pub fn a_dominates_b(workspace: &Vec<DomInfo>, a: &InstructionRef, b: &InstructionRef) -> bool {
-  let a_block = a.get_parent();
-  let b_block = b.get_parent();
-  if a_block.get_skey() == b_block.get_skey() {
-    let block = a_block;
-    let mut idx_a = 0;
-    let mut idx_b = 0;
-    let a_skey = a.get_skey();
-    let b_skey = b.get_skey();
-    for (i, inst) in block.inst_iter().enumerate() {
-      if inst.get_skey() == a_skey {
-        idx_a = i;
-      }
-      if inst.get_skey() == b_skey {
-        idx_b = i;
-      }
-    }
-    return idx_a <= idx_b;
-  }
-  if workspace[b_block.get_skey()].dominators.contains(&a_block.get_skey()) {
-    true
-  } else {
-    false
-  }
-}
 
 fn find_value_dominator(
   ctx: &Context,
   sub: &InstructionRef,
   block: &ValueRef,
-  workspace: &Vec<DomInfo>,
+  dt: &DominatorTree,
   phi_to_alloc: &HashMap<usize, usize>,
   return_store: bool) -> Option<ValueRef> {
   let addr = {
@@ -159,25 +38,25 @@ fn find_value_dominator(
   let sub_parent = sub.get_parent();
   let mut first_iteration = true;
   loop {
-    let block_value = Block::from_skey(runner);
-    let block_ref = block_value.as_ref::<Block>(ctx).unwrap();
+    let runner_value = Block::from_skey(runner);
+    let runner_block = runner_value.as_ref::<Block>(ctx).unwrap();
     let range = if runner == sub_parent.get_skey() {
       // If we are at the source block,
-      let pos = block_ref.inst_iter().position(|iter| { sub.get_skey() == iter.get_skey() });
+      let pos = runner_block.inst_iter().position(|iter| { sub.get_skey() == iter.get_skey() });
       // And the first iteration, inspect all the instructions before.
       if first_iteration {
         0..pos.unwrap()
       } else {
         // If not the first iteration, which indicates there is a backloop, inspect all the
         // instructions after.
-        pos.unwrap()..block_ref.get_num_insts()
+        pos.unwrap()..runner_block.get_num_insts()
       }
     } else {
       // If we are at a dom block, inspect all the instructions.
-      0..block_ref.get_num_insts()
+      0..runner_block.get_num_insts()
     };
     for i in range.into_iter().rev() {
-      let dom = block_ref.get_inst(i).unwrap();
+      let dom = runner_block.get_inst(i).unwrap();
       if dom.get_skey() == sub.get_skey() {
         continue;
       }
@@ -201,17 +80,17 @@ fn find_value_dominator(
       }
     }
     // End at root node.
-    if workspace[runner].idom == 0 {
+    if dt.is_entry(&runner_block) {
       break;
     }
-    runner = workspace[runner].idom;
+    runner = dt.block_idom(&runner_block);
     first_iteration = false;
   }
   // This should not happen at all.
   None
 }
 
-fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap<usize, usize>) {
+fn inject_phis(module: Module, dt: &DominatorTree, vlt: &VarLifetime) -> (Module, HashMap<usize, usize>) {
   let mut phi_to_alloc = HashMap::new();
   let mut builder = Builder::new(module);
   let mut phis = HashMap::new();
@@ -230,25 +109,34 @@ fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap
           for user_inst in predeccessors.iter() {
             let pred = user_inst;
             let mut runner = pred.get_parent().get_skey();
-            while runner != workspace[block.get_skey()].idom {
+            while runner != dt.block_idom(&block) {
               let runner_block = Block::from_skey(runner);
               let runner_block = runner_block.as_ref::<Block>(&builder.module.context).unwrap();
               runner_block.inst_iter().rev().for_each(|inst| {
                 if let Some(store) = inst.as_sub::<Store>() {
                   if let Some(store_addr) = store.get_ptr().as_ref::<Instruction>(&builder.module.context) {
                     if let InstOpcode::Alloca(_) = store_addr.get_opcode() {
-                      if phis.get_mut(&frontier).unwrap().insert(store_addr.get_skey()) {
-                        eprintln!("Injecting PHI node for {}", inst.to_string(false));
-                        to_inject.push((frontier, store_addr.get_skey()));
+                      if let Some((start, _)) = vlt.get(store_addr.get_skey()) {
+                        let start = start.as_ref::<Instruction>(&builder.module.context).unwrap();
+                        // let end = end.as_ref::<Instruction>(&builder.module.context).unwrap();
+                        if start.get_parent().get_skey() != block.get_skey() &&
+                           dt.i_dominates_i(&start, &block.get_inst(0).unwrap()) {
+
+                          if phis.get_mut(&frontier).unwrap().insert(store_addr.get_skey()) {
+                            eprintln!("Allocate PHI for {} @block.{}", inst.to_string(false), frontier);
+                            to_inject.push((frontier, store_addr.get_skey()));
+                          }
+
+                        }
                       }
                     }
                   }
                 }
               });
-              if workspace[runner].depth == 1 {
+              if dt.is_entry(&runner_block) {
                 break;
               }
-              runner = workspace[runner].idom;
+              runner = dt.block_idom(&runner_block);
             }
           }
         }
@@ -288,7 +176,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap
       let predeccessors = if pred_branches.len() > 1 {
         let mut res = HashSet::new();
         pred_branches.iter().for_each(|inst| {
-          // eprintln!("gather block: {}", inst.get_parent().to_string());
+          eprintln!("gather block: {}", inst.get_parent().get_name());
           res.insert(inst.get_parent().get_skey());
         });
         res
@@ -307,16 +195,21 @@ fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap
                 &builder.module.context,
                 &inst,
                 &incoming_block,
-                workspace,
+                dt,
                 &phi_to_alloc,
                 false) {
-                eprintln!("[SSA] {} @{}: [ {}, {} ]",
+                eprintln!("[SSA] Value {} @{}: [ {}, {} ]",
                   inst.get_name(),
                   block.get_name(),
                   incoming_value.to_string(&builder.module.context, true),
                   incoming_block.as_ref::<Block>(&builder.module.context).unwrap().get_name());
                 (incoming_value, incoming_block)
               } else {
+                eprintln!("[SSA] Warning {} @{}: [ {}, {} ]",
+                  inst.get_name(),
+                  block.get_name(),
+                  "unknown",
+                  incoming_block.as_ref::<Block>(&builder.module.context).unwrap().get_name());
                 // TODO(@were): Warning here!
                 (ValueRef{ skey: 0, kind: VKindCode::Unknown }, incoming_block)
               }
@@ -356,7 +249,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap
     let inst_ref = (*inst).as_ref::<Instruction>(&builder.module.context).unwrap();
     let block = inst_ref.get_parent();
     let block = block.as_super();
-    if let Some(new_value) = find_value_dominator(&builder.module.context, &inst_ref, &block, workspace, &phi_to_alloc, false) {
+    if let Some(new_value) = find_value_dominator(&builder.module.context, &inst_ref, &block, dt, &phi_to_alloc, false) {
       let mut mutator = InstMutator::new(builder.context(), inst);
       mutator.replace_all_uses_with(new_value);
       // builder.module.replace_all_uses_with(inst.clone(), new_value);
@@ -371,7 +264,7 @@ fn inject_phis(module: Module, workspace: &mut Vec<DomInfo>) -> (Module, HashMap
 
 fn find_undominated_stores(
   module: &Module,
-  workspace: &Vec<DomInfo>,
+  dt: &DominatorTree,
   phi_to_alloc: &HashMap<usize, usize>) -> HashSet<usize> {
   let mut store_with_dom = HashSet::new();
   for func in module.func_iter() {
@@ -382,7 +275,7 @@ fn find_undominated_stores(
             if let InstOpcode::Alloca(_) = load_addr.get_opcode() {
               let block_ref = block.as_super();
               if let Some(value) = find_value_dominator(
-                &module.context, &inst, &block_ref, workspace, &phi_to_alloc, true) {
+                &module.context, &inst, &block_ref, dt, &phi_to_alloc, true) {
                 let inst = value.as_ref::<Instruction>(&module.context).unwrap();
                 if let InstOpcode::Store(_) = inst.get_opcode() {
                   store_with_dom.insert(value.skey);
@@ -397,10 +290,10 @@ fn find_undominated_stores(
   store_with_dom
 }
 
-fn cleanup(module: &mut Module, workspace: &Vec<DomInfo>, phi_to_alloc: &HashMap<usize, usize>) {
+fn cleanup(module: &mut Module, phi_to_alloc: &HashMap<usize, usize>, dt: &DominatorTree) {
   dce::transform(module);
   loop {
-    let dominated = find_undominated_stores(&module, &workspace, &phi_to_alloc);
+    let dominated = find_undominated_stores(&module, dt, &phi_to_alloc);
     let mut to_remove = Vec::new();
     for func in module.func_iter() {
       for block in func.block_iter() {
@@ -436,17 +329,12 @@ fn cleanup(module: &mut Module, workspace: &Vec<DomInfo>, phi_to_alloc: &HashMap
 }
 
 
-pub fn transform(module: Module) -> (Module, Vec<DomInfo>) {
+pub fn transform(module: Module) -> (Module, DominatorTree) {
   // eprintln!("{}", module.to_string());
-  let mut workspace: Vec<DomInfo> = Vec::new();
-  (0..module.context.capacity()).for_each(|_| workspace.push(DomInfo::new()));
-  for func in module.func_iter() {
-    if func.get_num_blocks() != 0 {
-      analyze_dominators(&module.context, &func, &mut workspace);
-    }
-  }
-  let (mut injected, phi_to_alloc) = inject_phis(module, &mut workspace);
-  cleanup(&mut injected, &workspace, &phi_to_alloc);
-  (injected, workspace)
+  let dt = DominatorTree::new(&module);
+  let vlt = VarLifetime::new(&module);
+  let (mut injected, phi_to_alloc) = inject_phis(module, &dt, &vlt);
+  cleanup(&mut injected, &phi_to_alloc, &dt);
+  (injected, dt)
 }
 

@@ -157,6 +157,7 @@ fn test_e2e(#[case] fname: &str) {
 #[case("02-bulgarian.ecc")]
 #[case("03-inflate.ecc")]
 #[case("04-hanoi.ecc")]
+#[case("05-cnf-lp.ecc")]
 fn test_pressure(#[case] fname: &str) {
   // Load the source file
   let (src, meta, obj_output) = load_source("../tests/performance/", &fname.to_string());

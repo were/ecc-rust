@@ -3,9 +3,9 @@ use std::collections::HashMap;
 
 use trinity::ir::{
   self,
-  value::ValueRef,
+  value::{ValueRef, instruction::InstOpcode},
   types::{StructType, TypeRef},
-  value::Function, PointerType, Block, TKindCode, Instruction,
+  value::{Function, instruction::Alloca}, PointerType, Block, TKindCode, Instruction,
 };
 use trinity::builder::Builder;
 use super::{
@@ -164,10 +164,6 @@ impl CacheStack {
     self.stack.last_mut().unwrap().insert(key, value);
   }
 
-  fn pop(&mut self) -> ValueCache {
-    self.stack.pop().unwrap()
-  }
-
   fn get(&self, key: &String) -> Option<ValueRef> {
     for cache in self.stack.iter().rev() {
       if let Some(value) = cache.get(key) {
@@ -187,9 +183,57 @@ struct CodeGen {
  
 impl CodeGen {
 
+  fn pop_scope(&mut self) {
+    let mut ends = vec![];
+    for (_, value) in self.cache_stack.stack.last().unwrap().cache.iter() {
+      if let Some(inst) = value.as_ref::<Instruction>(&self.tg.builder.module.context) {
+        if let Some(_) = inst.as_sub::<Alloca>() {
+          ends.push(inst.as_super());
+        }
+      }
+    }
+
+    let block = self.tg.builder.get_current_block().unwrap();
+    let block = block.as_ref::<Block>(&self.tg.builder.module.context).unwrap();
+    let restore_insert_before = self.tg.builder.get_insert_before();
+
+    if let None = self.tg.builder.get_insert_before() {
+      if let Some(inst) = block.last_inst() {
+        match inst.get_opcode() {
+          InstOpcode::Branch(_) | InstOpcode::Return => {
+            self.tg.builder.set_insert_before(inst.as_super());
+          }
+          _ => {}
+        }
+      }
+    }
+
+    for elem in ends {
+      self.generate_lifetime_annot(elem, "end");
+    }
+    self.cache_stack.stack.pop();
+
+    if let Some(inst) = restore_insert_before {
+      self.tg.builder.set_insert_before(inst);
+    } else {
+      let block = self.tg.builder.get_current_block().unwrap();
+      self.tg.builder.set_current_block(block);
+    }
+  }
+
   fn generate_linkage(&mut self, ast: &Rc<ast::Linkage>) {
     assert_eq!(ast.tus.len(), 2);
     self.cache_stack.push();
+    let void_ty = self.tg.builder.context().void_type();
+    let ptr_ty = self.tg.builder.context().pointer_type(void_ty.clone());
+    let i64_ty = self.tg.builder.context().int_type(64);
+    let fty = self.tg.builder.context().function_type(void_ty, vec![i64_ty, ptr_ty]);
+    {
+      let start = self.tg.builder.create_function("llvm.lifetime.start".to_string(), fty.clone());
+      self.cache_stack.insert("llvm.lifetime.start".to_string(), start);
+      let end = self.tg.builder.create_function("llvm.lifetime.end".to_string(), fty);
+      self.cache_stack.insert("llvm.lifetime.end".to_string(), end);
+    }
     for tu in &ast.tus {
       self.generate_translation_unit(&tu);
     }
@@ -250,6 +294,7 @@ impl CodeGen {
       for (i, arg) in args.iter().enumerate() {
         let ty = arg.get_type(self.tg.builder.context());
         let ptr = self.builder_mut().create_alloca(ty, format!("arg_{}", i));
+        self.generate_lifetime_annot(ptr.clone(), "start");
         self.builder_mut().create_store(arg.clone(), ptr.clone()).unwrap();
         self.cache_stack.insert(
           func.args[i].id.literal.clone(),
@@ -259,7 +304,14 @@ impl CodeGen {
     }
     // push arguments
     self.generate_compound_stmt(&func.body, false);
-    self.cache_stack.pop();
+    self.pop_scope();
+  }
+
+  fn generate_lifetime_annot(&mut self, alloca: ValueRef, suffix: &str) {
+    let intrin = self.cache_stack.get(&format!("llvm.lifetime.{}", suffix)).unwrap().clone();
+    let i64_ty = self.tg.builder.context().int_type(64);
+    let minus_one = self.tg.builder.context().const_value(i64_ty, u64::MAX);
+    self.tg.builder.create_func_call(intrin, vec![minus_one, alloca.clone()]);
   }
 
   fn generate_var_decl(&mut self, var: &Rc<ast::VarDecl>) {
@@ -288,6 +340,7 @@ impl CodeGen {
     if let Some(insert_before) = insert_before {
       self.tg.builder.set_insert_before(insert_before);
     }
+    self.generate_lifetime_annot(alloca.clone(), "start");
     if let Some(init) = &var.init {
       let init = self.generate_expr(&init, false);
       self.tg.builder.create_store(init, alloca.clone()).unwrap();
@@ -303,7 +356,7 @@ impl CodeGen {
       self.generate_stmt(&stmt);
     }
     if new_scope {
-      self.cache_stack.pop();
+      self.pop_scope();
     }
   }
 
@@ -410,7 +463,7 @@ impl CodeGen {
     self.builder_mut().set_current_block(body_block);
     self.generate_compound_stmt(&while_stmt.body, false);
     self.builder_mut().create_unconditional_branch(cond_block.clone());
-    self.cache_stack.pop();
+    self.pop_scope();
     // Restore the nested condition and end blocks.
     self.loop_cond_or_end = old;
     self.builder_mut().set_current_block(end_block)
@@ -449,7 +502,7 @@ impl CodeGen {
     let added = self.builder_mut().create_add(loop_var_value, one);
     self.builder_mut().create_store(added, loop_var_addr).unwrap();
     self.builder_mut().create_unconditional_branch(cond_block.clone());
-    self.cache_stack.pop();
+    self.pop_scope();
     // Restore the nested condition and end blocks.
     self.loop_cond_or_end = old;
     self.builder_mut().set_current_block(end_block)
@@ -550,6 +603,7 @@ impl CodeGen {
             let true_block = self.tg.builder.add_block(format!("sc.true.{}", alloca.skey));
             let false_block = self.tg.builder.add_block(format!("sc.false.{}", alloca.skey));
             self.tg.builder.set_current_block(current);
+            self.generate_lifetime_annot(alloca.clone(), "start");
             self.tg.builder.create_conditional_branch(lhs.clone(), true_block.clone(), false_block.clone(), false);
             let (finalize, finalized_value, compute) = if let &TokenType::LogicAnd = &binop.op.value {
               (false_block, zero, true_block)
@@ -567,7 +621,9 @@ impl CodeGen {
             self.tg.builder.create_unconditional_branch(converge.clone());
             // Create the converge block.
             self.tg.builder.set_current_block(converge);
-            Some(self.tg.builder.create_load(alloca))
+            let res = Some(self.tg.builder.create_load(alloca.clone()));
+            self.generate_lifetime_annot(alloca, "end");
+            res
           }
           _ => None
         };

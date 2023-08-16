@@ -3,9 +3,9 @@ use either::Either;
 use trinity::{
   ir::{
     value::{
-      function::FunctionRef, block::BlockRef, instruction::{BranchInst, InstructionRef}
+      function::FunctionRef, block::BlockRef, instruction::{BranchInst, InstructionRef, InstOpcode, CmpPred}
     },
-    Block, Instruction
+    Block, Instruction, ValueRef
   },
   context::Context
 };
@@ -70,6 +70,34 @@ impl <'ctx>LoopInfo<'ctx> {
 
   pub fn children(&'ctx self) -> &Vec<Either<BlockRef<'ctx>, Box<LoopInfo<'ctx>>>> {
     &self.children
+  }
+
+  pub fn get_loop_n(&self) -> Option<ValueRef> {
+    let latch = self.get_latch();
+    if let Some(br) = latch.as_sub::<BranchInst>() {
+      if let Some(cond) = br.cond() {
+        if let Some(inst) = cond.as_ref::<Instruction>(self.ctx) {
+          if let InstOpcode::ICompare(CmpPred::SLT) = inst.get_opcode() {
+            return inst.get_operand(1).map(|x| x.clone());
+          }
+        }
+      }
+    }
+    None
+  }
+
+  pub fn get_loop_ind_var(&'ctx self) -> Option<InstructionRef<'ctx>> {
+    let latch = self.get_latch();
+    if let Some(br) = latch.as_sub::<BranchInst>() {
+      if let Some(cond) = br.cond() {
+        if let Some(inst) = cond.as_ref::<Instruction>(self.ctx) {
+          if let InstOpcode::ICompare(CmpPred::SLT) = inst.get_opcode() {
+            return inst.get_operand(0).unwrap().as_ref::<Instruction>(self.ctx)
+          }
+        }
+      }
+    }
+    None
   }
 
 }

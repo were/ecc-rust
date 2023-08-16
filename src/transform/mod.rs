@@ -15,6 +15,7 @@ pub fn optimize(mut module: Module, opt_level: i32) -> Module {
   simplify::merge_trivial_branches(&mut ssa);
   if opt_level == 2 {
     let mut cse = cse::transform(ssa, &dom);
+    simplify::remove_lifetime_hint(&mut cse);
     simplify::transform(&mut cse);
     cse
   } else {
