@@ -596,7 +596,6 @@ impl CodeGen {
             }
             let i1ty = self.tg.builder.context().int_type(1);
             let alloca = self.tg.builder.create_alloca(i1ty.clone(), "sc.result".to_string());
-            self.generate_lifetime_annot(alloca.clone(), "start");
             // Prepare the values
             let one = self.tg.builder.context().const_value(i1ty.clone(), 1);
             let zero = self.tg.builder.context().const_value(i1ty.clone(), 0);
@@ -604,6 +603,7 @@ impl CodeGen {
             let true_block = self.tg.builder.add_block(format!("sc.true.{}", alloca.skey));
             let false_block = self.tg.builder.add_block(format!("sc.false.{}", alloca.skey));
             self.tg.builder.set_current_block(current);
+            self.generate_lifetime_annot(alloca.clone(), "start");
             self.tg.builder.create_conditional_branch(lhs.clone(), true_block.clone(), false_block.clone(), false);
             let (finalize, finalized_value, compute) = if let &TokenType::LogicAnd = &binop.op.value {
               (false_block, zero, true_block)

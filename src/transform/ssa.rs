@@ -119,7 +119,8 @@ fn inject_phis(module: Module, dt: &DominatorTree, vlt: &VarLifetime) -> (Module
                       if let Some((start, _)) = vlt.get(store_addr.get_skey()) {
                         let start = start.as_ref::<Instruction>(&builder.module.context).unwrap();
                         // let end = end.as_ref::<Instruction>(&builder.module.context).unwrap();
-                        if dt.i_dominates_i(&start, &block.get_inst(0).unwrap()) {
+                        if start.get_parent().get_skey() != block.get_skey() &&
+                           dt.i_dominates_i(&start, &block.get_inst(0).unwrap()) {
 
                           if phis.get_mut(&frontier).unwrap().insert(store_addr.get_skey()) {
                             eprintln!("Allocate PHI for {} @block.{}", inst.to_string(false), frontier);
@@ -197,13 +198,18 @@ fn inject_phis(module: Module, dt: &DominatorTree, vlt: &VarLifetime) -> (Module
                 dt,
                 &phi_to_alloc,
                 false) {
-                eprintln!("[SSA] {} @{}: [ {}, {} ]",
+                eprintln!("[SSA] Value {} @{}: [ {}, {} ]",
                   inst.get_name(),
                   block.get_name(),
                   incoming_value.to_string(&builder.module.context, true),
                   incoming_block.as_ref::<Block>(&builder.module.context).unwrap().get_name());
                 (incoming_value, incoming_block)
               } else {
+                eprintln!("[SSA] Warning {} @{}: [ {}, {} ]",
+                  inst.get_name(),
+                  block.get_name(),
+                  "unknown",
+                  incoming_block.as_ref::<Block>(&builder.module.context).unwrap().get_name());
                 // TODO(@were): Warning here!
                 (ValueRef{ skey: 0, kind: VKindCode::Unknown }, incoming_block)
               }
