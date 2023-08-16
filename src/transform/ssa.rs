@@ -167,7 +167,7 @@ fn inject_phis(module: Module, dt: &DominatorTree) -> (Module, HashMap<usize, us
       let predeccessors = if pred_branches.len() > 1 {
         let mut res = HashSet::new();
         pred_branches.iter().for_each(|inst| {
-          // eprintln!("gather block: {}", inst.get_parent().to_string());
+          eprintln!("gather block: {}", inst.get_parent().get_name());
           res.insert(inst.get_parent().get_skey());
         });
         res

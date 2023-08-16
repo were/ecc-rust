@@ -88,20 +88,33 @@ impl DominatorTree {
         let mut first = true;
         for pred in block.pred_iter() {
           let pred = pred.get_parent();
+          if workspace[pred.get_skey()].dominators.is_empty() {
+            continue;
+          }
           if first {
             new_dom = workspace[pred.get_skey()].dominators.clone();
             first = false;
-          } else if !workspace[pred.get_skey()].dominators.is_empty() {
+          } else {
             new_dom = new_dom
               .intersection(&workspace[pred.get_skey()].dominators)
               .cloned()
               .collect::<HashSet<_>>();
           }
         }
-        new_dom.insert(front.skey);
-        if new_dom != workspace[front.skey].dominators {
-          changed = true;
-          workspace[front.skey].dominators = new_dom;
+        if !first {
+          new_dom.insert(front.skey);
+          if new_dom != workspace[front.skey].dominators {
+            changed = true;
+            assert!(new_dom.contains(&func.get_block(0).unwrap().get_skey()));
+            // eprintln!("[DOM] block {} update to: {:?}", block.get_name(), new_dom);
+            // for pred in block.pred_iter() {
+            //   eprintln!("  pred: {}, intersects {:?}", pred.get_parent().get_name(),
+            //             workspace[pred.get_parent().get_skey()].dominators);
+            // }
+            workspace[front.skey].dominators = new_dom;
+          }
+        } else {
+          eprintln!("[DOM] block {} skip for now.", block.get_name());
         }
         for succ in block.succ_iter() {
           if visited.contains(&succ.get_skey()) {
