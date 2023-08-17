@@ -12,7 +12,7 @@ use trinity::{
 
 use crate::analysis::{dom_tree::DominatorTree, lifetime::VarLifetime};
 
-use super::{dce, simplify};
+use super::{dce, simplify::arith::remove_trivial_inst};
 
 fn find_value_dominator(
   ctx: &Context,
@@ -323,7 +323,7 @@ fn cleanup(module: &mut Module, phi_to_alloc: &HashMap<usize, usize>, dt: &Domin
       let mut mutator = InstMutator::new(&mut module.context, &elem);
       mutator.erase_from_parent();
     }
-    simplify::remove_trivial_inst(module);
+    remove_trivial_inst(module);
     dce::transform(module);
   }
 }
