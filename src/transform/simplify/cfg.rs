@@ -1,6 +1,7 @@
 use trinity::ir::{
   module::Module,
-  value::instruction::{PhiNode, InstMutator, BranchInst, SubInst, InstructionRef}, Instruction, Function
+  value::instruction::{PhiNode, InstMutator, BranchInst, SubInst, InstructionRef, InstOpcode},
+  Instruction, Function, ValueRef, Block
 };
 
 // TODO(@were): This is more complicated than I expected, especially when phi is involved.
@@ -10,7 +11,7 @@ fn has_trivial_branch(module: &Module) -> Option<(InstructionRef, Vec<(usize, us
       if let Some(br) = block.last_inst().unwrap().as_sub::<BranchInst>() {
         if let Some(dest) = br.dest_label() {
           if dest.pred_iter().count() == 1 {
-            eprintln!("[SIMP] Find a trivial branch: {}", br.to_string());
+            eprintln!("[CFG] Find a trivial branch: {}", br.to_string());
             let res = block.last_inst().unwrap().as_super();
             let mut to_replace = Vec::new();
             for block in func.block_iter() {
@@ -62,5 +63,103 @@ pub fn merge_trivial_branches(module: &mut Module) -> bool {
     modified = true;
   }
   return modified;
+}
+
+fn has_select_phi<'ctx>(module: &'ctx Module) -> Option<(ValueRef, Vec<ValueRef>, ValueRef, Vec<(ValueRef, ValueRef, ValueRef)>)> {
+  for func in module.func_iter() {
+    for block in func.block_iter() {
+      if let Some(last_inst) = block.last_inst() {
+        if let Some(br) = last_inst.as_sub::<BranchInst>() {
+          if let Some(cond) = br.cond() {
+            let true_label = br.true_label().unwrap();
+            let false_label = br.false_label().unwrap();
+            eprintln!("[CFG] Inspecting : {}", br.to_string());
+            if true_label.succ_iter().count() != 1 || false_label.succ_iter().count() != 1 {
+              eprintln!("[CFG] Branch has more than one successor!");
+              continue;
+            }
+            if true_label.get_num_insts() + false_label.get_num_insts() > 12 {
+              eprintln!("[CFG] Too many instructions to hoist.");
+              continue;
+            }
+            // if true_label.get_num_insts() == 1 && false_label.get_num_insts() == 1 {
+            //   eprintln!("[CFG] Both branches have only one branch instruction.");
+            //   continue;
+            // }
+            let has_mem_op = |inst: InstructionRef| {
+              match inst.get_opcode() {
+                InstOpcode::Load(_) | InstOpcode::Store(_) | InstOpcode::Call => true,
+                _ => false
+              }
+            };
+            if true_label.inst_iter().any(has_mem_op) || false_label.inst_iter().any(has_mem_op) {
+              eprintln!("[CFG] Branch has memory operations!");
+              continue;
+            }
+            let succ0 = true_label.succ_iter().next().unwrap();
+            let succ1 = false_label.succ_iter().next().unwrap();
+            if succ0.get_skey() != succ1.get_skey() {
+              eprintln!("[CFG] Branch has different successors!");
+              continue;
+            }
+            eprintln!("[CFG] Find an if-then-else!");
+            let succ = succ0;
+            // Iterate over all the phi nodes in succ.
+            // Gather their incoming values within this succ.
+            let mut res = Vec::new();
+            for inst1 in succ.inst_iter() {
+              if let Some(phi) = inst1.as_sub::<PhiNode>() {
+                let tf = if phi.get_incoming_block(0).unwrap().get_skey() == br.true_label().unwrap().get_skey() {
+                  (0, 1)
+                } else {
+                  (1, 0)
+                };
+                let tf = (
+                  phi.get_incoming_value(tf.0).unwrap().clone(),
+                  phi.get_incoming_value(tf.1).unwrap().clone()
+                );
+
+                res.push((inst1.as_super(), tf.0, tf.1));
+              }
+            }
+            if res.len() > 0 {
+              eprintln!("[CFG] Hoisting {} instructions.",
+                true_label.get_num_insts() + false_label.get_num_insts() - 2);
+              let mut hoist = true_label.inst_iter().map(|i| i.as_super()).collect::<Vec<_>>();
+              hoist.pop();
+              hoist.extend(false_label.inst_iter().map(|i| i.as_super()));
+              hoist.pop();
+              return Some((cond.clone(), hoist, succ.as_super(), res));
+            }
+          }
+        }
+      }
+    }
+  }
+  None
+}
+
+pub fn phi_to_select(module: &mut Module) -> bool {
+  let mut modified = false;
+  while let Some((cond, hoist, dest, phis)) = has_select_phi(module) {
+    modified = true;
+    for (i, elem) in hoist.into_iter().enumerate() {
+      eprintln!("[CFG] Hoisting {}", elem.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+      let mut mutator = InstMutator::new(&mut module.context, &elem);
+      mutator.move_to_block(&dest, Some(i));
+    }
+    for (phi, true_value, false_value) in phis.into_iter() {
+      assert!(phi.as_ref::<Instruction>(&module.context).unwrap().get_num_operands() == 4);
+      let mut mutator = InstMutator::new(&mut module.context, &phi);
+      mutator.set_opcode(InstOpcode::Select);
+      mutator.set_operand(0, cond.clone());
+      mutator.set_operand(1, true_value.clone());
+      mutator.set_operand(2, false_value.clone());
+      mutator.remove_operand(3);
+      eprintln!("[CFG] Select {}", phi.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+    }
+    eprintln!("[CFG] After:\n{}", dest.as_ref::<Block>(&mut module.context).unwrap().to_string());
+  }
+  modified
 }
 

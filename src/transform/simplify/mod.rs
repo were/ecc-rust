@@ -41,6 +41,7 @@ pub fn transform(module: &mut Module) -> bool {
     iterative |= cfg::merge_trivial_branches(module);
     iterative |= super::dce::transform(module);
     iterative |= arith::simplify_arith(module);
+    iterative |= cfg::phi_to_select(module);
     modified |= iterative;
   }
   return modified;

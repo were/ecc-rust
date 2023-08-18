@@ -31,6 +31,8 @@ pub(super) enum WASMOpcode {
   Store(usize),
   /// Load value to memory.
   Load(usize),
+  /// If then else.
+  Select,
   /// Return instruction.
   Return,
 }
@@ -181,6 +183,15 @@ impl WASMInst {
     }
 
     res
+  }
+
+  pub(super) fn select(skey: usize, cond: WASMInst, then: WASMInst, else_: WASMInst) -> WASMInst {
+    WASMInst {
+      _skey: skey,
+      opcode: WASMOpcode::Select,
+      operands: vec![Box::new(then), Box::new(else_), Box::new(cond)],
+      comment: String::new(),
+    }
   }
 
   pub(super) fn call(skey: usize, name: String, args: Vec<WASMInst>) -> WASMInst {
@@ -359,6 +370,16 @@ impl WASMInst {
         };
         let indent = " ".repeat(*indent);
         format!("{}(i32.load\n{}\n{})", indent, addr, indent)
+      },
+      WASMOpcode::Select => {
+        *indent += 1;
+        let op = self.operands.iter().map(|x| {
+          let op = x.to_string(indent);
+          op
+        }).collect::<Vec<String>>();
+        *indent -= 1;
+        let indent = " ".repeat(*indent);
+        format!("{}(select\n{}\n{}\n{}\n{})", indent, op[0], op[1], op[2], indent)
       },
       WASMOpcode::Store(bits) => {
         let value = {
