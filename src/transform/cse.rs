@@ -12,7 +12,7 @@ fn analysis<'ctx>(module: &'ctx Module, dt: &DominatorTree) -> Vec<(ValueRef, Ve
     for block in func.block_iter() {
       for inst in block.inst_iter() {
         match inst.get_opcode() {
-          InstOpcode::BinaryOp(_) | InstOpcode::GetElementPtr(_) | InstOpcode::CastInst(_) | InstOpcode::ICompare(_) => {
+          InstOpcode::BinaryOp(_) | InstOpcode::GetElementPtr(_) | InstOpcode::CastInst(_) | InstOpcode::ICompare(_) | InstOpcode::Select => {
             let operands = (0..inst.get_num_operands())
               .map(|i| inst.get_operand(i).unwrap().clone())
               .collect::<Vec<_>>();

@@ -329,12 +329,12 @@ fn cleanup(module: &mut Module, phi_to_alloc: &HashMap<usize, usize>, dt: &Domin
 }
 
 
-pub fn transform(module: Module) -> (Module, DominatorTree) {
+pub fn transform(module: Module) -> Module {
   // eprintln!("{}", module.to_string());
   let dt = DominatorTree::new(&module);
   let vlt = VarLifetime::new(&module);
   let (mut injected, phi_to_alloc) = inject_phis(module, &dt, &vlt);
   cleanup(&mut injected, &phi_to_alloc, &dt);
-  (injected, dt)
+  injected
 }
 

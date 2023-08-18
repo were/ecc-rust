@@ -13,13 +13,12 @@ pub fn optimize(mut module: Module, opt_level: i32) -> Module {
   }
   // eprintln!("{}", module);
   const_propagate(&mut module);
-  let (mut ssa, dom) = ssa::transform(module);
+  let mut ssa = ssa::transform(module);
   merge_trivial_branches(&mut ssa);
   if opt_level == 2 {
-    let mut cse = cse::transform(ssa, &dom);
-    simplify::remove_lifetime_hint(&mut cse);
-    simplify::transform(&mut cse);
-    cse
+    simplify::remove_lifetime_hint(&mut ssa);
+    let (simplified, _) = simplify::transform(ssa);
+    simplified
   } else {
     ssa
   }

@@ -7,6 +7,8 @@ use trinity::ir::{
   ValueRef
 };
 
+use crate::analysis::dom_tree::DominatorTree;
+
 fn has_lifetime_hint(module: &Module) -> Option<ValueRef> {
   for func in module.func_iter() {
     for block in func.block_iter() {
@@ -32,17 +34,19 @@ pub fn remove_lifetime_hint(module: &mut Module) {
   }
 }
 
-pub fn transform(module: &mut Module) -> bool {
+pub fn transform(mut module: Module) -> (Module, bool) {
   let mut modified = false;
   let mut iterative = true;
   while iterative {
     iterative = false;
-    iterative |= arith::remove_trivial_inst(module);
-    iterative |= cfg::merge_trivial_branches(module);
-    iterative |= super::dce::transform(module);
-    iterative |= arith::simplify_arith(module);
-    iterative |= cfg::phi_to_select(module);
+    let dt = DominatorTree::new(&module);
+    module = super::cse::transform(module, &dt);
+    iterative |= arith::remove_trivial_inst(&mut module);
+    iterative |= cfg::merge_trivial_branches(&mut module);
+    iterative |= super::dce::transform(&mut module);
+    iterative |= arith::simplify_arith(&mut module);
+    iterative |= cfg::phi_to_select(&mut module);
     modified |= iterative;
   }
-  return modified;
+  return (module, modified);
 }
