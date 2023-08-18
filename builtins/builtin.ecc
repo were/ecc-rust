@@ -22,7 +22,6 @@ func toString(i32 x) -> string {
   let string res = new string;
   let i32 length = cnt + neg;
   res.data_ = new i8[length];
-  // res.data_[cnt + neg] = 0 as i8;
   if neg == 1 {
     res.data_[0] = 45 as i8;
     x = 0 - x;

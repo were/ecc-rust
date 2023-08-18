@@ -177,6 +177,12 @@ impl <'ctx>Codegen<'ctx> {
             vec![res]
           }
         }
+        InstOpcode::Select => {
+          let cond = self.emit_value(inst.get_operand(0).unwrap(), false).remove(0);
+          let tv = self.emit_value(inst.get_operand(1).unwrap(), false).remove(0);
+          let fv = self.emit_value(inst.get_operand(2).unwrap(), false).remove(0);
+          vec![WASMInst::select(inst.get_skey(), cond, tv, fv)]
+        }
         _ => {
           let mut res = vec![WASMInst::iconst(value.skey, 0)];
           res.last_mut().unwrap().comment = format!("Inst not supported yet: {}", inst.to_string(false));
