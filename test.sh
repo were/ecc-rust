@@ -9,7 +9,13 @@ else
   backend=$2
 fi
 
-$REPO/./target/debug/ecc $1 --backend $backend --output a.wasm --opt 2 > compile.log 2>&1
+if [ ${backend} == "emcc" ]; then
+  opt=0
+else
+  opt=2
+fi
+
+$REPO/./target/debug/ecc $1 --backend $backend --output a.wasm --opt $opt > compile.log 2>&1
 
 if [ $? -ne 0 ]; then
   echo Compilation failed!
