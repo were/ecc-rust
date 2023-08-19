@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use trinity::ir::{
   module::Module,
-  value::instruction::{PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst},
-  ValueRef, Instruction, ConstScalar, TypeRef
+  value::instruction::{PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, SelectInst},
+  ValueRef, Instruction, ConstScalar, TypeRef, IntType
 };
 
 
@@ -112,6 +112,34 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
             }
             _ => {}
           }
+        } else if let Some(select) = inst.as_sub::<SelectInst>() {
+          if let Some(fv) = select.get_false_value().as_ref::<ConstScalar>(&module.context) {
+            if let Some(ity) = fv.get_type().as_ref::<IntType>(&module.context) {
+              if ity.get_bits() != 1 {
+                continue;
+              }
+            }
+            if fv.get_value() == 0 {
+              let opcode = InstOpcode::BinaryOp(BinaryOp::And);
+              return Some((inst.get_skey(), opcode, select.get_condition().clone(), select.get_true_value().clone()));
+            }
+          }
+          if let Some(tv) = select.get_true_value().as_ref::<ConstScalar>(&module.context) {
+            if let Some(ity) = tv.get_type().as_ref::<IntType>(&module.context) {
+              if ity.get_bits() != 1 {
+                continue;
+              }
+            }
+            if tv.get_value() == 1 {
+              let opcode = InstOpcode::BinaryOp(BinaryOp::Or);
+              eprintln!("[SIMP] Select a value {}, can be fused into or: {}, {}, {}",
+                inst.to_string(false),
+                opcode.to_string(),
+                select.get_condition().to_string(&module.context, true),
+                select.get_false_value().to_string(&module.context, true));
+              return Some((inst.get_skey(), opcode, select.get_condition().clone(), select.get_false_value().clone()));
+            }
+          }
         }
       }
     }
@@ -123,11 +151,18 @@ pub fn simplify_arith(module: &mut Module) -> bool {
   let mut modified = false;
   while let Some((skey, opcode, a, b)) = has_arith_to_simplify(module) {
     let inst = Instruction::from_skey(skey);
-    eprintln!("[SIMP] Before {}", inst.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+    let num_operands = {
+      let inst = inst.as_ref::<Instruction>(&module.context).unwrap();
+      eprintln!("[SIMP] Before {}", inst.to_string(false));
+      inst.get_num_operands()
+    };
     let mut inst_mut = InstMutator::new(&mut module.context, &inst);
     inst_mut.set_operand(0, a);
     inst_mut.set_operand(1, b);
     inst_mut.set_opcode(opcode);
+    for i in 2..num_operands {
+      inst_mut.remove_operand(i);
+    }
     eprintln!("[SIMP] After {}", inst.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
     modified = true;
   }
