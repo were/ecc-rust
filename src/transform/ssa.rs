@@ -110,7 +110,6 @@ fn inject_phis(module: Module, dt: &DominatorTree, vlt: &VarLifetime) -> (Module
             let pred = user_inst;
             let mut runner = pred.get_parent().get_skey();
             while runner != dt.block_idom(&block) {
-              eprintln!("runner: {}", runner);
               let runner_block = Block::from_skey(runner);
               let runner_block = runner_block.as_ref::<Block>(&builder.module.context).unwrap();
               runner_block.inst_iter().rev().for_each(|inst| {
@@ -333,7 +332,7 @@ fn cleanup(module: &mut Module, phi_to_alloc: &HashMap<usize, usize>, dt: &Domin
 pub fn transform(module: Module) -> Module {
   // eprintln!("{}", module.to_string());
   let dt = DominatorTree::new(&module);
-  let vlt = VarLifetime::new(&module);
+  let vlt = VarLifetime::new(&module, true);
   let (mut injected, phi_to_alloc) = inject_phis(module, &dt, &vlt);
   cleanup(&mut injected, &phi_to_alloc, &dt);
   injected

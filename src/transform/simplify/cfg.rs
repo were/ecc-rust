@@ -1,6 +1,9 @@
 use trinity::ir::{
   module::Module,
-  value::{instruction::{PhiNode, InstMutator, BranchInst, SubInst, InstructionRef, InstOpcode}, block::BlockMutator},
+  value::{
+    instruction::{PhiNode, InstMutator, BranchInst, SubInst, InstructionRef, InstOpcode},
+    block::BlockMutator
+  },
   Instruction, Function, ValueRef, Block
 };
 
@@ -226,3 +229,33 @@ pub fn phi_to_select(module: &mut Module) -> bool {
   modified
 }
 
+fn has_unreachable_block(module: &Module) -> Option<ValueRef> {
+  for func in module.func_iter() {
+    for block in func.block_iter() {
+      if block.get_skey() == func.get_block(0).unwrap().get_skey() {
+        continue;
+      }
+      if block.pred_iter().count() == 0 {
+        eprintln!("[CFG] Found unreachable block: {}", block.to_string(true));
+        return Some(block.as_super());
+      }
+    }
+  }
+  return None;
+}
+
+pub fn remove_unreachable_block(module: &mut Module) -> bool {
+  let mut modified = false;
+  while let Some(block) = has_unreachable_block(module) {
+    modified = true;
+    let block_ref = block.as_ref::<Block>(&module.context).unwrap();
+    let to_remove = block_ref.inst_iter().map(|i| i.as_super()).rev().collect::<Vec<_>>();
+    for inst in to_remove.into_iter() {
+      let mut mutator = InstMutator::new(&mut module.context, &inst);
+      mutator.erase_from_parent();
+    }
+    let mut mutator = BlockMutator::new(&mut module.context, block);
+    mutator.erase_from_parent();
+  }
+  modified
+}

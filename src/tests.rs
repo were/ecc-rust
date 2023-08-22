@@ -159,6 +159,11 @@ fn test_e2e(#[case] fname: &str) {
 #[case("04-hanoi.ecc")]
 #[case("05-cnf-lp.ecc")]
 #[case("06-cse1.ecc")]
+#[case("07-superloop.ecc")]
+#[case("08-heapsort.ecc")]
+#[case("09-humble.ecc")]
+#[case("10-uselessload.ecc")]
+#[case("11-supergcd.ecc")]
 fn test_pressure(#[case] fname: &str) {
   // Load the source file
   let (src, meta, obj_output) = load_source("../tests/performance/", &fname.to_string());

@@ -9,7 +9,7 @@ pub struct VarLifetime {
 
 impl VarLifetime {
 
-  pub fn new(module: &Module) -> Self {
+  pub fn new(module: &Module, verify: bool) -> Self {
     let mut cache = HashMap::new();
     for func in module.func_iter() {
       for block in func.block_iter() {
@@ -37,14 +37,17 @@ impl VarLifetime {
         }
       }
     }
-    for (k, v) in cache.iter() {
-      if v.0.skey == 0 {
-        let inst = Instruction::from_skey(*k).as_ref::<Instruction>(&module.context).unwrap();
-        panic!("{} missing lifetime.start", inst.to_string(false));
-      }
-      if v.1.skey == 0 {
-        let inst = Instruction::from_skey(*k).as_ref::<Instruction>(&module.context).unwrap();
-        panic!("{} missing lifetime.end", inst.to_string(false));
+    cache.retain(|_, v| v.0.skey != 0 && v.1.skey != 0);
+    if verify {
+      for (k, v) in cache.iter() {
+        if v.0.skey == 0 {
+          let inst = Instruction::from_skey(*k).as_ref::<Instruction>(&module.context).unwrap();
+          panic!("{} missing lifetime.start", inst.to_string(false));
+        }
+        if v.1.skey == 0 {
+          let inst = Instruction::from_skey(*k).as_ref::<Instruction>(&module.context).unwrap();
+          panic!("{} missing lifetime.end", inst.to_string(false));
+        }
       }
     }
     return Self { cache };
@@ -52,6 +55,10 @@ impl VarLifetime {
 
   pub fn get(&self, inst: usize) -> Option<(ValueRef, ValueRef)> {
     self.cache.get(&inst).map(|x| x.clone())
+  }
+
+  pub fn iter(&self) -> impl Iterator<Item = (&usize, &(ValueRef, ValueRef))> {
+    self.cache.iter()
   }
 
 }
