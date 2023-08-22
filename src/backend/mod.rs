@@ -39,6 +39,7 @@ pub fn emcc_codegen(irname: &String, output: &String) {
     .arg(&objname)
     .arg(&irname)
     .output() {
+    linker.stderr.iter().for_each(|x| eprint!("{}", *x as char));
     assert!(linker.status.success());
   } else {
     panic!("emcc not found, did you `source setup.sh`?");

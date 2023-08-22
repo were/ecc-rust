@@ -663,6 +663,11 @@ impl CodeGen {
             TokenType::GE => self.tg.builder.create_sge(lhs, rhs),
             TokenType::EQ => self.tg.builder.create_eq(lhs, rhs),
             TokenType::NE => self.tg.builder.create_ne(lhs, rhs),
+            TokenType::BitwiseAnd => self.tg.builder.create_and(lhs, rhs),
+            TokenType::BitwiseOr => self.tg.builder.create_or(lhs, rhs),
+            TokenType::BitwiseXor => self.tg.builder.create_xor(lhs, rhs),
+            TokenType::BitwiseShl => self.tg.builder.create_shl(lhs, rhs),
+            TokenType::BitwiseShr => self.tg.builder.create_ashr(lhs, rhs),
             _ => { panic!("Unknown binary op {}", binop.op); }
           }
         }
