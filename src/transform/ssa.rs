@@ -110,6 +110,7 @@ fn inject_phis(module: Module, dt: &DominatorTree, vlt: &VarLifetime) -> (Module
             let pred = user_inst;
             let mut runner = pred.get_parent().get_skey();
             while runner != dt.block_idom(&block) {
+              eprintln!("runner: {}", runner);
               let runner_block = Block::from_skey(runner);
               let runner_block = runner_block.as_ref::<Block>(&builder.module.context).unwrap();
               runner_block.inst_iter().rev().for_each(|inst| {
