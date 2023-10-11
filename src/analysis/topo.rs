@@ -65,6 +65,21 @@ impl <'ctx>LoopInfo<'ctx> {
     return head;
   }
 
+  pub fn get_prehead(&'ctx self) -> BlockRef<'ctx> {
+    let head = self.get_head();
+    let latch = self.get_latch();
+    assert!(head.pred_iter().count() == 2);
+    for pred in head.pred_iter() {
+      if pred.get_skey() == latch.get_skey() {
+        continue;
+      }
+      assert!(pred.get_parent().get_name().starts_with("for.predhead."));
+      let res = Block::from_skey(pred.get_parent().get_skey()).as_ref::<Block>(self.ctx).unwrap();
+      return res;
+    }
+    unreachable!("Should not get here as each loop should always have a non-latch pred");
+  }
+
   pub fn get_exit(&'ctx self) -> BlockRef<'ctx> {
     let exit = Block::from_skey(self.exit).as_ref::<Block>(self.ctx).unwrap();
     return exit;
@@ -74,6 +89,7 @@ impl <'ctx>LoopInfo<'ctx> {
     &self.children
   }
 
+  // TODO(@were): Get the loop trip count.
   pub fn get_loop_n(&self) -> Option<ValueRef> {
     let latch = self.get_latch();
     if let Some(br) = latch.as_sub::<BranchInst>() {
@@ -88,6 +104,8 @@ impl <'ctx>LoopInfo<'ctx> {
     None
   }
 
+  // TODO(@were): Check the incremental value to be one.
+  /// Get the phi node of a canonical inductive loop.
   pub fn get_loop_ind_var(&'ctx self) -> Option<InstructionRef<'ctx>> {
     let latch = self.get_latch();
     if let Some(br) = latch.as_sub::<BranchInst>() {
