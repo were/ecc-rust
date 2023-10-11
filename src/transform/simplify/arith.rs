@@ -175,37 +175,45 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
   for func in module.func_iter() {
     for block in func.block_iter() {
       for inst in block.inst_iter() {
+        // Find phi node with all the branches are the same values.
+        // e.g. phi [ block.1, %v0 ], [ block.1, %v0 ]
         if let Some(phi) = inst.as_sub::<PhiNode>() {
           let value = phi.get_incoming_value(0).unwrap();
           if phi.iter().all(|(_, v)| v.skey == value.skey) {
-            // eprintln!("[SIMP] Find a trivial phi: {}, replace by: {}", inst.to_string(false), value.to_string(&module.context, true));
+            // eprintln!("[SIMP] Find a trivial phi: {}, replace by: {}",
+            //           inst.to_string(false), value.to_string(&module.context, true));
             return Some((inst.get_skey(), value.clone()));
           }
         }
         if let Some(binary) = inst.as_sub::<BinaryInst>() {
           match binary.get_op() {
+            // Find trivial add: a + 0
             BinaryOp::Add => {
               for i in 0..2 {
                 if let Some(const_scalar) = inst.get_operand(i).unwrap().as_ref::<ConstScalar>(&module.context) {
                   if const_scalar.get_value() == 0 {
                     let value = inst.get_operand(1 - i).unwrap().clone();
                     // eprintln!("[SIMP] Find a trivial add: {}, replace by: {}",
-                    //  inst.to_string(false), value.to_string(&module.context, true));
+                    //           inst.to_string(false), value.to_string(&module.context, true));
                     return Some((inst.get_skey(), value));
                   }
                 }
               }
             }
             BinaryOp::Sub => {
+              // Find trivial sub: a - 0
               if let Some(const_scalar) = binary.rhs().as_ref::<ConstScalar>(&module.context) {
                 if const_scalar.get_value() == 0 {
                   let value = binary.lhs().clone();
-                  // eprintln!("[SIMP] Find a trivial sub: {}, replace by: {}", inst.to_string(false), value.to_string(&module.context, true));
+                  // eprintln!("[SIMP] Find a trivial sub: {}, replace by: {}",
+                  //           inst.to_string(false), value.to_string(&module.context, true));
                   return Some((inst.get_skey(), value));
                 }
               }
+              // Find trivial sub: a - a
               if binary.lhs().skey == binary.rhs().skey {
-                // eprintln!("[SIMP] Find a trivial sub: {}, replace by: {}", inst.to_string(false), 0);
+                // eprintln!("[SIMP] Find a trivial sub: {}, replace by: {}",
+                //           inst.to_string(false), 0);
                 const_replace_tuple = Some((inst.get_skey(), inst.get_type().clone(), 0));
                 break;
               }
@@ -220,13 +228,14 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
                 }
               }
             }
+            // Find trivial mul: a * 1
             BinaryOp::Mul => {
               for i in 0..2 {
                 if let Some(const_scalar) = inst.get_operand(i).unwrap().as_ref::<ConstScalar>(&module.context) {
                   if const_scalar.get_value() == 1 {
                     let value = inst.get_operand(1 - i).unwrap().clone();
                     // eprintln!("[SIMP] Find a trivial mul: {}, replace by: {}",
-                    //  inst.to_string(false), value.to_string(&module.context, true));
+                    //           inst.to_string(false), value.to_string(&module.context, true));
                     return Some((inst.get_skey(), value));
                   }
                 }
