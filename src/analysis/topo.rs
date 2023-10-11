@@ -10,6 +10,8 @@ use trinity::{
   context::Context
 };
 
+pub type Node<'ctx> = Either<BlockRef<'ctx>, Box<LoopInfo<'ctx>>>;
+
 pub struct LoopInfo<'ctx> {
   ctx: &'ctx Context,
   /// The latch branch of this loop.
@@ -174,31 +176,29 @@ pub fn dfs_topology<'ctx>(
     }
   }
 
-
 }
 
-pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) -> Vec<Either<BlockRef<'ctx>, Box<LoopInfo<'ctx>>>> {
+pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) -> Vec<Node<'ctx>> {
   let mut loop_stack = Vec::new();
   let mut finalized_loops = Vec::new();
   let mut res = Vec::new();
-
 
   let entry = func.get_block(0).unwrap();
   visited[entry.get_skey()] = true;
   dfs_topology(func.ctx, &entry, visited, &mut loop_stack, &mut finalized_loops, &mut res);
 
-  println!("[TOPO] Analyzed topology of func @{}", func.get_name());
-  for elem in res.iter() {
-    match elem {
-      Either::Left(block) => {
-        let block = Block::from_skey(*block).as_ref::<Block>(func.ctx).unwrap();
-        println!(" Block: {}", block.get_name());
-      }
-      Either::Right(li) => {
-        print_loop_info(li, 1)
-      }
-    }
-  }
+  // eprintln!("[TOPO] Analyzed topology of func @{}", func.get_name());
+  // for elem in res.iter() {
+  //   match elem {
+  //     Either::Left(block) => {
+  //       let block = Block::from_skey(*block).as_ref::<Block>(func.ctx).unwrap();
+  //       eprintln!(" Block: {}", block.get_name());
+  //     }
+  //     Either::Right(li) => {
+  //       print_loop_info(li, 1)
+  //     }
+  //   }
+  // }
 
   assert!(finalized_loops.is_empty(), "There are still some loops not finalized!");
 

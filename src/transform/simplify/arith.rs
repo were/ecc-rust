@@ -20,10 +20,10 @@ fn add_sub_fuse(inst: &InstructionRef) -> Option<(InstOpcode, ValueRef, ValueRef
       if let Some(bin_lhs) = lhs.as_sub::<BinaryInst>() {
         if let Some(rhs) = binary.rhs().as_ref::<Instruction>(inst.ctx) {
           if let Some(bin_rhs) = rhs.as_sub::<BinaryInst>() {
-            eprintln!("[SIMP] A = BinOp (B, C)");
-            eprintln!("[SIMP] A = {}", inst.to_string(false));
-            eprintln!("[SIMP] B = {}", lhs.to_string(false));
-            eprintln!("[SIMP] C = {}", rhs.to_string(false));
+            // eprintln!("[SIMP] A = BinOp (B, C)");
+            // eprintln!("[SIMP] A = {}", inst.to_string(false));
+            // eprintln!("[SIMP] B = {}", lhs.to_string(false));
+            // eprintln!("[SIMP] C = {}", rhs.to_string(false));
             // (a +/- b) +/- (c +/- d)
             let (b, b_coef) = if bin_lhs.get_op() == BinaryOp::Add {
               (bin_lhs.rhs().clone(), 1)
@@ -53,9 +53,9 @@ fn add_sub_fuse(inst: &InstructionRef) -> Option<(InstOpcode, ValueRef, ValueRef
     }
   }
   let res = count.clone().into_iter().filter(|(_, coef)| *coef != 0).collect::<Vec<_>>();
-  for (v, coef) in count.iter() {
-    eprintln!("[SIMP] Coef: {} x {}", v.to_string(inst.ctx, false), *coef);
-  }
+  // for (v, coef) in count.iter() {
+  //   eprintln!("[SIMP] Coef: {} x {}", v.to_string(inst.ctx, false), *coef);
+  // }
   if res.len() == 2 {
     match (res.get(0).unwrap(), res.get(1).unwrap()) {
       ((a, 1), (b, 1)) => {
@@ -83,9 +83,9 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
                     if let BinaryOp::Sub = operand_bin.get_op() {
                       if let Some(const_scalar) = operand_inst.get_operand(0).unwrap().as_ref::<ConstScalar>(&module.context) {
                         if const_scalar.get_value() == 0 {
-                          eprintln!("[SIMP] Add a negative value {}, can be fused into sub: {}",
-                            operand_inst.to_string(false),
-                            inst.to_string(false));
+                          // eprintln!("[SIMP] Add a negative value {}, can be fused into sub: {}",
+                          //   operand_inst.to_string(false),
+                          //   inst.to_string(false));
                           let opcode = InstOpcode::BinaryOp(BinaryOp::Sub);
                           let lhs = inst.get_operand(1 - i).unwrap().clone();
                           let rhs = operand_bin.rhs().clone();
@@ -132,11 +132,11 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
             }
             if tv.get_value() == 1 {
               let opcode = InstOpcode::BinaryOp(BinaryOp::Or);
-              eprintln!("[SIMP] Select a value {}, can be fused into or: {}, {}, {}",
-                inst.to_string(false),
-                opcode.to_string(),
-                select.get_condition().to_string(&module.context, true),
-                select.get_false_value().to_string(&module.context, true));
+              // eprintln!("[SIMP] Select a value {}, can be fused into or: {}, {}, {}",
+              //   inst.to_string(false),
+              //   opcode.to_string(),
+              //   select.get_condition().to_string(&module.context, true),
+              //   select.get_false_value().to_string(&module.context, true));
               return Some((inst.get_skey(), opcode, select.get_condition().clone(), select.get_false_value().clone()));
             }
           }
@@ -153,7 +153,7 @@ pub fn simplify_arith(module: &mut Module) -> bool {
     let inst = Instruction::from_skey(skey);
     let num_operands = {
       let inst = inst.as_ref::<Instruction>(&module.context).unwrap();
-      eprintln!("[SIMP] Before {}", inst.to_string(false));
+      // eprintln!("[SIMP] Before {}", inst.to_string(false));
       inst.get_num_operands()
     };
     let mut inst_mut = InstMutator::new(&mut module.context, &inst);
@@ -163,7 +163,7 @@ pub fn simplify_arith(module: &mut Module) -> bool {
     for i in 2..num_operands {
       inst_mut.remove_operand(i);
     }
-    eprintln!("[SIMP] After {}", inst.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+    // eprintln!("[SIMP] After {}", inst.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
     modified = true;
   }
   return modified;
@@ -178,7 +178,7 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
         if let Some(phi) = inst.as_sub::<PhiNode>() {
           let value = phi.get_incoming_value(0).unwrap();
           if phi.iter().all(|(_, v)| v.skey == value.skey) {
-            eprintln!("[SIMP] Find a trivial phi: {}, replace by: {}", inst.to_string(false), value.to_string(&module.context, true));
+            // eprintln!("[SIMP] Find a trivial phi: {}, replace by: {}", inst.to_string(false), value.to_string(&module.context, true));
             return Some((inst.get_skey(), value.clone()));
           }
         }
@@ -189,8 +189,8 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
                 if let Some(const_scalar) = inst.get_operand(i).unwrap().as_ref::<ConstScalar>(&module.context) {
                   if const_scalar.get_value() == 0 {
                     let value = inst.get_operand(1 - i).unwrap().clone();
-                    eprintln!("[SIMP] Find a trivial add: {}, replace by: {}",
-                      inst.to_string(false), value.to_string(&module.context, true));
+                    // eprintln!("[SIMP] Find a trivial add: {}, replace by: {}",
+                    //  inst.to_string(false), value.to_string(&module.context, true));
                     return Some((inst.get_skey(), value));
                   }
                 }
@@ -200,12 +200,12 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
               if let Some(const_scalar) = binary.rhs().as_ref::<ConstScalar>(&module.context) {
                 if const_scalar.get_value() == 0 {
                   let value = binary.lhs().clone();
-                  eprintln!("[SIMP] Find a trivial sub: {}, replace by: {}", inst.to_string(false), value.to_string(&module.context, true));
+                  // eprintln!("[SIMP] Find a trivial sub: {}, replace by: {}", inst.to_string(false), value.to_string(&module.context, true));
                   return Some((inst.get_skey(), value));
                 }
               }
               if binary.lhs().skey == binary.rhs().skey {
-                eprintln!("[SIMP] Find a trivial sub: {}, replace by: {}", inst.to_string(false), 0);
+                // eprintln!("[SIMP] Find a trivial sub: {}, replace by: {}", inst.to_string(false), 0);
                 const_replace_tuple = Some((inst.get_skey(), inst.get_type().clone(), 0));
                 break;
               }
@@ -213,7 +213,7 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
                 if let InstOpcode::BinaryOp(BinaryOp::Add) = lhs_bin.get_opcode() {
                   for i in 0..2 {
                     if lhs_bin.get_operand(i).unwrap().skey == binary.rhs().skey {
-                      eprintln!("[SIMP] a + x - x = a: {}", inst.to_string(false));
+                      // eprintln!("[SIMP] a + x - x = a: {}", inst.to_string(false));
                       return Some((inst.get_skey(), lhs_bin.get_operand(1 - i).unwrap().clone()));
                     }
                   }
@@ -225,8 +225,8 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
                 if let Some(const_scalar) = inst.get_operand(i).unwrap().as_ref::<ConstScalar>(&module.context) {
                   if const_scalar.get_value() == 1 {
                     let value = inst.get_operand(1 - i).unwrap().clone();
-                    eprintln!("[SIMP] Find a trivial mul: {}, replace by: {}",
-                      inst.to_string(false), value.to_string(&module.context, true));
+                    // eprintln!("[SIMP] Find a trivial mul: {}, replace by: {}",
+                    //  inst.to_string(false), value.to_string(&module.context, true));
                     return Some((inst.get_skey(), value));
                   }
                 }
@@ -247,9 +247,9 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
   if let Some((skey, ty, scalar)) = const_replace_tuple {
     let zero = module.context.const_value(ty, scalar);
     let inst = Instruction::from_skey(skey);
-    eprintln!("[SIMP] Find a constant inst: {}, replace by: {}",
-      inst.to_string(&module.context, true),
-      zero.to_string(&module.context, true));
+    // eprintln!("[SIMP] Find a constant inst: {}, replace by: {}",
+    //   inst.to_string(&module.context, true),
+    //   zero.to_string(&module.context, true));
     return Some((skey, zero));
   }
   None

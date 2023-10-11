@@ -101,7 +101,7 @@ impl TypeGen {
     if let Some(ptr_ty) = ty.as_ref::<PointerType>(&self.builder.module.context) {
       if let &TKindCode::StructType = ptr_ty.get_pointee_ty().kind() {
       } else {
-        eprintln!("origin ty: {}", ty.to_string(&self.builder.module.context));
+        // eprintln!("origin ty: {}", ty.to_string(&self.builder.module.context));
         let raw = ptr_ty.get_pointee_ty();
         let scalar_ty = self.generate_array_runtime(raw.clone());
         let type_name = self.extract_array_type_name(&scalar_ty);
@@ -117,7 +117,7 @@ impl TypeGen {
         self.class_cache.insert(type_name, array_ty.clone());
         let res = self.builder.module.context.pointer_type(array_ty.clone());
         self.array_types.insert(ty.clone(), res.clone());
-        eprintln!("mapped to res: {}", array_ty.as_ref::<StructType>(&self.builder.module.context).unwrap().to_string());
+        // eprintln!("mapped to res: {}", array_ty.as_ref::<StructType>(&self.builder.module.context).unwrap().to_string());
         return res;
       }
     }
@@ -754,12 +754,15 @@ impl CodeGen {
           // Dereference the address.
           if i != indices.len() - 1 {
             array_obj = self.tg.builder.create_load(array_obj);
-            eprintln!("load array[i]: {}", array_obj.as_ref::<Instruction>(&self.tg.builder.module.context).unwrap().to_string(false));
+            // eprintln!("load array[i]: {}",
+            //   array_obj.as_ref::<Instruction>(&self.tg.builder.module.context)
+            //     .unwrap().to_string(false));
           }
         }
         if !is_lval {
           let res = self.tg.builder.create_load(array_obj);
-          eprintln!("rval array[i]: {}", res.as_ref::<Instruction>(&self.tg.builder.module.context).unwrap().to_string(false));
+          // eprintln!("rval array[i]: {}",
+          //   res.as_ref::<Instruction>(&self.tg.builder.module.context).unwrap().to_string(false));
           res
         } else {
           array_obj

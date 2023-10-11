@@ -53,9 +53,9 @@ fn analysis<'ctx>(module: &'ctx Module, dt: &DominatorTree) -> Vec<(ValueRef, Ve
 pub fn rewrite(module: &mut Module, to_replace: Vec<(ValueRef, Vec<ValueRef>)>) -> bool {
   let mut res = false;
   for (dom, subs) in to_replace.iter() {
-    eprintln!("[CSE] Master: {}", dom.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+    // eprintln!("[CSE] Master: {}", dom.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
     for sub in subs {
-      eprintln!("[CSE] To replace: {}", sub.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+      // eprintln!("[CSE] To replace: {}", sub.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
       let mut mutator = InstMutator::new(&mut module.context, sub);
       mutator.replace_all_uses_with(dom.clone());
       res = true;

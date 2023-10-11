@@ -6,6 +6,7 @@ mod ssa;
 mod dce;
 mod cse;
 mod lifetime;
+mod loop_hoist;
 mod simplify;
 
 pub fn optimize(mut module: Module, opt_level: i32) -> Module {
