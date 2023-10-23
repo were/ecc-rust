@@ -117,7 +117,8 @@ impl TypeGen {
         self.class_cache.insert(type_name, array_ty.clone());
         let res = self.builder.module.context.pointer_type(array_ty.clone());
         self.array_types.insert(ty.clone(), res.clone());
-        // eprintln!("mapped to res: {}", array_ty.as_ref::<StructType>(&self.builder.module.context).unwrap().to_string());
+        // eprintln!("mapped to res: {}",
+        //   array_ty.as_ref::<StructType>(&self.builder.module.context).unwrap().to_string());
         return res;
       }
     }
