@@ -304,7 +304,7 @@ fn cleanup(module: &mut Module, phi_to_alloc: &HashMap<usize, usize>, dt: &Domin
               match ptr_inst.get_opcode() {
                 InstOpcode::Alloca(_) => {
                   if !dominated.contains(&inst.get_skey()) {
-                    let log = inst.to_string(false);
+                    // let log = inst.to_string(false);
                     // eprintln!("[SSA] Remove: {}, because stored value not loaded.", log);
                     to_remove.push(inst.as_super());
                   }
