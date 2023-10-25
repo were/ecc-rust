@@ -286,7 +286,7 @@ impl <'ctx>Codegen<'ctx> {
                   let callee = call.get_callee();
                   let fty = callee.get_type();
                   let rty = fty.ret_ty();
-                  rty.as_ref::<VoidType>(inst.ctx).is_some()
+                  rty.as_ref::<VoidType>(inst.ctx()).is_some()
                 }
               }
               InstOpcode::Phi => {
@@ -320,10 +320,10 @@ impl <'ctx>Codegen<'ctx> {
 
   fn emit_function(&mut self, func: &FunctionRef, visited: &mut Vec<bool>) -> WASMFunc {
     let fty = func.get_type();
-    let rty = if let None = fty.ret_ty().as_ref::<VoidType>(fty.ctx) { "i32" } else { "" };
+    let rty = if let None = fty.ret_ty().as_ref::<VoidType>(fty.ctx()) { "i32" } else { "" };
     let args = (0..func.get_num_args()).map(|i| {
       let arg = func.get_arg(i);
-      let arg = arg.as_ref::<Argument>(func.ctx).unwrap();
+      let arg = arg.as_ref::<Argument>(func.ctx()).unwrap();
       namify(&arg.get_name())
     }).collect::<Vec<String>>();
     let mut emit_func = WASMFunc::new(namify(&func.get_name()), args, rty.to_string());

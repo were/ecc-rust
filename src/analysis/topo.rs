@@ -4,7 +4,7 @@ use trinity::{
   ir::{
     value::{
       function::FunctionRef, block::BlockRef,
-      instruction::{BranchInst, InstructionRef, InstOpcode, CmpPred}
+      instruction::{BranchInst, InstructionRef, InstOpcode, CmpPred, BinaryOp, BinaryInst}
     },
     Block, Instruction, ValueRef
   },
@@ -106,13 +106,24 @@ impl<'ctx> LoopInfo<'ctx> {
 
   // TODO(@were): Check the incremental value to be one.
   /// Get the phi node of a canonical inductive loop.
-  pub fn get_loop_ind_var(&'ctx self, ctx: &'ctx Context ) -> Option<InstructionRef<'ctx>> {
+  pub fn get_loop_ind_var(&'ctx self) -> Option<InstructionRef<'ctx>> {
+    let ctx = self.topo_info.ctx;
     let latch = self.get_latch();
     if let Some(br) = latch.as_sub::<BranchInst>() {
       if let Some(cond) = br.cond() {
         if let Some(inst) = cond.as_ref::<Instruction>(ctx) {
           if let InstOpcode::ICompare(CmpPred::SLT) = inst.get_opcode() {
-            return inst.get_operand(0).unwrap().as_ref::<Instruction>(ctx)
+            if let Some(inst) = inst.get_operand(0).unwrap().as_ref::<Instruction>(ctx) {
+              if let Some(bin) = inst.as_sub::<BinaryInst>() {
+                if bin.is(BinaryOp::Add) {
+                  if let Some(lhs) = bin.lhs().as_ref::<Instruction>(ctx) {
+                    if lhs.get_opcode() == &InstOpcode::Phi {
+                      return bin.lhs().as_ref::<Instruction>(ctx);
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -389,11 +400,11 @@ fn dfs_topology<'ctx>(
 pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) -> TopoInfo<'ctx> {
   let mut loop_stack = Vec::new();
   let mut finalized_loops = Vec::new();
-  let mut res = TopoInfo::new(func.ctx);
+  let mut res = TopoInfo::new(func.ctx());
 
   let entry = func.get_block(0).unwrap();
   visited[entry.get_skey()] = true;
-  dfs_topology(func.ctx, &entry, visited, &mut loop_stack, &mut finalized_loops, &mut res);
+  dfs_topology(func.ctx(), &entry, visited, &mut loop_stack, &mut finalized_loops, &mut res);
 
   // eprintln!("[TOPO] Analyzed topology of func @{}", func.get_name());
   // for elem in res.iter() {

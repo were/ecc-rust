@@ -68,7 +68,7 @@ pub(super) fn gather_block_downstreams<'ctx>(block: &'ctx BlockRef) -> Vec<(Inst
       for (incoming_block, value) in phi.iter() {
         if incoming_block.get_skey() == block.get_skey() {
           let inst = inst.as_super();
-          let inst = inst.as_ref::<Instruction>(block.ctx).unwrap();
+          let inst = inst.as_ref::<Instruction>(block.ctx()).unwrap();
           res.push((inst, value.clone()));
         }
       }

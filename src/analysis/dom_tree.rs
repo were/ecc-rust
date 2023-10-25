@@ -79,7 +79,7 @@ impl DominatorTree {
 
   pub fn analyze_dominators(&mut self, func: &FunctionRef) {
     let workspace = &mut self.dt;
-    let ctx = func.ctx;
+    let ctx = func.ctx();
     // Calculate the dominators
     let mut changed = true;
     while changed {

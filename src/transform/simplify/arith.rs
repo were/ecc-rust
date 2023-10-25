@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use trinity::ir::{
   module::Module,
-  value::instruction::{PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, SelectInst},
+  value::instruction::{
+    PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, SelectInst
+  },
   ValueRef, Instruction, ConstScalar, TypeRef, IntType
 };
 
@@ -16,9 +18,9 @@ fn add_sub_fuse(inst: &InstructionRef) -> Option<(InstOpcode, ValueRef, ValueRef
       BinaryOp::Sub => -1,
       _ => return None
     };
-    if let Some(lhs) = binary.lhs().as_ref::<Instruction>(inst.ctx) {
+    if let Some(lhs) = binary.lhs().as_ref::<Instruction>(inst.ctx()) {
       if let Some(bin_lhs) = lhs.as_sub::<BinaryInst>() {
-        if let Some(rhs) = binary.rhs().as_ref::<Instruction>(inst.ctx) {
+        if let Some(rhs) = binary.rhs().as_ref::<Instruction>(inst.ctx()) {
           if let Some(bin_rhs) = rhs.as_sub::<BinaryInst>() {
             // eprintln!("[SIMP] A = BinOp (B, C)");
             // eprintln!("[SIMP] A = {}", inst.to_string(false));
@@ -78,10 +80,15 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
           match binary.get_op() {
             BinaryOp::Add => {
               for i in 0..2 {
-                if let Some(operand_inst) = inst.get_operand(i).unwrap().as_ref::<Instruction>(inst.ctx) {
+                let operand = inst.get_operand(i).unwrap().as_ref::<Instruction>(inst.ctx());
+                if let Some(operand_inst) = operand {
                   if let Some(operand_bin) = operand_inst.as_sub::<BinaryInst>() {
                     if let BinaryOp::Sub = operand_bin.get_op() {
-                      if let Some(const_scalar) = operand_inst.get_operand(0).unwrap().as_ref::<ConstScalar>(&module.context) {
+                      let operand = operand_inst
+                        .get_operand(0)
+                        .unwrap()
+                        .as_ref::<ConstScalar>(&module.context);
+                      if let Some(const_scalar) = operand {
                         if const_scalar.get_value() == 0 {
                           // eprintln!("[SIMP] Add a negative value {}, can be fused into sub: {}",
                           //   operand_inst.to_string(false),
@@ -96,17 +103,19 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
                   }
                 }
               }
-              if let Some((op, a, b)) = add_sub_fuse(&inst) { eprintln!("[SIMP] Sub a value {}, can be fused into add: {}",
-                  inst.to_string(false),
-                  inst.to_string(false));
+              if let Some((op, a, b)) = add_sub_fuse(&inst) {
+                // eprintln!("[SIMP] Sub a value {}, can be fused into add: {}",
+                //   inst.to_string(false),
+                //   inst.to_string(false));
                 return Some((inst.get_skey(), op, a, b));
               }
             }
             // TODO(@were): Should have more principle way to do this.
             BinaryOp::Sub => {
-              if let Some((op, a, b)) = add_sub_fuse(&inst) { eprintln!("[SIMP] Sub a value {}, can be fused into add: {}",
-                  inst.to_string(false),
-                  inst.to_string(false));
+              if let Some((op, a, b)) = add_sub_fuse(&inst) {
+                // eprintln!("[SIMP] Sub a value {}, can be fused into add: {}",
+                //   inst.to_string(false),
+                //   inst.to_string(false));
                 return Some((inst.get_skey(), op, a, b));
               }
             }
@@ -121,7 +130,9 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
             }
             if fv.get_value() == 0 {
               let opcode = InstOpcode::BinaryOp(BinaryOp::And);
-              return Some((inst.get_skey(), opcode, select.get_condition().clone(), select.get_true_value().clone()));
+              let cond = select.get_condition().clone();
+              let tv = select.get_true_value().clone();
+              return Some((inst.get_skey(), opcode, cond, tv));
             }
           }
           if let Some(tv) = select.get_true_value().as_ref::<ConstScalar>(&module.context) {
@@ -137,7 +148,9 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
               //   opcode.to_string(),
               //   select.get_condition().to_string(&module.context, true),
               //   select.get_false_value().to_string(&module.context, true));
-              return Some((inst.get_skey(), opcode, select.get_condition().clone(), select.get_false_value().clone()));
+              let cond = select.get_condition().clone();
+              let value = select.get_false_value().clone();
+              return Some((inst.get_skey(), opcode, cond, value));
             }
           }
         }
@@ -163,7 +176,8 @@ pub fn simplify_arith(module: &mut Module) -> bool {
     for i in 2..num_operands {
       inst_mut.remove_operand(i);
     }
-    // eprintln!("[SIMP] After {}", inst.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+    // eprintln!("[SIMP] After {}",
+    //   inst.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
     modified = true;
   }
   return modified;
@@ -190,7 +204,8 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
             // Find trivial add: a + 0
             BinaryOp::Add => {
               for i in 0..2 {
-                if let Some(const_scalar) = inst.get_operand(i).unwrap().as_ref::<ConstScalar>(&module.context) {
+                let operand = inst.get_operand(i).unwrap().as_ref::<ConstScalar>(&module.context);
+                if let Some(const_scalar) = operand {
                   if const_scalar.get_value() == 0 {
                     let value = inst.get_operand(1 - i).unwrap().clone();
                     // eprintln!("[SIMP] Find a trivial add: {}, replace by: {}",
@@ -217,7 +232,7 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
                 const_replace_tuple = Some((inst.get_skey(), inst.get_type().clone(), 0));
                 break;
               }
-              if let Some(lhs_bin) = binary.lhs().as_ref::<Instruction>(inst.ctx) {
+              if let Some(lhs_bin) = binary.lhs().as_ref::<Instruction>(inst.ctx()) {
                 if let InstOpcode::BinaryOp(BinaryOp::Add) = lhs_bin.get_opcode() {
                   for i in 0..2 {
                     if lhs_bin.get_operand(i).unwrap().skey == binary.rhs().skey {
@@ -231,7 +246,8 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
             // Find trivial mul: a * 1
             BinaryOp::Mul => {
               for i in 0..2 {
-                if let Some(const_scalar) = inst.get_operand(i).unwrap().as_ref::<ConstScalar>(&module.context) {
+                let operand = inst.get_operand(i).unwrap().as_ref::<ConstScalar>(&module.context);
+                if let Some(const_scalar) = operand {
                   if const_scalar.get_value() == 1 {
                     let value = inst.get_operand(1 - i).unwrap().clone();
                     // eprintln!("[SIMP] Find a trivial mul: {}, replace by: {}",
