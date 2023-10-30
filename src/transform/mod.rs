@@ -6,6 +6,7 @@ mod ssa;
 mod dce;
 mod cse;
 mod lifetime;
+mod loop_hoist;
 mod simplify;
 
 pub fn optimize(mut module: Module, opt_level: i32) -> Module {
@@ -20,7 +21,8 @@ pub fn optimize(mut module: Module, opt_level: i32) -> Module {
   merge_trivial_branches(&mut ssa);
   if opt_level == 2 {
     lifetime::remove_lifetime_hint(&mut ssa);
-    let (simplified, _) = simplify::transform(ssa);
+    let (mut simplified, _) = simplify::transform(ssa);
+    loop_hoist::hoist_loop_invariants(&mut simplified);
     simplified
   } else {
     ssa

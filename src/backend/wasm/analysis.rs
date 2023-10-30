@@ -61,14 +61,14 @@ pub(super) fn gather_locals(func: &FunctionRef) -> HashMap<usize, String> {
 
 pub(super) fn gather_block_downstreams<'ctx>(block: &'ctx BlockRef) -> Vec<(InstructionRef<'ctx>, ValueRef)> {
   let mut res = vec![];
-  eprintln!("[CODEGEN] block: {}", block.get_name());
+  // eprintln!("[CODEGEN] block: {}", block.get_name());
   for inst in block.user_iter() {
     if let Some(phi) = inst.as_sub::<PhiNode>() {
-      eprintln!("[CODEGEN]  phi: {}", inst.to_string(false));
+      // eprintln!("[CODEGEN]  phi: {}", inst.to_string(false));
       for (incoming_block, value) in phi.iter() {
         if incoming_block.get_skey() == block.get_skey() {
           let inst = inst.as_super();
-          let inst = inst.as_ref::<Instruction>(block.ctx).unwrap();
+          let inst = inst.as_ref::<Instruction>(block.ctx()).unwrap();
           res.push((inst, value.clone()));
         }
       }

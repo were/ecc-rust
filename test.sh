@@ -15,7 +15,7 @@ else
   opt=2
 fi
 
-$REPO/./target/debug/ecc $1 --backend $backend --output a.wasm --opt $opt > compile.log 2>&1
+$REPO/./target/debug/ecc $1 --backend $backend --output a.wasm --opt $opt
 
 if [ $? -ne 0 ]; then
   echo Compilation failed!
@@ -35,7 +35,12 @@ node $REPO/./builtins/host.js a.wasm --verbose < input > raw_output
 
 tail -n 2 raw_output
 
-head -n $(( $(cat raw_output | wc -l) - 2 )) raw_output > output
+lines=$(( $(cat raw_output | wc -l) - 2 ))
+if [ $lines != "0" ]; then
+  head -n $lines raw_output > output
+else
+  touch output
+fi
 
 echo "Check the result..."
 

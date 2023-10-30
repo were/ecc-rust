@@ -1,4 +1,3 @@
-use trinity::ir::Instruction;
 use trinity::ir::{module::Module, ValueRef};
 use trinity::ir::value::instruction::{InstOpcode, InstMutator};
 
@@ -33,8 +32,8 @@ pub fn transform(module: &mut Module) -> bool {
     iterative = to_remove.len() != 0;
     modified |= iterative;
     for elem in to_remove {
-      let log = elem.as_ref::<Instruction>(&module.context).unwrap().to_string(false);
-      eprintln!("[DCE] Remove {}, due to no user.", log);
+      // let log = elem.as_ref::<Instruction>(&module.context).unwrap().to_string(false);
+      // eprintln!("[DCE] Remove {}, due to no user.", log);
       let mut mutator = InstMutator::new(&mut module.context, &elem);
       mutator.erase_from_parent();
     }

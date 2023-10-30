@@ -123,7 +123,7 @@ fn inject_phis(module: Module, dt: &DominatorTree, vlt: &VarLifetime) -> (Module
                            dt.i_dominates_i(&start, &block.get_inst(0).unwrap()) {
 
                           if phis.get_mut(&frontier).unwrap().insert(store_addr.get_skey()) {
-                            eprintln!("Allocate PHI for {} @block.{}", inst.to_string(false), frontier);
+                            // eprintln!("Allocate PHI for {} @block.{}", inst.to_string(false), frontier);
                             to_inject.push((frontier, store_addr.get_skey()));
                           }
 
@@ -163,7 +163,7 @@ fn inject_phis(module: Module, dt: &DominatorTree, vlt: &VarLifetime) -> (Module
         let phi = phi.as_mut::<Instruction>(builder.context()).unwrap();
         phi.set_comment(format!("derive from {}", comment));
       }
-      eprintln!("[SSA] {} from {}", phi.to_string(&builder.module.context, true), comment);
+      // eprintln!("[SSA] {} from {}", phi.to_string(&builder.module.context, true), comment);
       builder.create_store(phi, alloc).unwrap();
     }
   }
@@ -176,7 +176,7 @@ fn inject_phis(module: Module, dt: &DominatorTree, vlt: &VarLifetime) -> (Module
       let predeccessors = if pred_branches.len() > 1 {
         let mut res = HashSet::new();
         pred_branches.iter().for_each(|inst| {
-          eprintln!("gather block: {}", inst.get_parent().get_name());
+          // eprintln!("gather block: {}", inst.get_parent().get_name());
           res.insert(inst.get_parent().get_skey());
         });
         res
@@ -198,11 +198,11 @@ fn inject_phis(module: Module, dt: &DominatorTree, vlt: &VarLifetime) -> (Module
                 dt,
                 &phi_to_alloc,
                 false) {
-                eprintln!("[SSA] Value {} @{}: [ {}, {} ]",
-                  inst.get_name(),
-                  block.get_name(),
-                  incoming_value.to_string(&builder.module.context, true),
-                  incoming_block.as_ref::<Block>(&builder.module.context).unwrap().get_name());
+                // eprintln!("[SSA] Value {} @{}: [ {}, {} ]",
+                //   inst.get_name(),
+                //   block.get_name(),
+                //   incoming_value.to_string(&builder.module.context, true),
+                //   incoming_block.as_ref::<Block>(&builder.module.context).unwrap().get_name());
                 (incoming_value, incoming_block)
               } else {
                 eprintln!("[SSA] Warning {} @{}: [ {}, {} ]",
@@ -304,8 +304,8 @@ fn cleanup(module: &mut Module, phi_to_alloc: &HashMap<usize, usize>, dt: &Domin
               match ptr_inst.get_opcode() {
                 InstOpcode::Alloca(_) => {
                   if !dominated.contains(&inst.get_skey()) {
-                    let log = inst.to_string(false);
-                    eprintln!("[SSA] Remove: {}, because stored value not loaded.", log);
+                    // let log = inst.to_string(false);
+                    // eprintln!("[SSA] Remove: {}, because stored value not loaded.", log);
                     to_remove.push(inst.as_super());
                   }
                 },

@@ -101,7 +101,7 @@ impl TypeGen {
     if let Some(ptr_ty) = ty.as_ref::<PointerType>(&self.builder.module.context) {
       if let &TKindCode::StructType = ptr_ty.get_pointee_ty().kind() {
       } else {
-        eprintln!("origin ty: {}", ty.to_string(&self.builder.module.context));
+        // eprintln!("origin ty: {}", ty.to_string(&self.builder.module.context));
         let raw = ptr_ty.get_pointee_ty();
         let scalar_ty = self.generate_array_runtime(raw.clone());
         let type_name = self.extract_array_type_name(&scalar_ty);
@@ -117,7 +117,8 @@ impl TypeGen {
         self.class_cache.insert(type_name, array_ty.clone());
         let res = self.builder.module.context.pointer_type(array_ty.clone());
         self.array_types.insert(ty.clone(), res.clone());
-        eprintln!("mapped to res: {}", array_ty.as_ref::<StructType>(&self.builder.module.context).unwrap().to_string());
+        // eprintln!("mapped to res: {}",
+        //   array_ty.as_ref::<StructType>(&self.builder.module.context).unwrap().to_string());
         return res;
       }
     }
@@ -474,6 +475,7 @@ impl CodeGen {
     let old = self.loop_cond_or_end.clone();
     self.cache_stack.push();
     self.generate_var_decl(&for_stmt.var);
+    let prehead = self.builder_mut().add_block("for.prehead".to_string());
     let body_block = self.builder_mut().add_block("for.body".to_string());
     let cond_block = self.builder_mut().add_block("for.cond".to_string());
     let end_block = self.builder_mut().add_block("for.end".to_string());
@@ -487,13 +489,15 @@ impl CodeGen {
       let init = self.builder_mut().create_load(init);
       init
     };
-    let precond = self.builder_mut().create_sle(extent.clone(), init);
-    self.builder_mut().create_conditional_branch(precond, end_block.clone(), body_block.clone(), false);
+    let precond = self.builder_mut().create_sle(extent.clone(), init, "precond".to_string());
+    self.builder_mut().create_conditional_branch(precond, end_block.clone(), prehead.clone(), false);
+    self.builder_mut().set_current_block(prehead);
+    self.builder_mut().create_unconditional_branch(body_block.clone());
     // Generate the loop conditions.
     self.builder_mut().set_current_block(cond_block.clone());
     let loop_var_addr = self.cache_stack.get(&for_stmt.var.id.literal).unwrap();
     let loop_var_value = self.builder_mut().create_load(loop_var_addr.clone());
-    let cond = self.builder_mut().create_slt(loop_var_value, extent);
+    let cond = self.builder_mut().create_slt(loop_var_value, extent, "cond".to_string());
     self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
     self.builder_mut().set_current_block(body_block);
     self.generate_compound_stmt(&for_stmt.body, false);
@@ -657,12 +661,12 @@ impl CodeGen {
                 }
               }
             }
-            TokenType::LT => self.tg.builder.create_slt(lhs, rhs),
-            TokenType::LE => self.tg.builder.create_sle(lhs, rhs),
-            TokenType::GT => self.tg.builder.create_sgt(lhs, rhs),
-            TokenType::GE => self.tg.builder.create_sge(lhs, rhs),
-            TokenType::EQ => self.tg.builder.create_eq(lhs, rhs),
-            TokenType::NE => self.tg.builder.create_ne(lhs, rhs),
+            TokenType::LT => self.tg.builder.create_slt(lhs, rhs, "lt".to_string()),
+            TokenType::LE => self.tg.builder.create_sle(lhs, rhs, "le".to_string()),
+            TokenType::GT => self.tg.builder.create_sgt(lhs, rhs, "gt".to_string()),
+            TokenType::GE => self.tg.builder.create_sge(lhs, rhs, "ge".to_string()),
+            TokenType::EQ => self.tg.builder.create_eq(lhs, rhs, "eq".to_string()),
+            TokenType::NE => self.tg.builder.create_ne(lhs, rhs, "ne".to_string()),
             TokenType::BitwiseAnd => self.tg.builder.create_and(lhs, rhs),
             TokenType::BitwiseOr => self.tg.builder.create_or(lhs, rhs),
             TokenType::BitwiseXor => self.tg.builder.create_xor(lhs, rhs),
@@ -754,12 +758,15 @@ impl CodeGen {
           // Dereference the address.
           if i != indices.len() - 1 {
             array_obj = self.tg.builder.create_load(array_obj);
-            eprintln!("load array[i]: {}", array_obj.as_ref::<Instruction>(&self.tg.builder.module.context).unwrap().to_string(false));
+            // eprintln!("load array[i]: {}",
+            //   array_obj.as_ref::<Instruction>(&self.tg.builder.module.context)
+            //     .unwrap().to_string(false));
           }
         }
         if !is_lval {
           let res = self.tg.builder.create_load(array_obj);
-          eprintln!("rval array[i]: {}", res.as_ref::<Instruction>(&self.tg.builder.module.context).unwrap().to_string(false));
+          // eprintln!("rval array[i]: {}",
+          //   res.as_ref::<Instruction>(&self.tg.builder.module.context).unwrap().to_string(false));
           res
         } else {
           array_obj

@@ -1,7 +1,7 @@
 use trinity::ir::{
   module::Module,
   value::{
-    instruction::{PhiNode, InstMutator, BranchInst, SubInst, InstructionRef, InstOpcode},
+    instruction::{PhiNode, InstMutator, BranchInst, InstructionRef, InstOpcode},
     block::BlockMutator
   },
   Instruction, Function, ValueRef, Block
@@ -14,7 +14,7 @@ fn has_trivial_branch(module: &Module) -> Option<InstructionRef> {
       if let Some(br) = block.last_inst().unwrap().as_sub::<BranchInst>() {
         if let Some(dest) = br.dest_label() {
           if dest.pred_iter().count() == 1 {
-            eprintln!("[CFG] Find a trivial branch: {}", br.to_string());
+            // eprintln!("[CFG] Find a trivial branch: {}", br.to_string());
             let res = block.last_inst().unwrap().as_super();
             return Some(res.as_ref::<Instruction>(&module.context).unwrap())
           }
@@ -48,8 +48,8 @@ fn has_trivial_converge(module: &Module) -> Option<(ValueRef, ValueRef, ValueRef
             continue;
           }
           let dest = t.succ_iter().next().unwrap();
-          eprintln!("[CFG] Find a trivial converge: {}", br.to_string());
-          eprintln!("Before:\n{}\n{}\n{}\n{}", block.to_string(true), t.to_string(true), f.to_string(true), dest.to_string(true));
+          // eprintln!("[CFG] Find a trivial converge: {}", br.to_string());
+          // eprintln!("Before:\n{}\n{}\n{}\n{}", block.to_string(true), t.to_string(true), f.to_string(true), dest.to_string(true));
           return Some((block.as_super(), t.as_super(), f.as_super(), dest.as_super()))
         }
       }
@@ -123,7 +123,7 @@ pub fn merge_trivial_branches(module: &mut Module) -> bool {
     let mut mutator = BlockMutator::new(&mut module.context, dest);
     mutator.erase_from_parent();
 
-    eprintln!("[CFG] After:\n{}", src.as_ref::<Block>(&module.context).unwrap().to_string(true));
+    // eprintln!("[CFG] After:\n{}", src.as_ref::<Block>(&module.context).unwrap().to_string(true));
 
     modified = true;
   }
@@ -139,13 +139,13 @@ fn has_select_phi<'ctx>(module: &'ctx Module) -> Option<(ValueRef, Vec<ValueRef>
           if let Some(cond) = br.cond() {
             let true_label = br.true_label().unwrap();
             let false_label = br.false_label().unwrap();
-            eprintln!("[CFG] Inspecting : {}", br.to_string());
+            // eprintln!("[CFG] Inspecting : {}", br.to_string());
             if true_label.succ_iter().count() != 1 || false_label.succ_iter().count() != 1 {
-              eprintln!("[CFG] Branch has more than one successor!");
+              // eprintln!("[CFG] Branch has more than one successor!");
               continue;
             }
             if true_label.get_num_insts() + false_label.get_num_insts() > 12 {
-              eprintln!("[CFG] Too many instructions to hoist.");
+              // eprintln!("[CFG] Too many instructions to hoist.");
               continue;
             }
             // if true_label.get_num_insts() == 1 && false_label.get_num_insts() == 1 {
@@ -159,16 +159,16 @@ fn has_select_phi<'ctx>(module: &'ctx Module) -> Option<(ValueRef, Vec<ValueRef>
               }
             };
             if true_label.inst_iter().any(has_mem_op) || false_label.inst_iter().any(has_mem_op) {
-              eprintln!("[CFG] Branch has memory operations!");
+              // eprintln!("[CFG] Branch has memory operations!");
               continue;
             }
             let succ0 = true_label.succ_iter().next().unwrap();
             let succ1 = false_label.succ_iter().next().unwrap();
             if succ0.get_skey() != succ1.get_skey() {
-              eprintln!("[CFG] Branch has different successors!");
+              // eprintln!("[CFG] Branch has different successors!");
               continue;
             }
-            eprintln!("[CFG] Find an if-then-else!");
+            // eprintln!("[CFG] Find an if-then-else!");
             let succ = succ0;
             // Iterate over all the phi nodes in succ.
             // Gather their incoming values within this succ.
@@ -189,8 +189,8 @@ fn has_select_phi<'ctx>(module: &'ctx Module) -> Option<(ValueRef, Vec<ValueRef>
               }
             }
             if res.len() > 0 {
-              eprintln!("[CFG] Hoisting {} instructions.",
-                true_label.get_num_insts() + false_label.get_num_insts() - 2);
+              // eprintln!("[CFG] Hoisting {} instructions.",
+              //  true_label.get_num_insts() + false_label.get_num_insts() - 2);
               let mut hoist = true_label.inst_iter().map(|i| i.as_super()).collect::<Vec<_>>();
               hoist.pop();
               hoist.extend(false_label.inst_iter().map(|i| i.as_super()));
@@ -210,7 +210,8 @@ pub fn phi_to_select(module: &mut Module) -> bool {
   while let Some((cond, hoist, dest, phis)) = has_select_phi(module) {
     modified = true;
     for (i, elem) in hoist.into_iter().enumerate() {
-      eprintln!("[CFG] Hoisting {}", elem.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+      // eprintln!("[CFG] Hoisting {}",
+      //   elem.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
       let mut mutator = InstMutator::new(&mut module.context, &elem);
       mutator.move_to_block(&dest, Some(i));
     }
@@ -222,9 +223,11 @@ pub fn phi_to_select(module: &mut Module) -> bool {
       mutator.set_operand(1, true_value.clone());
       mutator.set_operand(2, false_value.clone());
       mutator.remove_operand(3);
-      eprintln!("[CFG] Select {}", phi.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+      // eprintln!("[CFG] Select {}",
+      //   phi.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
     }
-    eprintln!("[CFG] After:\n{}", dest.as_ref::<Block>(&mut module.context).unwrap().to_string(true));
+    // eprintln!("[CFG] After:\n{}",
+    //   dest.as_ref::<Block>(&mut module.context).unwrap().to_string(true));
   }
   modified
 }
@@ -236,7 +239,7 @@ fn has_unreachable_block(module: &Module) -> Option<ValueRef> {
         continue;
       }
       if block.pred_iter().count() == 0 {
-        eprintln!("[CFG] Found unreachable block: {}", block.to_string(true));
+        // eprintln!("[CFG] Found unreachable block: {}", block.to_string(true));
         return Some(block.as_super());
       }
     }

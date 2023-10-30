@@ -1,17 +1,20 @@
 use std::collections::HashMap;
 
-use either::Either;
 use trinity::{ir::{
   module::{Module, namify},
   value::{
     function::FunctionRef,
-    instruction::{InstOpcode, BranchInst, Return, Call, CompareInst, CmpPred, SubInst, CastOp, BinaryOp, Store, CastInst, Load},
-    block::BlockRef, consts::ConstObject
+    instruction::{
+      InstOpcode, BranchInst, Return, Call, CompareInst, CmpPred, SubInst,
+      CastOp, BinaryOp, Store, CastInst, Load
+    },
+    consts::ConstObject
   },
-  VoidType, Argument, Instruction, ValueRef, ConstScalar, VKindCode, ConstArray, StructType, ConstExpr, PointerType
+  VoidType, Argument, Instruction, ValueRef, ConstScalar, VKindCode,
+  ConstArray, StructType, ConstExpr, PointerType
 }, context::Reference};
 
-use crate::analysis::topo::{analyze_topology, LoopInfo};
+use crate::analysis::topo::{analyze_topology, Node, ChildTraverse};
 
 use super::{ir::{WASMFunc, WASMInst}, analysis::gather_block_downstreams};
 
@@ -227,16 +230,17 @@ impl <'ctx>Codegen<'ctx> {
     }
   }
 
-  fn emit_loop_or_block(&self, func: &mut WASMFunc, blocks: &Vec<Either<BlockRef<'ctx>, Box<LoopInfo<'ctx>>>>) {
+  fn emit_loop_or_block(&self, func: &mut WASMFunc, iter: impl Iterator<Item = Node<'ctx>>) {
+    let blocks = iter.collect::<Vec<_>>();
 
     for elem in blocks.iter() {
       match elem {
-        Either::Left(block) => {
+        Node::Block(block) => {
           let mut label = WASMInst::block_begin(block.get_skey(), namify(&block.get_name()));
           label.comment = block.get_name();
           func.push(label);
         }
-        Either::Right(li) => {
+        Node::Loop(li) => {
           let head = li.get_head();
           let mut label = WASMInst::block_begin(head.get_skey(), namify(&head.get_name()));
           label.comment = head.get_name();
@@ -247,13 +251,13 @@ impl <'ctx>Codegen<'ctx> {
 
     for elem in blocks.iter().rev() {
       match elem {
-        Either::Left(block) => {
+        Node::Block(block) => {
           let mut block_end = WASMInst::block_end(block.get_skey());
           block_end.comment = block.get_name();
           func.push(block_end);
 
           // Gather the constant changes in this block.
-          let downstreams = gather_block_downstreams(block);
+          let downstreams = gather_block_downstreams(&block);
 
           for inst in block.inst_iter() {
             let emit = match inst.get_opcode() {
@@ -262,7 +266,8 @@ impl <'ctx>Codegen<'ctx> {
                 for (phi, raw_value) in downstreams.iter() {
                   let var_name = namify(&phi.get_name());
                   let mut value = self.emit_value(&raw_value, false);
-                  let mut inst = WASMInst::local_set(phi.get_skey(), var_name.clone(), value.remove(0));
+                  let mut inst =
+                    WASMInst::local_set(phi.get_skey(), var_name.clone(), value.remove(0));
                   inst.comment = format!("{} of {}", block.get_name(), phi.to_string(false));
                   func.push(inst);
                 }
@@ -281,7 +286,7 @@ impl <'ctx>Codegen<'ctx> {
                   let callee = call.get_callee();
                   let fty = callee.get_type();
                   let rty = fty.ret_ty();
-                  rty.as_ref::<VoidType>(inst.ctx).is_some()
+                  rty.as_ref::<VoidType>(inst.ctx()).is_some()
                 }
               }
               InstOpcode::Phi => {
@@ -301,11 +306,11 @@ impl <'ctx>Codegen<'ctx> {
           }
 
         }
-        Either::Right(li) => {
+        Node::Loop(li) => {
           let head = li.get_head();
           func.push(WASMInst::block_end(head.get_skey()));
           func.push(WASMInst::loop_begin(head.get_skey(), namify(&head.get_name())));
-          self.emit_loop_or_block(func, li.children());
+          self.emit_loop_or_block(func, li.child_iter());
           func.push(WASMInst::block_end(head.get_skey()));
         }
       }
@@ -315,17 +320,17 @@ impl <'ctx>Codegen<'ctx> {
 
   fn emit_function(&mut self, func: &FunctionRef, visited: &mut Vec<bool>) -> WASMFunc {
     let fty = func.get_type();
-    let rty = if let None = fty.ret_ty().as_ref::<VoidType>(fty.ctx) { "i32" } else { "" };
+    let rty = if let None = fty.ret_ty().as_ref::<VoidType>(fty.ctx()) { "i32" } else { "" };
     let args = (0..func.get_num_args()).map(|i| {
       let arg = func.get_arg(i);
-      let arg = arg.as_ref::<Argument>(func.ctx).unwrap();
+      let arg = arg.as_ref::<Argument>(func.ctx()).unwrap();
       namify(&arg.get_name())
     }).collect::<Vec<String>>();
     let mut emit_func = WASMFunc::new(namify(&func.get_name()), args, rty.to_string());
     self.locals = super::analysis::gather_locals(func);
     let blocks = analyze_topology(&func, visited);
     // Clear the locals, and put it in this finalized function.
-    self.emit_loop_or_block(&mut emit_func, &blocks);
+    self.emit_loop_or_block(&mut emit_func, blocks.child_iter());
     std::mem::swap(&mut self.locals, &mut emit_func.locals);
     return emit_func;
   }
