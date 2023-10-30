@@ -1,6 +1,10 @@
 use std::collections::{HashSet, VecDeque};
 
-use trinity::ir::{value::{instruction::InstructionRef, function::FunctionRef, block::BlockRef}, Block, module::Module};
+use trinity::ir::{
+  value::{instruction::InstructionRef, function::FunctionRef, block::BlockRef},
+  Block,
+  module::Module
+};
 
 
 pub struct DomInfo {
@@ -77,7 +81,7 @@ impl DominatorTree {
     }
   }
 
-  pub fn analyze_dominators(&mut self, func: &FunctionRef) {
+  fn analyze_dominators(&mut self, func: &FunctionRef) {
     let workspace = &mut self.dt;
     let ctx = func.ctx();
     // Calculate the dominators
@@ -158,7 +162,8 @@ impl DominatorTree {
     // for i in 0..func.get_num_blocks() {
     //   let block = func.get_block(i).unwrap();
     //   let entry = &workspace[block.get_skey()];
-    //   eprintln!("  Block {} (Depth: {}), Pred: [{}] dominated by:", block.get_name(), entry.depth,
+    //   eprintln!("  Block {} (Depth: {}), Pred: [{}] dominated by:",
+    //     block.get_name(), entry.depth,
     //     block.pred_iter().map(|x| x.get_parent().get_name()).collect::<Vec<_>>().join(", "));
     //   for dom in entry.dominators.iter() {
     //     let block_ref= Block::from_skey(*dom);

@@ -271,7 +271,7 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
   }
   if let Some((skey, ty, scalar)) = const_replace_tuple {
     let zero = module.context.const_value(ty, scalar);
-    let inst = Instruction::from_skey(skey);
+    // let inst = Instruction::from_skey(skey);
     // eprintln!("[SIMP] Find a constant inst: {}, replace by: {}",
     //   inst.to_string(&module.context, true),
     //   zero.to_string(&module.context, true));

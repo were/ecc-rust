@@ -18,11 +18,11 @@ pub fn optimize(mut module: Module, opt_level: i32) -> Module {
   simplify::cfg::remove_unreachable_block(&mut module);
   lifetime::remove_unpaired_lifetime(&mut module);
   let mut ssa = ssa::transform(module);
-  loop_hoist::hoist_loop_invariants(&mut ssa);
   merge_trivial_branches(&mut ssa);
   if opt_level == 2 {
     lifetime::remove_lifetime_hint(&mut ssa);
-    let (simplified, _) = simplify::transform(ssa);
+    let (mut simplified, _) = simplify::transform(ssa);
+    loop_hoist::hoist_loop_invariants(&mut simplified);
     simplified
   } else {
     ssa

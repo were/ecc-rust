@@ -42,32 +42,53 @@ pub struct TopoInfo<'ctx> {
   bb2node: HashMap<usize, BlockInfo>,
 }
 
+#[derive(Clone)]
 pub struct LoopInfo<'ctx> {
+  id: usize,
   topo_info: &'ctx TopoInfo<'ctx>,
   loop_impl: &'ctx LoopImpl,
 }
 
 impl<'ctx> LoopInfo<'ctx> {
 
-  fn new(topo_info: &'ctx TopoInfo<'ctx>, loop_impl: &'ctx LoopImpl) -> Self {
+  fn new(id: usize, topo_info: &'ctx TopoInfo<'ctx>, loop_impl: &'ctx LoopImpl) -> Self {
     Self {
+      id,
       topo_info,
       loop_impl,
     }
   }
 
+  /// Get the branch instruction points back to the head of this loop.
   pub fn get_latch(&self) -> InstructionRef<'ctx> {
     let ctx = self.topo_info.ctx;
     Instruction::from_skey(self.loop_impl.latch).as_ref::<Instruction>(ctx).unwrap()
   }
 
+  /// Get the parent loop of this loop.
+  pub fn get_parent(&self) -> Option<LoopInfo<'ctx>> {
+    if let Some(parent) = self.loop_impl.parent {
+      Some(self.topo_info.get_loop(parent))
+    } else {
+      None
+    }
+  }
+
+  /// Get the id of this loop in the context.
+  pub fn get_id(&self) -> usize {
+    self.id
+  }
+
+  /// Get the entrance block of this loop. NOTE: This is part of the loop iterations.
   pub fn get_head(&'ctx self) -> BlockRef<'ctx> {
     let ctx = self.topo_info.ctx;
     let head = Block::from_skey(self.loop_impl.head).as_ref::<Block>(ctx).unwrap();
     return head;
   }
 
-  pub fn get_prehead(&'ctx self, ctx: &'ctx Context) -> BlockRef<'ctx> {
+  /// Get the entrance block goes to the head. NOTE: This is NOT a part of the iterations.
+  pub fn get_prehead(&'ctx self) -> BlockRef<'ctx> {
+    let ctx = self.topo_info.ctx;
     let head = self.get_head();
     let latch = self.get_latch();
     assert!(head.pred_iter().count() == 2);
@@ -75,7 +96,7 @@ impl<'ctx> LoopInfo<'ctx> {
       if pred.get_skey() == latch.get_skey() {
         continue;
       }
-      assert!(pred.get_parent().get_name().starts_with("for.predhead."));
+      assert!(pred.get_parent().get_name().starts_with("for.prehead."));
       let res = Block::from_skey(pred.get_parent().get_skey()).as_ref::<Block>(ctx).unwrap();
       return res;
     }
@@ -167,7 +188,7 @@ impl <'ctx>TopoInfo<'ctx> {
   fn get_loop(&'ctx self, id: usize) -> LoopInfo<'ctx> {
     match &self.buffer[id] {
       NodeImpl::Block(_) => unreachable!("The id {} is not a loop!", id),
-      NodeImpl::Loop(li) => { LoopInfo::new(self, li) },
+      NodeImpl::Loop(li) => { LoopInfo::new(id, self, li) },
     }
   }
 
@@ -198,16 +219,28 @@ impl <'ctx>TopoInfo<'ctx> {
     }
   }
 
-  fn fianlize_loop(&mut self, parent: Option<usize>, loop_id: usize) {
-    if let Some(parent_node) = parent {
-      if let NodeImpl::Loop(li) = &mut self.buffer[parent_node] {
-        li.children.push(loop_id);
+  /// Add a loop as a loop body.
+  fn finalize_loop(&mut self, parent: Option<usize>, loop_id: usize) {
+    match &mut self.buffer[loop_id]  {
+      NodeImpl::Loop(li) => {
+        li.parent = parent;
       }
-    } else {
+      _ => { unreachable!("{} should be a loop!", loop_id); }
+    }
+    match parent {
+      Some(parent_node) => {
+        match &mut self.buffer[parent_node] {
+          NodeImpl::Loop(li) => {
+            li.children.push(loop_id);
+          }
+          _ => { unreachable!("{} should be a loop!", parent_node); }
+        }
+      }
+      None => {
       self.order.push(loop_id);
+      }
     }
   }
-
 }
 
 pub struct LoopImpl {
@@ -219,6 +252,8 @@ pub struct LoopImpl {
   exit: usize,
   /// The child elements of this loop.
   children: Vec<usize>,
+  /// The parent loop of this given loop.
+  parent: Option<usize>,
 }
 
 pub struct ChildIter<'ctx> {
@@ -249,7 +284,7 @@ impl<'ctx> Iterator for ChildIter<'ctx> {
           Some(Node::Block(res))
         }
         NodeImpl::Loop(li) => {
-          let res = LoopInfo::new(self.topo, li);
+          let res = LoopInfo::new(idx, self.topo, li);
           Some(Node::Loop(res))
         }
       }
@@ -297,11 +332,19 @@ pub fn print_loop_info(iter: ChildIter, indent: usize) {
         println!("{}Block: {}", " ".repeat(indent), block.get_name());
       }
       Node::Loop(loop_info) => {
-        println!("{}Loop <head:{}><exit:{}><latch:{}>",
-          " ".repeat(indent),
-          loop_info.get_head().get_name(),
-          loop_info.get_exit().get_name(),
-          loop_info.get_latch().to_string(false));
+        let x = loop_info.get_id().to_string().len() + 3;
+        println!("{}[{}] Loop", " ".repeat(indent), loop_info.get_id());
+        println!("{}<head:{}>", " ".repeat(indent + x), loop_info.get_head().get_name());
+        println!("{}<exit:{}>", " ".repeat(indent + x), loop_info.get_exit().get_name());
+        println!("{}<latch:{}>", " ".repeat(indent + x), loop_info.get_latch().to_string(false));
+        let ind_dbg = if let Some(ind) = loop_info.get_loop_ind_var() {
+          ind.to_string(false)
+        } else {
+          "None".to_string()
+        };
+        println!("{}<ind:{}>", " ".repeat(indent + x), ind_dbg);
+        println!("{}<parent:{:?}>", " ".repeat(indent + x),
+          loop_info.get_parent().map(|x| x.get_id()));
         print_loop_info(loop_info.child_iter(), indent);
       }
     }
@@ -316,6 +359,7 @@ impl <'ctx>LoopImpl {
       head,
       exit,
       children: Vec::new(),
+      parent: None
     }
   }
 
@@ -329,7 +373,7 @@ fn dfs_topology<'ctx>(
   finalized_loops: &mut Vec<usize>,
   res: &mut TopoInfo) {
 
-  let block_node = res.add_block(cur.get_skey()).unwrap();
+  res.add_block(cur.get_skey()).unwrap();
 
   let is_head = if let Some(latch) = cur.is_loop_head() {
     // eprintln!("Loop latch: {}", latch.to_string(false));
@@ -392,7 +436,7 @@ fn dfs_topology<'ctx>(
     let finalized = finalized_loops.pop().unwrap();
     // print_loop_info(&finalized, 0);
 
-    res.fianlize_loop(loop_stack.last().map(|x| *x), finalized);
+    res.finalize_loop(loop_stack.last().map(|x| *x), finalized);
   }
 
 }
