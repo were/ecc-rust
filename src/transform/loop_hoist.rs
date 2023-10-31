@@ -1,5 +1,10 @@
-use trinity::ir::{module::Module, Instruction, value::instruction::{InstOpcode, InstMutator}, Block};
-use crate::analysis::{topo::{analyze_topology, self, Node, ChildTraverse, print_loop_info}, dom_tree::DominatorTree};
+use trinity::ir::{
+  module::Module, Instruction, value::instruction::{InstOpcode, InstMutator}, Block
+};
+use crate::analysis::{
+  topo::{analyze_topology, self, Node, ChildTraverse},
+  dom_tree::DominatorTree
+};
 
 #[derive(Clone)]
 enum InvariantType {
@@ -52,7 +57,7 @@ fn analyze_hoistable_invariants(m: &Module) -> Vec<(usize, usize)> {
   let mut res = vec![];
   for f in m.func_iter().filter(|x| !x.is_declaration()) {
     let topo = analyze_topology(&f, &mut visited);
-    print_loop_info(topo.child_iter(), 0);
+    // print_loop_info(topo.child_iter(), 0);
     color_loop_invariants(topo.child_iter(), &mut workspace, &mut visited);
     // Dump the analyzed result log.
     for bb in f.block_iter() {
@@ -79,7 +84,7 @@ fn analyze_hoistable_invariants(m: &Module) -> Vec<(usize, usize)> {
                 }
                 let prehead = loop_runner.get_prehead();
                 if found {
-                  eprintln!("[Expr Invariant] {}", inst.to_string(false));
+                  // eprintln!("[Expr Invariant] {}", inst.to_string(false));
                   if !inst.operand_iter().all(|operand| {
                     if let Some(operand_inst) = operand.as_ref::<Instruction>(&m.context) {
                       dom.i_dominates_i(&operand_inst, &prehead.last_inst().unwrap())
@@ -87,16 +92,16 @@ fn analyze_hoistable_invariants(m: &Module) -> Vec<(usize, usize)> {
                       true
                     }
                   }) {
-                    eprintln!("  Cannot be hoisted yet because of dominance");
+                    // eprintln!("  Cannot be hoisted yet because of dominance");
                     continue;
                   }
                   // Redundant sanity check.
                   let li = topo.get_loop_of_block(loop_runner.get_prehead().get_skey()).unwrap();
-                  let parent = loop_runner.get_parent().unwrap();
+                  // let parent = loop_runner.get_parent().unwrap();
                   assert!(li.get_loop_ind_var().unwrap().get_skey() == ind_var.get_skey());
-                  eprintln!("  Inducted by {}", ind_var.to_string(false));
-                  eprintln!("  Belong to loop: {}", loop_ind.to_string(false));
-                  eprintln!("  Hoist to: {}", prehead.get_name());
+                  // eprintln!("  Inducted by {}", ind_var.to_string(false));
+                  // eprintln!("  Belong to loop: {}", loop_ind.to_string(false));
+                  // eprintln!("  Hoist to: {}", prehead.get_name());
                   res.push((prehead.get_skey(), inst.get_skey()));
                 }
               }

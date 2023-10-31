@@ -110,6 +110,7 @@ impl<'ctx> LoopInfo<'ctx> {
   }
 
   // TODO(@were): Get the loop trip count.
+  #[allow(dead_code)]
   pub fn get_loop_n(&self) -> Option<ValueRef> {
     let ctx = self.topo_info.ctx;
     let latch = self.get_latch();
@@ -323,7 +324,7 @@ impl <'ctx>ChildTraverse<'ctx> for LoopInfo<'ctx> {
 
 }
 
-
+#[allow(dead_code)]
 pub fn print_loop_info(iter: ChildIter, indent: usize) {
   let indent = indent + 1;
   for elem in iter {

@@ -5,7 +5,7 @@ use trinity::ir::module::Module;
 
 use crate::analysis::dom_tree::DominatorTree;
 
-pub fn transform(mut module: Module) -> (Module, bool) {
+pub fn transform(mut module: Module, level: usize) -> (Module, bool) {
   let mut modified = false;
   let mut iterative = true;
   while iterative {
@@ -17,6 +17,9 @@ pub fn transform(mut module: Module) -> (Module, bool) {
     iterative |= super::dce::transform(&mut module);
     iterative |= arith::simplify_arith(&mut module);
     iterative |= cfg::phi_to_select(&mut module);
+    if level == 2 {
+      iterative |= cfg::connect_unconditional_branches(&mut module);
+    }
     modified |= iterative;
   }
   return (module, modified);
