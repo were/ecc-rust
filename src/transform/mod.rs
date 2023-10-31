@@ -2,6 +2,7 @@ use trinity::ir::module::Module;
 
 use self::simplify::{cfg::merge_trivial_branches, arith::const_propagate};
 
+mod mem;
 mod ssa;
 mod dce;
 mod cse;
