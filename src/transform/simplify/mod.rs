@@ -1,5 +1,6 @@
 pub mod arith;
 pub mod cfg;
+pub mod peephole;
 
 use trinity::ir::module::Module;
 
@@ -11,6 +12,7 @@ pub fn transform(mut module: Module, level: usize) -> (Module, bool) {
   while iterative {
     iterative = false;
     module = cse::transform(module);
+    module = peephole::transform(module);
     iterative |= arith::remove_trivial_inst(&mut module);
     iterative |= cfg::merge_trivial_branches(&mut module);
     iterative |= dce::transform(&mut module);
