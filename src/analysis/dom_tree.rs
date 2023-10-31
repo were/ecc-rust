@@ -55,7 +55,6 @@ impl DominatorTree {
   }
 
   pub fn i_dominates_i(&self, a: &InstructionRef, b: &InstructionRef) -> bool {
-    let workspace = &self.dt;
     let a_block = a.get_parent();
     let b_block = b.get_parent();
     if a_block.get_skey() == b_block.get_skey() {
@@ -74,11 +73,11 @@ impl DominatorTree {
       }
       return idx_a <= idx_b;
     }
-    if workspace[b_block.get_skey()].dominators.contains(&a_block.get_skey()) {
-      true
-    } else {
-      false
-    }
+    return self.b_dominates_b(&a_block, &b_block)
+  }
+
+  pub fn b_dominates_b(&self, a: &BlockRef, b: &BlockRef) -> bool {
+    return self.dt[b.get_skey()].dominators.contains(&a.get_skey())
   }
 
   fn analyze_dominators(&mut self, func: &FunctionRef) {

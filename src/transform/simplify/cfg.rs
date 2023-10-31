@@ -131,7 +131,8 @@ pub fn merge_trivial_branches(module: &mut Module) -> bool {
   return modified;
 }
 
-fn has_select_phi<'ctx>(module: &'ctx Module) -> Option<(ValueRef, Vec<ValueRef>, ValueRef, Vec<(ValueRef, ValueRef, ValueRef)>)> {
+fn has_select_phi<'ctx>(module: &'ctx Module)
+  -> Option<(ValueRef, Vec<ValueRef>, ValueRef, Vec<(ValueRef, ValueRef, ValueRef)>)> {
   for func in module.func_iter() {
     for block in func.block_iter() {
       if let Some(last_inst) = block.last_inst() {
@@ -175,7 +176,9 @@ fn has_select_phi<'ctx>(module: &'ctx Module) -> Option<(ValueRef, Vec<ValueRef>
             let mut res = Vec::new();
             for inst1 in succ.inst_iter() {
               if let Some(phi) = inst1.as_sub::<PhiNode>() {
-                let tf = if phi.get_incoming_block(0).unwrap().get_skey() == br.true_label().unwrap().get_skey() {
+                let phi0 = phi.get_incoming_block(0).unwrap().get_skey();
+                let tlabel = br.true_label().unwrap().get_skey();
+                let tf = if phi0 == tlabel {
                   (0, 1)
                 } else {
                   (1, 0)
@@ -259,6 +262,62 @@ pub fn remove_unreachable_block(module: &mut Module) -> bool {
     }
     let mut mutator = BlockMutator::new(&mut module.context, block);
     mutator.erase_from_parent();
+  }
+  modified
+}
+
+fn has_unconditional_branch_block(module: &Module) -> Option<(ValueRef, ValueRef, usize)> {
+  for func in module.func_iter() {
+    for bb in func.block_iter() {
+      if bb.get_num_insts() != 1 {
+        continue;
+      }
+      if bb.pred_iter().count() != 1 {
+        continue;
+      }
+      if let Some(br) = bb.last_inst().unwrap().as_sub::<BranchInst>() {
+        if !br.is_cond_br() {
+          let pred = bb.pred_iter().next().unwrap();
+          for (i, opreand) in pred.operand_iter().enumerate() {
+            if opreand.skey == bb.get_skey() {
+              return Some((pred.as_super(), br.dest_label().unwrap().as_super(), i));
+            }
+          }
+          unreachable!("Predecesor does not have a branch to this block!");
+        }
+      }
+    }
+  }
+  None
+}
+
+/// Connect unconditional branches.
+/// A -> B -> C, where B is a single-branched block.
+/// Directly connect A to C.
+pub fn connect_unconditional_branches(module: &mut Module) -> bool {
+  let mut modified = false;
+  while let Some((br, dest, idx)) = has_unconditional_branch_block(module) {
+    {
+      let br_to_connect = br.as_ref::<Instruction>(&module.context).unwrap();
+      let bb_to_remove = br_to_connect.get_operand(idx).unwrap();
+      let br_to_remove = bb_to_remove
+        .as_ref::<Block>(&module.context).unwrap().last_inst().unwrap().as_super();
+      let mut inst_mutator = InstMutator::new(&mut module.context, &br_to_remove);
+      inst_mutator.erase_from_parent();
+    }
+    {
+      let br_to_connect = br.as_ref::<Instruction>(&module.context).unwrap();
+      let source = br_to_connect.get_parent().as_super();
+      let bb_to_remove = br_to_connect.get_operand(idx).unwrap().clone();
+      let mut bb_mutator = BlockMutator::new(&mut module.context, bb_to_remove);
+      bb_mutator.replace_all_uses_with(source);
+      bb_mutator.erase_from_parent();
+    }
+    {
+      let mut br_mutator = InstMutator::new(&mut module.context, &br);
+      br_mutator.set_operand(idx, dest.clone());
+    }
+    modified = true;
   }
   modified
 }

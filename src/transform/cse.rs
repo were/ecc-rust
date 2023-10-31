@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use trinity::ir::{module::Module, value::instruction::{InstMutator, InstOpcode}, Instruction, ValueRef};
+use trinity::ir::{
+  module::Module, value::instruction::{InstMutator, InstOpcode}, Instruction, ValueRef
+};
 
 use crate::analysis::dom_tree::DominatorTree;
 
@@ -12,7 +14,11 @@ fn analysis<'ctx>(module: &'ctx Module, dt: &DominatorTree) -> Vec<(ValueRef, Ve
     for block in func.block_iter() {
       for inst in block.inst_iter() {
         match inst.get_opcode() {
-          InstOpcode::BinaryOp(_) | InstOpcode::GetElementPtr(_) | InstOpcode::CastInst(_) | InstOpcode::ICompare(_) | InstOpcode::Select => {
+          InstOpcode::BinaryOp(_) |
+          InstOpcode::GetElementPtr(_) |
+          InstOpcode::CastInst(_) |
+          InstOpcode::ICompare(_) |
+          InstOpcode::Select => {
             let operands = (0..inst.get_num_operands())
               .map(|i| inst.get_operand(i).unwrap().clone())
               .collect::<Vec<_>>();
@@ -53,9 +59,11 @@ fn analysis<'ctx>(module: &'ctx Module, dt: &DominatorTree) -> Vec<(ValueRef, Ve
 pub fn rewrite(module: &mut Module, to_replace: Vec<(ValueRef, Vec<ValueRef>)>) -> bool {
   let mut res = false;
   for (dom, subs) in to_replace.iter() {
-    // eprintln!("[CSE] Master: {}", dom.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+    // eprintln!("[CSE] Master: {}",
+    //   dom.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
     for sub in subs {
-      // eprintln!("[CSE] To replace: {}", sub.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+      // eprintln!("[CSE] To replace: {}",
+      //   sub.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
       let mut mutator = InstMutator::new(&mut module.context, sub);
       mutator.replace_all_uses_with(dom.clone());
       res = true;
@@ -64,9 +72,10 @@ pub fn rewrite(module: &mut Module, to_replace: Vec<(ValueRef, Vec<ValueRef>)>) 
   return res;
 }
 
-pub fn transform(mut module: Module, dt: &DominatorTree) -> Module {
+pub fn transform(mut module: Module) -> Module {
+  let dt = DominatorTree::new(&module);
   loop {
-    let to_replace = analysis(&module, dt);
+    let to_replace = analysis(&module, &dt);
     if !rewrite(&mut module, to_replace) {
       break;
     }

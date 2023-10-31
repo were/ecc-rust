@@ -451,11 +451,14 @@ impl CodeGen {
     // Save the nested condition and end blocks.
     let old = self.loop_cond_or_end.clone();
     self.cache_stack.push();
+    let prehead = self.builder_mut().add_block("while.prehead".to_string());
     let cond_block = self.builder_mut().add_block("while.cond".to_string());
     let body_block = self.builder_mut().add_block("while.body".to_string());
     let end_block = self.builder_mut().add_block("while.end".to_string());
     let cond = self.generate_expr(&while_stmt.cond, false);
-    self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
+    self.builder_mut().create_conditional_branch(cond, prehead.clone(), end_block.clone(), false);
+    self.builder_mut().set_current_block(prehead);
+    self.builder_mut().create_unconditional_branch(body_block.clone());
     // Set it to the inner most loop.
     self.loop_cond_or_end = (cond_block.clone(), end_block.clone()).into();
     self.builder_mut().set_current_block(cond_block.clone());

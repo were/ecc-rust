@@ -91,12 +91,17 @@ impl<'ctx> LoopInfo<'ctx> {
     let ctx = self.topo_info.ctx;
     let head = self.get_head();
     let latch = self.get_latch();
-    assert!(head.pred_iter().count() == 2);
+    if head.pred_iter().count() != 2 {
+      panic!("Loop head {} has {} predecessors", head.get_name(), head.pred_iter().count());
+    }
     for pred in head.pred_iter() {
       if pred.get_skey() == latch.get_skey() {
         continue;
       }
-      assert!(pred.get_parent().get_name().starts_with("for.prehead."));
+      if !pred.get_parent().get_name().starts_with("for.prehead.") &&
+         !pred.get_parent().get_name().starts_with("while.prehead.") {
+        panic!("{} is expected to be a prehead", pred.get_parent().get_name());
+      }
       let res = Block::from_skey(pred.get_parent().get_skey()).as_ref::<Block>(ctx).unwrap();
       return res;
     }
@@ -110,6 +115,7 @@ impl<'ctx> LoopInfo<'ctx> {
   }
 
   // TODO(@were): Get the loop trip count.
+  #[allow(dead_code)]
   pub fn get_loop_n(&self) -> Option<ValueRef> {
     let ctx = self.topo_info.ctx;
     let latch = self.get_latch();
@@ -323,7 +329,7 @@ impl <'ctx>ChildTraverse<'ctx> for LoopInfo<'ctx> {
 
 }
 
-
+#[allow(dead_code)]
 pub fn print_loop_info(iter: ChildIter, indent: usize) {
   let indent = indent + 1;
   for elem in iter {
@@ -466,4 +472,3 @@ pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) 
   assert!(finalized_loops.is_empty(), "There are still some loops not finalized!");
   return res;
 }
-
