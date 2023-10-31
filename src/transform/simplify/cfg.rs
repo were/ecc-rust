@@ -131,7 +131,8 @@ pub fn merge_trivial_branches(module: &mut Module) -> bool {
   return modified;
 }
 
-fn has_select_phi<'ctx>(module: &'ctx Module) -> Option<(ValueRef, Vec<ValueRef>, ValueRef, Vec<(ValueRef, ValueRef, ValueRef)>)> {
+fn has_select_phi<'ctx>(module: &'ctx Module)
+  -> Option<(ValueRef, Vec<ValueRef>, ValueRef, Vec<(ValueRef, ValueRef, ValueRef)>)> {
   for func in module.func_iter() {
     for block in func.block_iter() {
       if let Some(last_inst) = block.last_inst() {
@@ -175,7 +176,9 @@ fn has_select_phi<'ctx>(module: &'ctx Module) -> Option<(ValueRef, Vec<ValueRef>
             let mut res = Vec::new();
             for inst1 in succ.inst_iter() {
               if let Some(phi) = inst1.as_sub::<PhiNode>() {
-                let tf = if phi.get_incoming_block(0).unwrap().get_skey() == br.true_label().unwrap().get_skey() {
+                let phi0 = phi.get_incoming_block(0).unwrap().get_skey();
+                let tlabel = br.true_label().unwrap().get_skey();
+                let tf = if phi0 == tlabel {
                   (0, 1)
                 } else {
                   (1, 0)
