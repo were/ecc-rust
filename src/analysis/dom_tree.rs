@@ -55,7 +55,6 @@ impl DominatorTree {
   }
 
   pub fn i_dominates_i(&self, a: &InstructionRef, b: &InstructionRef) -> bool {
-    let workspace = &self.dt;
     let a_block = a.get_parent();
     let b_block = b.get_parent();
     if a_block.get_skey() == b_block.get_skey() {

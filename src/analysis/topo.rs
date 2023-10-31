@@ -91,12 +91,17 @@ impl<'ctx> LoopInfo<'ctx> {
     let ctx = self.topo_info.ctx;
     let head = self.get_head();
     let latch = self.get_latch();
-    assert!(head.pred_iter().count() == 2);
+    if head.pred_iter().count() != 2 {
+      panic!("Loop head {} has {} predecessors", head.get_name(), head.pred_iter().count());
+    }
     for pred in head.pred_iter() {
       if pred.get_skey() == latch.get_skey() {
         continue;
       }
-      assert!(pred.get_parent().get_name().starts_with("for.prehead."));
+      if !pred.get_parent().get_name().starts_with("for.prehead.") &&
+         !pred.get_parent().get_name().starts_with("while.prehead.") {
+        panic!("{} is expected to be a prehead", pred.get_parent().get_name());
+      }
       let res = Block::from_skey(pred.get_parent().get_skey()).as_ref::<Block>(ctx).unwrap();
       return res;
     }
@@ -467,4 +472,3 @@ pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) 
   assert!(finalized_loops.is_empty(), "There are still some loops not finalized!");
   return res;
 }
-

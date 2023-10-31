@@ -6,24 +6,26 @@ pub struct Reachability {
   data: HashMap<usize, HashSet<usize>>,
 }
 
-impl Reachability {
+impl <'ctx>Reachability {
 
   pub fn new(m: &Module) -> Self {
     let mut res = Self{ data: HashMap::new() };
     for f in m.func_iter() {
       for bb in f.block_iter() {
-        let mut q = vec![bb];
+        let key = bb.get_skey();
+        let mut q = vec![key];
         let mut visited = HashSet::new();
-        visited.insert(bb.get_skey());
+        visited.insert(key);
         while let Some(front) = q.pop() {
-          for succ in front.succ_iter() {
+          let bb = Block::from_skey(front).as_ref::<Block>(bb.ctx()).unwrap();
+          for succ in bb.succ_iter() {
             if !visited.contains(&succ.get_skey()) {
               visited.insert(succ.get_skey());
-              q.push(succ);
+              q.push(succ.get_skey());
             }
           }
         }
-        res.data.insert(bb.get_skey(), visited);
+        res.data.insert(key, visited);
       }
     }
     res
@@ -38,7 +40,7 @@ impl Reachability {
   }
 
   /// Return the slices between the given two blocks.
-  pub fn slice(&self, b0: &BlockRef, b1: &BlockRef) -> Vec<BlockRef> {
+  pub fn slice(&self, b0: &BlockRef<'ctx>, b1: &BlockRef<'ctx>) -> Vec<BlockRef<'ctx>> {
     if let Some(entry) = self.data.get(&b0.get_skey()) {
       return entry.iter().filter(|x| {
         let bb = Block::from_skey(**x).as_ref::<Block>(b0.ctx()).unwrap();
@@ -52,5 +54,3 @@ impl Reachability {
 
 }
 
-pub fn analyze_reachability(m: &Module) {
-}
