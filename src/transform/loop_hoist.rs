@@ -4,7 +4,7 @@ use trinity::ir::{
   Block, TypeRef
 };
 use crate::analysis::{
-  topo::{analyze_topology, self, Node, ChildTraverse, LoopInfo, ChildIter, print_loop_info},
+  topo::{analyze_topology, self, Node, ChildTraverse, LoopInfo, ChildIter, },
   dom_tree::DominatorTree
 };
 

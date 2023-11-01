@@ -1,9 +1,13 @@
 use trinity::ir::{module::Module, ValueRef, value::instruction::{Load, InstructionRef, Store, InstMutator}};
 
-use crate::analysis::{dom_tree::DominatorTree, reachable::Reachability, topo::{TopoInfo, analyze_topology}};
+use crate::analysis::{
+  dom_tree::DominatorTree, reachable::Reachability,
+  topo::{TopoInfo, analyze_topology},
+  mem::{AliasCache, AliasInfo}
+};
 
 fn no_store_between(i0: &InstructionRef, i1: &InstructionRef,
-                    rt: &Reachability, topo: &TopoInfo) -> bool {
+                    rt: &Reachability, topo: &TopoInfo, ac: &AliasCache) -> bool {
   let src = i0.get_parent();
   let dst = i1.get_parent();
   let slice = rt.slice(&src, &dst);
@@ -21,6 +25,7 @@ fn no_store_between(i0: &InstructionRef, i1: &InstructionRef,
       _ => false
     }
   };
+  let alias_info = ac.get(&i0.as_super());
   for bb in slice {
     let mut ii = bb.inst_iter();
     if i0.get_parent().get_skey() == bb.get_skey() {
@@ -40,7 +45,18 @@ fn no_store_between(i0: &InstructionRef, i1: &InstructionRef,
     for i in ii {
       if let Some(store) = i.as_sub::<Store>() {
         if store.get_value().get_type(i0.ctx()) == ty {
-          return false;
+          match (&alias_info, &ac.get(&i.as_super())) {
+            (AliasInfo::Array(a), AliasInfo::Array(b)) => {
+              if a != b {
+                continue;
+              } else {
+                return false;
+              }
+            }
+            _ => {
+              return false;
+            }
+          }
         }
       }
     }
@@ -48,7 +64,7 @@ fn no_store_between(i0: &InstructionRef, i1: &InstructionRef,
   return true;
 }
 
-fn has_redundant_load(m: &Module, dt: &DominatorTree, rt: &Reachability)
+fn has_redundant_load(m: &Module, dt: &DominatorTree, rt: &Reachability, ac: &AliasCache)
   -> Option<(ValueRef, ValueRef)> {
   let mut workspace = vec![false; m.context.capacity()];
   for f in m.func_iter().filter(|x| !x.is_declaration()) {
@@ -59,6 +75,7 @@ fn has_redundant_load(m: &Module, dt: &DominatorTree, rt: &Reachability)
           continue;
         }
         for i0 in bb0.inst_iter() {
+          // i0 and i1 are two loads from the same pointer.
           if let Some(load0) = i0.as_sub::<Load>() {
             for i1 in bb1.inst_iter() {
               if i0.get_skey() == i1.get_skey() {
@@ -71,12 +88,32 @@ fn has_redundant_load(m: &Module, dt: &DominatorTree, rt: &Reachability)
                 if !dt.i_dominates_i(&i0, &i1) {
                   continue;
                 }
-                if no_store_between(&i0, &i1, rt, &topo) {
+                if no_store_between(&i0, &i1, rt, &topo, ac) {
                   // eprintln!("{}", i0.get_parent().get_name());
-                  // eprintln!("--- {}", i0.to_string(false));
+                  // eprintln!("{}", i0.to_string(false));
                   // eprintln!("{}", i1.get_parent().get_name());
-                  // eprintln!("--- {}\n", i1.to_string(false));
+                  // eprintln!("{}\n", i1.to_string(false));
                   return Some((i0.as_super(), i1.as_super()));
+                }
+              }
+            }
+          }
+          // i0 is a store that dominates the value of i1, which is a same-addressed load.
+          if let Some(store) = i0.as_sub::<Store>() {
+            for i1 in bb1.inst_iter() {
+              if let Some(load) = i1.as_sub::<Load>() {
+                if store.get_ptr() != load.get_ptr() {
+                  continue;
+                }
+                if !dt.i_dominates_i(&i0, &i1) {
+                  continue;
+                }
+                if no_store_between(&i0, &i1, rt, &topo, ac) {
+                  // eprintln!("{}", i0.get_parent().get_name());
+                  // eprintln!("{}", i0.to_string(false));
+                  // eprintln!("{}", i1.get_parent().get_name());
+                  // eprintln!("{}\n", i1.to_string(false));
+                  return Some((store.get_value().clone(), i1.as_super()));
                 }
               }
             }
@@ -91,8 +128,9 @@ fn has_redundant_load(m: &Module, dt: &DominatorTree, rt: &Reachability)
 pub fn remove_redundant_load(m: &mut Module) -> bool {
   let dt = DominatorTree::new(m);
   let rt = Reachability::new(m);
+  let ac = AliasCache::new(m);
   let mut res = false;
-  while let Some((l0, l1)) = has_redundant_load(m, &dt, &rt) {
+  while let Some((l0, l1)) = has_redundant_load(m, &dt, &rt, &ac) {
     let mut inst = InstMutator::new(&mut m.context, &l1);
     inst.replace_all_uses_with(l0);
     inst.erase_from_parent();

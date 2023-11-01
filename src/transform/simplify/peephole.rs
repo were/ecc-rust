@@ -42,7 +42,7 @@ fn has_conditional_add(m: &Module) -> Option<(TypeRef, ValueRef, ValueRef, Value
 pub fn rewrite_conditional_add(m: Module) -> Module {
   let mut builder = Builder::new(m);
   while let Some((ty, orig, cond, coef, value)) = has_conditional_add(&builder.module) {
-    let inst = orig.as_ref::<Instruction>(&builder.module.context).unwrap();
+    // let inst = orig.as_ref::<Instruction>(&builder.module.context).unwrap();
     let bb = value.as_ref::<Instruction>(&builder.module.context).unwrap().get_parent().as_super();
     builder.set_current_block(bb);
     builder.set_insert_before(value.clone());
@@ -56,7 +56,7 @@ pub fn rewrite_conditional_add(m: Module) -> Module {
   builder.module
 }
 
-pub fn transform(mut m: Module) -> Module {
+pub fn transform(m: Module) -> Module {
   rewrite_conditional_add(m)
 }
 
