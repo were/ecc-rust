@@ -4,7 +4,7 @@ use trinity::ir::{
   Block, TypeRef
 };
 use crate::analysis::{
-  topo::{analyze_topology, self, Node, ChildTraverse, LoopInfo, ChildIter, print_loop_info},
+  topo::{analyze_topology, self, Node, ChildTraverse, LoopInfo, ChildIter, },
   dom_tree::DominatorTree
 };
 
@@ -181,7 +181,7 @@ fn analyze_hoistable_invariants(m: &Module) -> Vec<(usize, usize)> {
   res
 }
 
-pub fn hoist_loop_invariants(m: &mut Module) {
+pub fn hoist_invariants(m: &mut Module) {
   loop {
     let to_hoist = analyze_hoistable_invariants(m);
     if to_hoist.is_empty() {
