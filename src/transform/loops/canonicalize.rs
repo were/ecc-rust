@@ -29,8 +29,6 @@ fn loops_to_canonicalize(
                   for (idx, (block, init)) in phi.iter().enumerate() {
                     if block.get_skey() == prehead.get_skey() {
                       if !is_const(block.ctx(), init, 0) {
-                        // eprintln!("ind: {}", ind_var.to_string(false));
-                        // eprintln!("start: {}", init.to_string(block.ctx(), true));
                         let prehead = prehead.as_super();
                         let latch = li.get_latch().as_super();
                         let ind_var = ind_var.as_super();
@@ -63,6 +61,7 @@ pub fn transform(m: Module) -> Module {
     let zero = builder.context().const_value(i32ty, 0);
     // Analyze the values to replace.
     let inst = ind.as_ref::<Instruction>(&builder.module.context).unwrap();
+    // eprintln!("ind: {}", inst.to_string(false));
     let latch_inst = latch.as_ref::<Instruction>(&builder.module.context).unwrap();
     let latch_br = latch_inst.as_sub::<BranchInst>().unwrap();
     let cond = latch_br.cond().unwrap().clone();
@@ -85,9 +84,10 @@ pub fn transform(m: Module) -> Module {
     }
     // Get the init.
     let init = inst.get_operand(idx).unwrap().clone();
+    eprintln!("start: {}", init.to_string(&builder.module.context, true));
     let block = inst.get_parent();
-    let idx = block.inst_iter().position(|i| i.get_skey() == inst.get_skey()).unwrap() + 1;
-    let next_inst = block.get_inst(idx).unwrap().as_super();
+    let ind_idx = block.inst_iter().position(|i| i.get_skey() == inst.get_skey()).unwrap() + 1;
+    let next_inst = block.get_inst(ind_idx).unwrap().as_super();
     let ind_phi = inst.as_super();
     let block = block.as_super();
     // Calculate extent = end - begin.
@@ -95,9 +95,11 @@ pub fn transform(m: Module) -> Module {
     let last_inst = prehead_block.last_inst().unwrap();
     let last_inst = last_inst.as_super();
     // Insert it to the end of the prehead.
-    builder.set_current_block(prehead);
+    builder.set_current_block(prehead.clone());
     builder.set_insert_before(last_inst);
     let extent = builder.create_sub(end, init.clone());
+    // eprintln!("{}", prehead.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
+
     // Insert (i + init) right after the phi inductive.
     builder.set_current_block(block);
     builder.set_insert_before(next_inst);
