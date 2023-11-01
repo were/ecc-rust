@@ -183,6 +183,27 @@ impl<'ctx> LoopInfo<'ctx> {
     None
   }
 
+  /// The delta of i of each loop iteration.
+  pub fn get_loop_step(&'ctx self) -> Option<ValueRef> {
+    let ctx = self.topo_info.ctx;
+    let latch = self.get_latch();
+    if let Some(br) = latch.as_sub::<BranchInst>() {
+      if let Some(cond) = br.cond() {
+        if let Some(inst) = cond.as_ref::<Instruction>(ctx) {
+          if let InstOpcode::ICompare(CmpPred::SLT) = inst.get_opcode() {
+            if let Some(inst) = inst.get_operand(0).unwrap().as_ref::<Instruction>(ctx) {
+              if let Some(bin) = inst.as_sub::<BinaryInst>() {
+                if bin.is(BinaryOp::Add) {
+                  return Some(bin.rhs().clone())
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    None
+  }
 
 }
 
@@ -477,6 +498,10 @@ pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) 
   let mut loop_stack = Vec::new();
   let mut finalized_loops = Vec::new();
   let mut res = TopoInfo::new(func.ctx());
+
+  if func.is_declaration() {
+    return res;
+  }
 
   let entry = func.get_block(0).unwrap();
   visited[entry.get_skey()] = true;

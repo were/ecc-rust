@@ -23,8 +23,9 @@ pub fn optimize(mut module: Module, opt_level: i32) -> Module {
   if opt_level == 2 {
     lifetime::remove_lifetime_hint(&mut ssa);
     let (mut simplified_1, _) = simplify::transform(ssa, 1);
-    loops::hoist::hoist_loop_invariants(&mut simplified_1);
-    let (simplified_2, _) = simplify::transform(simplified_1, 2);
+    loops::hoist::hoist_invariants(&mut simplified_1);
+    let canonicalized = loops::canonicalize::transform(simplified_1);
+    let (simplified_2, _) = simplify::transform(canonicalized, 2);
     simplified_2
   } else {
     ssa
