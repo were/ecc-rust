@@ -7,7 +7,7 @@ mod ssa;
 mod dce;
 mod cse;
 mod lifetime;
-mod loop_hoist;
+mod loops;
 mod simplify;
 
 pub fn optimize(mut module: Module, opt_level: i32) -> Module {
@@ -23,7 +23,7 @@ pub fn optimize(mut module: Module, opt_level: i32) -> Module {
   if opt_level == 2 {
     lifetime::remove_lifetime_hint(&mut ssa);
     let (mut simplified_1, _) = simplify::transform(ssa, 1);
-    loop_hoist::hoist_loop_invariants(&mut simplified_1);
+    loops::hoist::hoist_loop_invariants(&mut simplified_1);
     let (simplified_2, _) = simplify::transform(simplified_1, 2);
     simplified_2
   } else {

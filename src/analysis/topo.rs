@@ -108,6 +108,31 @@ impl<'ctx> LoopInfo<'ctx> {
     unreachable!("Should not get here as each loop should always have a non-latch pred");
   }
 
+
+  /// Check if the given value is a loop invariant.
+  /// NOTE: It is prefered to hoist all the loop invariants to the prehead block.
+  ///       Therefore, invoke this function only after the loop invariants are hoisted.
+  pub fn is_loop_invariant(&self, value: &ValueRef) -> bool {
+    for elem in self.child_iter() {
+      match elem {
+        Node::Loop(li) => {
+          if !li.is_loop_invariant(value) {
+            return false;
+          }
+        }
+        Node::Block(bb) => {
+          for i in bb.inst_iter() {
+            if i.get_skey() == value.skey {
+              return false;
+            }
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  /// Get the exit block.
   pub fn get_exit(&'ctx self) -> BlockRef<'ctx> {
     let ctx = self.topo_info.ctx;
     let exit = Block::from_skey(self.loop_impl.exit).as_ref::<Block>(ctx).unwrap();
@@ -371,6 +396,7 @@ impl <'ctx>LoopImpl {
 
 }
 
+/// Topological sort the programn blocks.
 fn dfs_topology<'ctx>(
   ctx: &'ctx Context,
   cur: &'_ BlockRef,
