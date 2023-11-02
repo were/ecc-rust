@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use trinity::ir::{
   module::Module,
   value::instruction::{
-    PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, SelectInst
+    PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, SelectInst,
+    const_folder::{fold_binary_op, fold_cmp_op}
   },
-  ValueRef, Instruction, ConstScalar, TypeRef, IntType
+  ValueRef, Instruction, ConstScalar, IntType
 };
 
 
@@ -292,37 +293,64 @@ pub fn remove_trivial_inst(module: &mut Module) -> bool {
   return modified;
 }
 
-fn has_const_inst(module: &mut Module) -> Option<(ValueRef, TypeRef, u64)> {
+fn has_const_inst(module: &mut Module) -> Option<(ValueRef, ValueRef)> {
+  let mut insts = vec![];
   for func in module.func_iter() {
     for block in func.block_iter() {
       for inst in block.inst_iter() {
         match inst.get_opcode() {
-          InstOpcode::CastInst(subcast) => {
-            if let CastOp::Trunc = subcast {
-              let operand = inst.get_operand(0).unwrap();
-              if let Some(const_scalar) = operand.as_ref::<ConstScalar>(&module.context) {
-                let bits = inst.get_type().get_scalar_size_in_bits(module);
-                let shift_bits = 64 - bits;
-                let res = const_scalar.get_value();
-                let res = res << shift_bits >> shift_bits;
-                return (inst.as_super(), inst.get_type().clone(), res).into();
-              }
-            }
+          InstOpcode::CastInst(_) | InstOpcode::BinaryOp(_) | InstOpcode::ICompare(_) => {
+            insts.push(inst.as_super());
           }
           _ => {}
         }
       }
     }
   }
+  for inst in insts {
+    let (opcode, ty, operands) = {
+      let inst = inst.as_ref::<Instruction>(&module.context).unwrap();
+      let operands = inst.operand_iter().map(|x| x.clone()).collect::<Vec<_>>();
+      (inst.get_opcode().clone(), inst.get_type().clone(), operands)
+    };
+    match opcode {
+      InstOpcode::CastInst(subcast) => {
+        if let CastOp::Trunc = subcast {
+          let operand = operands.get(0).unwrap();
+          if let Some(const_scalar) = operand.as_ref::<ConstScalar>(&module.context) {
+            let bits = ty.get_scalar_size_in_bits(module);
+            let shift_bits = 64 - bits;
+            let res = const_scalar.get_value();
+            let res = res << shift_bits >> shift_bits;
+            let res = module.context.const_value(ty, res);
+            return (inst.clone(), res).into();
+          }
+        }
+      }
+      InstOpcode::BinaryOp(op) => {
+        if let Some(value) = fold_binary_op(&op, &mut module.context, &operands[0], &operands[1]) {
+          return Some((inst, value));
+        }
+      }
+      InstOpcode::ICompare(op) => {
+        if let Some(value) = fold_cmp_op(&op, &mut module.context, &operands[0], &operands[1]) {
+          return Some((inst, value));
+        }
+      }
+      _ => {}
+    }
+  }
   None
 }
 
-pub fn const_propagate(module: &mut Module) {
-  while let Some((inst, ty, value)) = has_const_inst(module) {
-    let new_value = module.context.const_value(ty, value);
+pub fn const_propagate(module: &mut Module) -> bool {
+  let mut modified = false;
+  while let Some((inst, value)) = has_const_inst(module) {
     let mut inst = InstMutator::new(&mut module.context, &inst);
-    inst.replace_all_uses_with(new_value);
+    inst.replace_all_uses_with(value);
     inst.erase_from_parent();
+    modified = true;
   }
+  modified
 }
 
