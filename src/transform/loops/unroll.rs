@@ -37,7 +37,7 @@ fn gather_small_loops(iter: ChildIter, res: &mut Vec<FullyUnroll>) -> bool {
                   let latch = li.get_latch();
                   let latch = latch.as_super();
                   let n = const_scalar.get_value();
-                  let blocks = blocks.iter().map(|x| x.as_super()).collect();
+                  let blocks = blocks.iter().rev().map(|x| x.as_super()).collect();
                   let prehead = li.get_prehead().as_super();
                   let head = li.get_head().as_super();
                   let exit = li.get_exit().as_super();
@@ -112,6 +112,8 @@ fn build_unrolled_insts(
         phi_current.insert(*carried, built);
       }
     }
+    let block_ref = builder.get_current_block().unwrap().as_ref::<Block>(&builder.module.context).unwrap();
+    eprintln!("[Built Block]\n{}", block_ref.to_string(false));
   }
 }
 
@@ -138,6 +140,11 @@ pub fn unroll_small_loops(m: Module) -> Module {
   let to_unroll = loops_to_unroll(&m);
   let mut builder = Builder::new(m);
   for (n, prehead, head, latch, exit, blocks) in to_unroll.iter() {
+    eprintln!("{}", prehead.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
+    for block in blocks.iter() {
+      eprintln!("{}", block.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
+    }
+    eprintln!("{}", exit.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
     let mut last_block = prehead.clone();
     let (mut phi_current, phi_carried) = {
       let head = head.as_ref::<Block>(&builder.module.context).unwrap();
@@ -149,6 +156,7 @@ pub fn unroll_small_loops(m: Module) -> Module {
           assert!(phi.iter().count() == 2);
           for (block, value) in phi.iter() {
             if block.get_skey() == last_block.skey {
+              eprintln!("{} -> {}", inst.get_name(), value.to_string(inst.ctx(), false));
               // If its branch is from the prehead, it is the initial value.
               current.insert(inst.get_skey(), value.clone());
             } else {
@@ -176,6 +184,7 @@ pub fn unroll_small_loops(m: Module) -> Module {
         // Connect the last iteration to this iteration.
         if block == head {
           connect_block(&mut builder, &last_block, &current_block);
+          eprintln!("[Connect]\n{}", last_block.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
         }
       }
 
