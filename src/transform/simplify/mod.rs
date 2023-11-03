@@ -17,6 +17,7 @@ pub fn transform(mut module: Module, level: usize) -> (Module, bool) {
     iterative |= cfg::merge_trivial_branches(&mut module);
     iterative |= dce::transform(&mut module);
     iterative |= arith::simplify_arith(&mut module);
+    iterative |= arith::const_propagate(&mut module);
     iterative |= cfg::phi_to_select(&mut module);
     iterative |= mem::remove_redundant_load(&mut module);
     if level == 2 {

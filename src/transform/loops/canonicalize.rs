@@ -84,7 +84,7 @@ pub fn transform(m: Module) -> Module {
     }
     // Get the init.
     let init = inst.get_operand(idx).unwrap().clone();
-    eprintln!("start: {}", init.to_string(&builder.module.context, true));
+    // eprintln!("start: {}", init.to_string(&builder.module.context, true));
     let block = inst.get_parent();
     let ind_idx = block.inst_iter().position(|i| i.get_skey() == inst.get_skey()).unwrap() + 1;
     let next_inst = block.get_inst(ind_idx).unwrap().as_super();

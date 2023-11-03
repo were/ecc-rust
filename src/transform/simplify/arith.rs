@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use trinity::ir::{
   module::Module,
   value::instruction::{
-    PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, SelectInst
+    PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, SelectInst,
+    const_folder::{fold_binary_op, fold_cmp_op}
   },
-  ValueRef, Instruction, ConstScalar, TypeRef, IntType
+  ValueRef, Instruction, ConstScalar, IntType
 };
 
 
@@ -186,7 +187,7 @@ pub fn simplify_arith(module: &mut Module) -> bool {
 
 fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
   let mut const_replace_tuple = None;
-  for func in module.func_iter() {
+  'func: for func in module.func_iter() {
     for block in func.block_iter() {
       for inst in block.inst_iter() {
         // Find phi node with all the branches are the same values.
@@ -230,7 +231,7 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
                 // eprintln!("[SIMP] Find a trivial sub: {}, replace by: {}",
                 //           inst.to_string(false), 0);
                 const_replace_tuple = Some((inst.get_skey(), inst.get_type().clone(), 0));
-                break;
+                break 'func;
               }
               if let Some(lhs_bin) = binary.lhs().as_ref::<Instruction>(inst.ctx()) {
                 if let InstOpcode::BinaryOp(BinaryOp::Add) = lhs_bin.get_opcode() {
@@ -260,13 +261,26 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
             _ => {}
           }
         }
+        if let Some(select) = inst.as_sub::<SelectInst>() {
+          if let Some(tv) = select.get_true_value().as_ref::<ConstScalar>(inst.ctx()) {
+            if let Some(fv) = select.get_false_value().as_ref::<ConstScalar>(inst.ctx()) {
+              if tv.get_value() == fv.get_value() {
+                // eprintln!("[SIMP] Find a trivial select: {}, replace by: {}",
+                //           inst.to_string(false), tv.get_value());
+                let tv = tv.get_value().clone();
+                const_replace_tuple = Some((inst.get_skey(), inst.get_type().clone(), tv));
+                break 'func;
+              }
+              if tv.get_value() == 1 && fv.get_value() == 0 {
+                // eprintln!("[SIMP] Find a trivial select: {}, replace by: {}",
+                //           inst.to_string(false),
+                //           select.get_condition().to_string(&module.context, true));
+                return Some((inst.get_skey(), select.get_condition().clone()));
+              }
+            }
+          }
+        }
       }
-      if const_replace_tuple.is_some() {
-        break;
-      }
-    }
-    if const_replace_tuple.is_some() {
-      break;
     }
   }
   if let Some((skey, ty, scalar)) = const_replace_tuple {
@@ -292,37 +306,64 @@ pub fn remove_trivial_inst(module: &mut Module) -> bool {
   return modified;
 }
 
-fn has_const_inst(module: &mut Module) -> Option<(ValueRef, TypeRef, u64)> {
+fn has_const_inst(module: &mut Module) -> Option<(ValueRef, ValueRef)> {
+  let mut insts = vec![];
   for func in module.func_iter() {
     for block in func.block_iter() {
       for inst in block.inst_iter() {
         match inst.get_opcode() {
-          InstOpcode::CastInst(subcast) => {
-            if let CastOp::Trunc = subcast {
-              let operand = inst.get_operand(0).unwrap();
-              if let Some(const_scalar) = operand.as_ref::<ConstScalar>(&module.context) {
-                let bits = inst.get_type().get_scalar_size_in_bits(module);
-                let shift_bits = 64 - bits;
-                let res = const_scalar.get_value();
-                let res = res << shift_bits >> shift_bits;
-                return (inst.as_super(), inst.get_type().clone(), res).into();
-              }
-            }
+          InstOpcode::CastInst(_) | InstOpcode::BinaryOp(_) | InstOpcode::ICompare(_) => {
+            insts.push(inst.as_super());
           }
           _ => {}
         }
       }
     }
   }
+  for inst in insts {
+    let (opcode, ty, operands) = {
+      let inst = inst.as_ref::<Instruction>(&module.context).unwrap();
+      let operands = inst.operand_iter().map(|x| x.clone()).collect::<Vec<_>>();
+      (inst.get_opcode().clone(), inst.get_type().clone(), operands)
+    };
+    match opcode {
+      InstOpcode::CastInst(subcast) => {
+        if let CastOp::Trunc = subcast {
+          let operand = operands.get(0).unwrap();
+          if let Some(const_scalar) = operand.as_ref::<ConstScalar>(&module.context) {
+            let bits = ty.get_scalar_size_in_bits(module);
+            let shift_bits = 64 - bits;
+            let res = const_scalar.get_value();
+            let res = res << shift_bits >> shift_bits;
+            let res = module.context.const_value(ty, res);
+            return (inst.clone(), res).into();
+          }
+        }
+      }
+      InstOpcode::BinaryOp(op) => {
+        if let Some(value) = fold_binary_op(&op, &mut module.context, &operands[0], &operands[1]) {
+          return Some((inst, value));
+        }
+      }
+      InstOpcode::ICompare(op) => {
+        if let Some(value) = fold_cmp_op(&op, &mut module.context, &operands[0], &operands[1]) {
+          return Some((inst, value));
+        }
+      }
+      _ => {}
+    }
+  }
   None
 }
 
-pub fn const_propagate(module: &mut Module) {
-  while let Some((inst, ty, value)) = has_const_inst(module) {
-    let new_value = module.context.const_value(ty, value);
+pub fn const_propagate(module: &mut Module) -> bool {
+  let mut modified = false;
+  while let Some((inst, value)) = has_const_inst(module) {
     let mut inst = InstMutator::new(&mut module.context, &inst);
-    inst.replace_all_uses_with(new_value);
+    inst.replace_all_uses_with(value);
     inst.erase_from_parent();
+    modified = true;
   }
+  modified
 }
 
