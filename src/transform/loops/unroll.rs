@@ -9,7 +9,7 @@ use trinity::{
   builder::Builder
 };
 
-use crate::analysis::topo::{analyze_topology, ChildTraverse, ChildIter, Node, print_loop_info};
+use crate::analysis::topo::{analyze_topology, ChildTraverse, ChildIter, Node};
 
 type FullyUnroll = (usize, ValueRef, ValueRef, ValueRef, ValueRef, Vec<ValueRef>);
 
@@ -32,8 +32,8 @@ fn gather_small_loops(iter: ChildIter, res: &mut Vec<FullyUnroll>) -> bool {
                 }).collect::<Vec<_>>();
                 let count = blocks.iter().map(|b| b.get_num_insts()).sum::<usize>();
                 if count * (const_scalar.get_value() as usize) < 1000 {
-                  eprintln!("Small loop: {} * {}", count, const_scalar.get_value());
-                  print_loop_info(li.child_iter(), 0);
+                  // eprintln!("Small loop: {} * {}", count, const_scalar.get_value());
+                  // print_loop_info(li.child_iter(), 0);
                   let latch = li.get_latch();
                   let latch = latch.as_super();
                   let n = const_scalar.get_value();
@@ -112,8 +112,9 @@ fn build_unrolled_insts(
         phi_current.insert(*carried, built);
       }
     }
-    let block_ref = builder.get_current_block().unwrap().as_ref::<Block>(&builder.module.context).unwrap();
-    eprintln!("[Built Block]\n{}", block_ref.to_string(false));
+    // let block_ref = builder.get_current_block().unwrap()
+    //   .as_ref::<Block>(&builder.module.context).unwrap();
+    // eprintln!("[Built Block]\n{}", block_ref.to_string(false));
   }
 }
 
@@ -140,11 +141,11 @@ pub fn unroll_small_loops(m: Module) -> Module {
   let to_unroll = loops_to_unroll(&m);
   let mut builder = Builder::new(m);
   for (n, prehead, head, latch, exit, blocks) in to_unroll.iter() {
-    eprintln!("{}", prehead.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
-    for block in blocks.iter() {
-      eprintln!("{}", block.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
-    }
-    eprintln!("{}", exit.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
+    // eprintln!("{}", prehead.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
+    // for block in blocks.iter() {
+    //   eprintln!("{}", block.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
+    // }
+    // eprintln!("{}", exit.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
     let mut last_block = prehead.clone();
     let (mut phi_current, phi_carried) = {
       let head = head.as_ref::<Block>(&builder.module.context).unwrap();
@@ -156,7 +157,7 @@ pub fn unroll_small_loops(m: Module) -> Module {
           assert!(phi.iter().count() == 2);
           for (block, value) in phi.iter() {
             if block.get_skey() == last_block.skey {
-              eprintln!("{} -> {}", inst.get_name(), value.to_string(inst.ctx(), false));
+              // eprintln!("{} -> {}", inst.get_name(), value.to_string(inst.ctx(), false));
               // If its branch is from the prehead, it is the initial value.
               current.insert(inst.get_skey(), value.clone());
             } else {
@@ -184,7 +185,8 @@ pub fn unroll_small_loops(m: Module) -> Module {
         // Connect the last iteration to this iteration.
         if block == head {
           connect_block(&mut builder, &last_block, &current_block);
-          eprintln!("[Connect]\n{}", last_block.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
+          // eprintln!("[Connect]\n{}",
+          //   last_block.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
         }
       }
 

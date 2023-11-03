@@ -187,7 +187,7 @@ pub fn simplify_arith(module: &mut Module) -> bool {
 
 fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
   let mut const_replace_tuple = None;
-  for func in module.func_iter() {
+  'func: for func in module.func_iter() {
     for block in func.block_iter() {
       for inst in block.inst_iter() {
         // Find phi node with all the branches are the same values.
@@ -231,7 +231,7 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
                 // eprintln!("[SIMP] Find a trivial sub: {}, replace by: {}",
                 //           inst.to_string(false), 0);
                 const_replace_tuple = Some((inst.get_skey(), inst.get_type().clone(), 0));
-                break;
+                break 'func;
               }
               if let Some(lhs_bin) = binary.lhs().as_ref::<Instruction>(inst.ctx()) {
                 if let InstOpcode::BinaryOp(BinaryOp::Add) = lhs_bin.get_opcode() {
@@ -261,13 +261,26 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
             _ => {}
           }
         }
+        if let Some(select) = inst.as_sub::<SelectInst>() {
+          if let Some(tv) = select.get_true_value().as_ref::<ConstScalar>(inst.ctx()) {
+            if let Some(fv) = select.get_false_value().as_ref::<ConstScalar>(inst.ctx()) {
+              if tv.get_value() == fv.get_value() {
+                // eprintln!("[SIMP] Find a trivial select: {}, replace by: {}",
+                //           inst.to_string(false), tv.get_value());
+                let tv = tv.get_value().clone();
+                const_replace_tuple = Some((inst.get_skey(), inst.get_type().clone(), tv));
+                break 'func;
+              }
+              if tv.get_value() == 1 && fv.get_value() == 0 {
+                // eprintln!("[SIMP] Find a trivial select: {}, replace by: {}",
+                //           inst.to_string(false),
+                //           select.get_condition().to_string(&module.context, true));
+                return Some((inst.get_skey(), select.get_condition().clone()));
+              }
+            }
+          }
+        }
       }
-      if const_replace_tuple.is_some() {
-        break;
-      }
-    }
-    if const_replace_tuple.is_some() {
-      break;
     }
   }
   if let Some((skey, ty, scalar)) = const_replace_tuple {
