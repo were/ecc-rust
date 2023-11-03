@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
-use trinity::ir::{
+use trinity::{ir::{
   module::Module,
   value::instruction::{
     PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, SelectInst,
     const_folder::{fold_binary_op, fold_cmp_op}
   },
   ValueRef, Instruction, ConstScalar, IntType
-};
+}, builder::Builder};
 
 
 
@@ -185,8 +185,10 @@ pub fn simplify_arith(module: &mut Module) -> bool {
 }
 
 
-fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
+fn has_trivial_inst(builder: &mut Builder) -> Option<(usize, ValueRef)> {
   let mut const_replace_tuple = None;
+  let mut cast_to_replace = None;
+  let module = &builder.module;
   'func: for func in module.func_iter() {
     for block in func.block_iter() {
       for inst in block.inst_iter() {
@@ -272,10 +274,13 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
                 break 'func;
               }
               if tv.get_value() == 1 && fv.get_value() == 0 {
-                // eprintln!("[SIMP] Find a trivial select: {}, replace by: {}",
-                //           inst.to_string(false),
-                //           select.get_condition().to_string(&module.context, true));
-                return Some((inst.get_skey(), select.get_condition().clone()));
+                eprintln!("[SIMP] Find a trivial select: {}, replace by: {}",
+                          inst.to_string(false),
+                          select.get_condition().to_string(&module.context, true));
+                let value = select.get_condition().clone();
+                let ty = inst.get_type().clone();
+                cast_to_replace = (inst.as_super(), ty.clone(), value).into();
+                break 'func;
               }
             }
           }
@@ -283,8 +288,18 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
       }
     }
   }
+  if let Some((inst, ty, value)) = cast_to_replace {
+    let inst = inst.as_ref::<Instruction>(&builder.module.context).unwrap();
+    let next_inst = inst.next_inst().unwrap().as_super();
+    let block = inst.get_parent().as_super();
+    let skey = inst.get_skey();
+    builder.set_current_block(block);
+    builder.set_insert_before(next_inst);
+    let casted = builder.create_op_cast(CastOp::ZeroExt, value, ty);
+    return (skey, casted).into();
+  }
   if let Some((skey, ty, scalar)) = const_replace_tuple {
-    let zero = module.context.const_value(ty, scalar);
+    let zero = builder.context().const_value(ty, scalar);
     // let inst = Instruction::from_skey(skey);
     // eprintln!("[SIMP] Find a constant inst: {}, replace by: {}",
     //   inst.to_string(&module.context, true),
@@ -294,16 +309,17 @@ fn has_trivial_inst(module: &mut Module) -> Option<(usize, ValueRef)> {
   None
 }
 
-pub fn remove_trivial_inst(module: &mut Module) -> bool {
+pub fn remove_trivial_inst(module: Module) -> (bool, Module) {
   let mut modified = false;
-  while let Some((inst, value)) = has_trivial_inst(module) {
+  let mut builder = Builder::new(module);
+  while let Some((inst, value)) = has_trivial_inst(&mut builder) {
     let inst = Instruction::from_skey(inst);
-    let mut inst = InstMutator::new(&mut module.context, &inst);
+    let mut inst = InstMutator::new(builder.context(), &inst);
     inst.replace_all_uses_with(value);
     inst.erase_from_parent();
     modified = true;
   }
-  return modified;
+  return (modified, builder.module);
 }
 
 fn has_const_inst(module: &mut Module) -> Option<(ValueRef, ValueRef)> {

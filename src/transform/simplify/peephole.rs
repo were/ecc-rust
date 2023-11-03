@@ -46,7 +46,7 @@ pub fn rewrite_conditional_add(m: Module) -> Module {
     let bb = value.as_ref::<Instruction>(&builder.module.context).unwrap().get_parent().as_super();
     builder.set_current_block(bb);
     builder.set_insert_before(value.clone());
-    let one = builder.create_op_cast(CastOp::SignExt, cond, ty);
+    let one = builder.create_op_cast(CastOp::ZeroExt, cond, ty);
     let mul = builder.create_mul(one, coef);
     let add = builder.create_add(orig, mul);
     let mut mutator = InstMutator::new(builder.context(), &value);

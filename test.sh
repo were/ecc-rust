@@ -15,7 +15,13 @@ else
   opt=2
 fi
 
-$REPO/./target/debug/ecc $1 --backend $backend --output a.wasm --opt $opt
+if [ -z "$3" ]; then
+  opt=$opt
+else
+  opt=$3
+fi
+
+$REPO/./target/debug/ecc $1 --backend $backend --output a.wasm --opt $opt > compile.log 2>&1
 
 if [ $? -ne 0 ]; then
   echo Compilation failed!

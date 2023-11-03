@@ -97,9 +97,9 @@ impl <'ctx>Codegen<'ctx> {
               src.last_mut().unwrap().comment = "Bitcast is a noop".to_string();
               src
             }
-            CastOp::SignExt => {
+            CastOp::SignExt | CastOp::ZeroExt => {
               let mut src = self.emit_value(inst.get_operand(0).unwrap(), false);
-              src.last_mut().unwrap().comment = "SignExt is a noop".to_string();
+              src.last_mut().unwrap().comment = "SignExt&ZeroExt is a noop".to_string();
               src
             }
             _ => {

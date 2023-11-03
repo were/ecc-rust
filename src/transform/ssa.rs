@@ -290,8 +290,8 @@ fn find_undominated_stores(
   store_with_dom
 }
 
-fn cleanup(module: &mut Module, phi_to_alloc: &HashMap<usize, usize>, dt: &DominatorTree) {
-  dce::transform(module);
+fn cleanup(mut module: Module, phi_to_alloc: &HashMap<usize, usize>, dt: &DominatorTree) -> Module {
+  dce::transform(&mut module);
   loop {
     let dominated = find_undominated_stores(&module, dt, &phi_to_alloc);
     let mut to_remove = Vec::new();
@@ -317,14 +317,15 @@ fn cleanup(module: &mut Module, phi_to_alloc: &HashMap<usize, usize>, dt: &Domin
       } // for block
     } // for func
     if to_remove.is_empty() {
-      return;
+      return module;
     }
     for elem in to_remove {
       let mut mutator = InstMutator::new(&mut module.context, &elem);
       mutator.erase_from_parent();
     }
-    remove_trivial_inst(module);
-    dce::transform(module);
+    let (_, removed) = remove_trivial_inst(module);
+    module = removed;
+    dce::transform(&mut module);
   }
 }
 
@@ -333,8 +334,8 @@ pub fn transform(module: Module) -> Module {
   // eprintln!("{}", module.to_string());
   let dt = DominatorTree::new(&module);
   let vlt = VarLifetime::new(&module, true);
-  let (mut injected, phi_to_alloc) = inject_phis(module, &dt, &vlt);
-  cleanup(&mut injected, &phi_to_alloc, &dt);
-  injected
+  let (injected, phi_to_alloc) = inject_phis(module, &dt, &vlt);
+  let cleanedup = cleanup(injected, &phi_to_alloc, &dt);
+  cleanedup
 }
 
