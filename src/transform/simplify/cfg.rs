@@ -276,14 +276,26 @@ fn has_unconditional_branch_block(module: &Module) -> Option<(ValueRef, ValueRef
         continue;
       }
       if let Some(br) = bb.last_inst().unwrap().as_sub::<BranchInst>() {
+        let dest = br.dest_label().unwrap().as_super();
         if !br.is_cond_br() {
           let pred = bb.pred_iter().next().unwrap();
-          for (i, opreand) in pred.operand_iter().enumerate() {
-            if opreand.skey == bb.get_skey() {
-              return Some((pred.as_super(), br.dest_label().unwrap().as_super(), i));
+          let pred_br = pred.as_sub::<BranchInst>().unwrap();
+          if pred_br.is_cond_br() {
+            // If one branch already points to the destination, we do not point the other to
+            // TODO: relax this condition to "when there is some phi still uses that branch".
+            if pred_br.true_label().unwrap().get_skey() == dest.skey ||
+               pred_br.false_label().unwrap().get_skey() == dest.skey {
+              continue;
+            } else {
+              for (i, opreand) in pred.operand_iter().enumerate() {
+                if opreand.skey == bb.get_skey() {
+                  return Some((pred.as_super(), dest, i));
+                }
+              }
             }
+          } else {
+            return (pred.as_super(), br.dest_label().unwrap().as_super(), 1).into()
           }
-          unreachable!("Predecesor does not have a branch to this block!");
         }
       }
     }

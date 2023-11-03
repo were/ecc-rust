@@ -31,7 +31,7 @@ fn gather_small_loops(iter: ChildIter, res: &mut Vec<FullyUnroll>) -> bool {
                   unreachable!("This is inner most loop!");
                 }).collect::<Vec<_>>();
                 let count = blocks.iter().map(|b| b.get_num_insts()).sum::<usize>();
-                if count * (const_scalar.get_value() as usize) < 500 {
+                if count * (const_scalar.get_value() as usize) < 1000 {
                   eprintln!("Small loop: {} * {}", count, const_scalar.get_value());
                   print_loop_info(li.child_iter(), 0);
                   let latch = li.get_latch();
