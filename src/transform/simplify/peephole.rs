@@ -1,7 +1,7 @@
 use trinity::{
   ir::{
-    module::Module, value::instruction::{SelectInst, BinaryInst, BinaryOp, CastOp, InstMutator},
-    Instruction, ConstScalar, ValueRef, TypeRef
+    module::Module, value::instruction::{SelectInst, BinaryInst, BinaryOp, CastOp, InstMutator, Call},
+    Instruction, ConstScalar, ValueRef, TypeRef, TKindCode
   },
   builder::Builder
 };
@@ -39,7 +39,7 @@ fn has_conditional_add(m: &Module) -> Option<(TypeRef, ValueRef, ValueRef, Value
   None
 }
 
-pub fn rewrite_conditional_add(m: Module) -> Module {
+fn rewrite_conditional_add(m: Module) -> Module {
   let mut builder = Builder::new(m);
   while let Some((ty, orig, cond, coef, value)) = has_conditional_add(&builder.module) {
     // let inst = orig.as_ref::<Instruction>(&builder.module.context).unwrap();
@@ -56,7 +56,60 @@ pub fn rewrite_conditional_add(m: Module) -> Module {
   builder.module
 }
 
+fn has_print_int(m: &Module) -> Option<(ValueRef, ValueRef, ValueRef)> {
+  for f in m.func_iter() {
+    for bb in f.block_iter() {
+      for inst in bb.inst_iter() {
+        if let Some(call) = inst.as_sub::<Call>() {
+          if call.get_callee().get_name() == "print" {
+            if let Some(arg) = call.get_arg(0).as_ref::<Instruction>(&m.context) {
+              if let Some(arg_call) = arg.as_sub::<Call>() {
+                if arg_call.get_callee().get_name() == "toString" {
+                  return Some((inst.as_super(), arg.as_super(), arg_call.get_arg(0).clone()));
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  None
+}
+
+fn rewrite_print_int(m: Module) -> Module {
+  let mut builder = Builder::new(m);
+  let callee = builder.module
+    .func_iter()
+    .filter(|x| x.get_name() == "__print_int__")
+    .next()
+    .unwrap()
+    .as_super();
+  while let Some((print, to_string, value)) = has_print_int(&builder.module) {
+    {
+      let inst = print.as_ref::<Instruction>(&builder.module.context).unwrap();
+      let block = inst.get_parent().as_super();
+      let next_inst = inst.next_inst().unwrap().as_super();
+      let ty = value.get_type(&builder.module.context);
+      assert!(ty.kind() == &TKindCode::IntType);
+      assert!(ty.get_scalar_size_in_bits(&builder.module) == 32);
+      builder.set_current_block(block);
+      builder.set_insert_before(next_inst);
+      builder.create_func_call(callee.clone(), vec![value]);
+    }
+    // Erase print
+    let mut mutator = InstMutator::new(builder.context(), &print);
+    mutator.erase_from_parent();
+    // Erase to_string
+    let mut mutator = InstMutator::new(builder.context(), &to_string);
+    mutator.erase_from_parent();
+  }
+  builder.module
+}
+
 pub fn transform(m: Module) -> Module {
-  rewrite_conditional_add(m)
+  let m0 = rewrite_print_int(m);
+  let m1 = rewrite_conditional_add(m0);
+  m1
 }
 
