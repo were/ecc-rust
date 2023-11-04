@@ -23,6 +23,8 @@ fi
 
 $REPO/./target/debug/ecc $1 --backend $backend --output a.wasm --opt $opt > compile.log 2>&1
 
+grep "IR dumped" compile.log
+
 if [ $? -ne 0 ]; then
   echo Compilation failed!
   exit 1
