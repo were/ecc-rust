@@ -48,11 +48,11 @@ fn loops_to_canonicalize(
 }
 
 pub fn transform(m: Module) -> Module {
-  let mut visited = vec![false; m.context.capacity()];
   let mut to_canonicalize = vec![];
+  let topo = analyze_topology(&m);
   for f in m.func_iter().filter(|x| !x.is_declaration()) {
-    let topo = analyze_topology(&f, &mut visited);
-    loops_to_canonicalize(topo.child_iter(), &mut to_canonicalize);
+    let func_info = topo.get_function(f.get_skey());
+    loops_to_canonicalize(func_info.child_iter(), &mut to_canonicalize);
   }
   let mut builder = Builder::new(m);
   for (prehead, latch, ind, idx, end) in to_canonicalize {

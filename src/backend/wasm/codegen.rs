@@ -14,7 +14,7 @@ use trinity::{ir::{
   ConstArray, StructType, ConstExpr, PointerType
 }, context::Reference};
 
-use crate::analysis::topo::{analyze_topology, Node, ChildTraverse};
+use crate::analysis::topo::{analyze_topology, Node, ChildTraverse, FuncTopoInfo};
 
 use super::{ir::{WASMFunc, WASMInst}, analysis::gather_block_downstreams};
 
@@ -318,7 +318,7 @@ impl <'ctx>Codegen<'ctx> {
 
   }
 
-  fn emit_function(&mut self, func: &FunctionRef, visited: &mut Vec<bool>) -> WASMFunc {
+  fn emit_function(&mut self, func: &FunctionRef, func_topo: &FuncTopoInfo) -> WASMFunc {
     let fty = func.get_type();
     let rty = if let None = fty.ret_ty().as_ref::<VoidType>(fty.ctx()) { "i32" } else { "" };
     let args = (0..func.get_num_args()).map(|i| {
@@ -328,9 +328,8 @@ impl <'ctx>Codegen<'ctx> {
     }).collect::<Vec<String>>();
     let mut emit_func = WASMFunc::new(namify(&func.get_name()), args, rty.to_string());
     self.locals = super::analysis::gather_locals(func);
-    let blocks = analyze_topology(&func, visited);
     // Clear the locals, and put it in this finalized function.
-    self.emit_loop_or_block(&mut emit_func, blocks.child_iter());
+    self.emit_loop_or_block(&mut emit_func, func_topo.child_iter());
     std::mem::swap(&mut self.locals, &mut emit_func.locals);
     return emit_func;
   }
@@ -423,7 +422,7 @@ impl <'ctx>Codegen<'ctx> {
   pub fn emit(&mut self) -> String {
     let module = self.module;
     let mut res = String::new();
-    let mut visited = vec![false; module.context.capacity()];
+    let topo = analyze_topology(self.module);
     res.push_str("(module\n");
     res.push_str(" (type (;0;) (func (param i32) (result i32)))\n"); // malloc
     res.push_str(" (type (;1;) (func (param i32)))\n");
@@ -439,7 +438,8 @@ impl <'ctx>Codegen<'ctx> {
       if func.is_declaration() {
         continue;
       }
-      res.push_str(self.emit_function(&func, &mut visited).to_string().as_str());
+      let func_topo = topo.get_function(func.get_skey());
+      res.push_str(self.emit_function(&func, &func_topo).to_string().as_str());
     }
     for i in 0..module.get_num_gvs() {
       let gv = module.get_gv(i);

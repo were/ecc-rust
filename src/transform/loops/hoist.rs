@@ -107,8 +107,8 @@ fn analyze_hoistable_invariants(m: &Module) -> Vec<(usize, usize)> {
   let mut visited = vec![false; m.context.capacity()];
   let dom = DominatorTree::new(m);
   let mut res = vec![];
+  let topo = analyze_topology(&m);
   for f in m.func_iter().filter(|x| !x.is_declaration()) {
-    let topo = analyze_topology(&f, &mut visited);
     // print_loop_info(topo.child_iter(), 0);
     for bb in f.block_iter() {
       for i in bb.inst_iter() {
@@ -123,7 +123,8 @@ fn analyze_hoistable_invariants(m: &Module) -> Vec<(usize, usize)> {
         }
       }
     }
-    color_loop_invariants(topo.child_iter(), &mut workspace, &mut visited);
+    let iter = topo.get_function(f.get_skey());
+    color_loop_invariants(iter.child_iter(), &mut workspace, &mut visited);
     // Dump the analyzed result log.
     for bb in f.block_iter() {
       if let Some(loop_info) = topo.get_loop_of_block(bb.get_skey()) {

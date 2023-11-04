@@ -66,9 +66,8 @@ fn no_store_between(i0: &InstructionRef, i1: &InstructionRef,
 
 fn has_redundant_load(m: &Module, dt: &DominatorTree, rt: &Reachability, ac: &AliasCache)
   -> Option<(ValueRef, ValueRef)> {
-  let mut workspace = vec![false; m.context.capacity()];
+  let topo = analyze_topology(m);
   for f in m.func_iter().filter(|x| !x.is_declaration()) {
-    let topo = analyze_topology(&f, &mut workspace);
     for bb0 in f.block_iter() {
       for bb1 in f.block_iter() {
         if !dt.b_dominates_b(&bb0, &bb1) {
