@@ -11,6 +11,8 @@ use trinity::{
   context::Context
 };
 
+use super::reachable::Reachability;
+
 /// The implementation of a topological node.
 /// The left is a block slab key, and the right is a loop recursive info.
 enum NodeImpl {
@@ -441,6 +443,7 @@ fn dfs_topology<'ctx>(
   ctx: &'ctx Context,
   cur: &'_ BlockRef,
   visited: &mut Vec<bool>,
+  reachability: &Reachability,
   loop_stack: &mut Vec<usize>,
   finalized_loops: &mut Vec<usize>,
   res: &mut TopoInfo) {
@@ -470,7 +473,7 @@ fn dfs_topology<'ctx>(
       if !visited[dst_key] {
         // eprintln!("First visit, push {} to stack!", succ.get_name());
         visited[dst_key] = true;
-        dfs_topology(ctx, &succ, visited, loop_stack, finalized_loops, res);
+        dfs_topology(ctx, &succ, visited, reachability, loop_stack, finalized_loops, res);
       }
     }
   }
@@ -501,7 +504,7 @@ fn dfs_topology<'ctx>(
 
     if !visited[exit_block.get_skey()] {
       visited[exit_block.get_skey()] = true;
-      dfs_topology(ctx, &exit_block, visited, loop_stack, finalized_loops, res);
+      dfs_topology(ctx, &exit_block, visited, reachability, loop_stack, finalized_loops, res);
     }
 
     // eprintln!("Finalized loop: {}", exit_block.get_name());
@@ -514,6 +517,7 @@ fn dfs_topology<'ctx>(
 }
 
 fn analyze_function_topology<'ctx>(func: FunctionRef,
+                                   reachability: &Reachability,
                                    visited: &mut Vec<bool>,
                                    res: &mut TopoInfo<'ctx>) {
   let mut loop_stack = Vec::new();
@@ -525,7 +529,8 @@ fn analyze_function_topology<'ctx>(func: FunctionRef,
 
   let entry = func.get_block(0).unwrap();
   visited[entry.get_skey()] = true;
-  dfs_topology(func.ctx(), &entry, visited, &mut loop_stack, &mut finalized_loops, res);
+  dfs_topology(func.ctx(), &entry, visited,
+    reachability, &mut loop_stack, &mut finalized_loops, res);
 
   // eprintln!("[TOPO] Analyzed topology of func @{}", func.get_name());
   // for elem in res.iter() {
@@ -546,9 +551,10 @@ fn analyze_function_topology<'ctx>(func: FunctionRef,
 pub fn analyze_topology<'ctx>(m: &'ctx Module) -> TopoInfo<'ctx> {
   let mut res = TopoInfo::new(&m.context);
   let mut visited = vec![false; m.context.capacity()];
+  let reachability = Reachability::new(m);
   for f in m.func_iter() {
     res.add_function(f.get_skey());
-    analyze_function_topology(f, &mut visited, &mut res);
+    analyze_function_topology(f, &reachability, &mut visited, &mut res);
   }
   res
 }
