@@ -55,11 +55,11 @@ fn gather_small_loops(iter: ChildIter, res: &mut Vec<FullyUnroll>) -> bool {
 }
 
 fn loops_to_unroll(m: &Module) -> Vec<FullyUnroll> {
-  let mut visited = vec![false; m.context.capacity()];
   let mut res = vec![];
+  let topo = analyze_topology(m);
   for f in m.func_iter() {
-    let topo = analyze_topology(&f, &mut visited);
-    gather_small_loops(topo.child_iter(), &mut res);
+    let func_info = topo.get_function(f.get_skey());
+    gather_small_loops(func_info.child_iter(), &mut res);
   }
   return res;
 }

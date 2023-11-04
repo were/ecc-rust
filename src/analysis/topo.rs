@@ -6,10 +6,12 @@ use trinity::{
       function::FunctionRef, block::BlockRef,
       instruction::{BranchInst, InstructionRef, InstOpcode, CmpPred, BinaryOp, BinaryInst}
     },
-    Block, Instruction, ValueRef
+    Block, Instruction, ValueRef, module::Module, Function
   },
   context::Context
 };
+
+use super::reachable::Reachability;
 
 /// The implementation of a topological node.
 /// The left is a block slab key, and the right is a loop recursive info.
@@ -21,6 +23,12 @@ enum NodeImpl {
 pub enum Node<'ctx> {
   Block(BlockRef<'ctx>),
   Loop(LoopInfo<'ctx>),
+}
+
+pub struct FuncTopoInfo<'ctx> {
+  func: FunctionRef<'ctx>,
+  order: &'ctx Vec<usize>,
+  topo: &'ctx TopoInfo<'ctx>,
 }
 
 /// The information of a block in the topological format.
@@ -37,7 +45,7 @@ pub struct TopoInfo<'ctx> {
   /// The buffer of the topological nodes.
   buffer: Vec<NodeImpl>,
   /// The topological order of the root nodes.
-  order: Vec<usize>,
+  order: HashMap<usize, Vec<usize>>,
   /// The mapping from block to node.
   bb2node: HashMap<usize, BlockInfo>,
 }
@@ -213,9 +221,13 @@ impl <'ctx>TopoInfo<'ctx> {
     Self {
       ctx,
       buffer: Vec::new(),
-      order: Vec::new(),
+      order: HashMap::new(),
       bb2node: HashMap::new(),
     }
+  }
+
+  fn add_function(&mut self, skey: usize) {
+    self.order.insert(skey, Vec::new());
   }
 
   /// Add a block as a node in this topology info record.
@@ -255,8 +267,16 @@ impl <'ctx>TopoInfo<'ctx> {
     })
   }
 
+  pub fn get_function(&'ctx self, func_skey: usize) -> FuncTopoInfo<'ctx> {
+    FuncTopoInfo {
+      func: Function::from_skey(func_skey).as_ref::<Function>(self.ctx).unwrap(),
+      order: self.order.get(&func_skey).unwrap(),
+      topo: self,
+    }
+  }
+
   /// Add block as a loop body.
-  fn finalize_block(&mut self, parent: Option<usize>, bb_skey: usize) {
+  fn finalize_block(&mut self, func_skey: usize, parent: Option<usize>, bb_skey: usize) {
     if let Some(block_node) = self.bb2node.get_mut(&bb_skey) {
       block_node.parent = parent;
       if let Some(loop_id) = parent {
@@ -264,7 +284,7 @@ impl <'ctx>TopoInfo<'ctx> {
           li.children.push(block_node.id);
         }
       } else {
-        self.order.push(block_node.id);
+        self.order.get_mut(&func_skey).unwrap().push(block_node.id);
       }
     } else {
       unreachable!("The block {} is not added to the topo buffer!", bb_skey);
@@ -272,7 +292,7 @@ impl <'ctx>TopoInfo<'ctx> {
   }
 
   /// Add a loop as a loop body.
-  fn finalize_loop(&mut self, parent: Option<usize>, loop_id: usize) {
+  fn finalize_loop(&mut self, func_skey: usize, parent: Option<usize>, loop_id: usize) {
     match &mut self.buffer[loop_id]  {
       NodeImpl::Loop(li) => {
         li.parent = parent;
@@ -289,7 +309,7 @@ impl <'ctx>TopoInfo<'ctx> {
         }
       }
       None => {
-      self.order.push(loop_id);
+        self.order.get_mut(&func_skey).unwrap().push(loop_id);
       }
     }
   }
@@ -351,14 +371,14 @@ pub trait ChildTraverse<'ctx> {
   fn ctx(&'ctx self) -> &'ctx Context;
 }
 
-impl <'ctx>ChildTraverse<'ctx> for TopoInfo<'ctx> {
+impl <'ctx>ChildTraverse<'ctx> for FuncTopoInfo<'ctx> {
 
   fn child_iter(&'ctx self) -> ChildIter {
-    ChildIter::new(self, &self.order)
+    ChildIter::new(self.topo, self.order)
   }
 
-  fn ctx(&self) -> &'ctx Context {
-    self.ctx
+  fn ctx(&'ctx self) -> &'ctx Context {
+    self.func.ctx()
   }
 
 }
@@ -376,9 +396,9 @@ impl <'ctx>ChildTraverse<'ctx> for LoopInfo<'ctx> {
 }
 
 #[allow(dead_code)]
-pub fn print_loop_info(iter: ChildIter, indent: usize) {
+pub fn print_loop_info<'ctx>(node: &'ctx Box<impl ChildTraverse<'ctx> + 'ctx>, indent: usize) {
   let indent = indent + 1;
-  for elem in iter {
+  for elem in node.child_iter() {
     match elem {
       Node::Block(block) => {
         println!("{}Block: {}", " ".repeat(indent), block.get_name());
@@ -397,7 +417,8 @@ pub fn print_loop_info(iter: ChildIter, indent: usize) {
         println!("{}<ind:{}>", " ".repeat(indent + x), ind_dbg);
         println!("{}<parent:{:?}>", " ".repeat(indent + x),
           loop_info.get_parent().map(|x| x.get_id()));
-        print_loop_info(loop_info.child_iter(), indent);
+        let li = Box::new(loop_info);
+        print_loop_info(&li, indent);
       }
     }
   }
@@ -422,6 +443,7 @@ fn dfs_topology<'ctx>(
   ctx: &'ctx Context,
   cur: &'_ BlockRef,
   visited: &mut Vec<bool>,
+  reachability: &Reachability,
   loop_stack: &mut Vec<usize>,
   finalized_loops: &mut Vec<usize>,
   res: &mut TopoInfo) {
@@ -451,12 +473,12 @@ fn dfs_topology<'ctx>(
       if !visited[dst_key] {
         // eprintln!("First visit, push {} to stack!", succ.get_name());
         visited[dst_key] = true;
-        dfs_topology(ctx, &succ, visited, loop_stack, finalized_loops, res);
+        dfs_topology(ctx, &succ, visited, reachability, loop_stack, finalized_loops, res);
       }
     }
   }
 
-  res.finalize_block(loop_stack.last().map(|x| *x), cur.get_skey());
+  res.finalize_block(cur.get_parent().get_skey(), loop_stack.last().map(|x| *x), cur.get_skey());
 
   // This part is the trickiest. The whole algorithm makes the assumption that
   // all the loops are canonical. They have both only one conditional entrance
@@ -482,30 +504,33 @@ fn dfs_topology<'ctx>(
 
     if !visited[exit_block.get_skey()] {
       visited[exit_block.get_skey()] = true;
-      dfs_topology(ctx, &exit_block, visited, loop_stack, finalized_loops, res);
+      dfs_topology(ctx, &exit_block, visited, reachability, loop_stack, finalized_loops, res);
     }
 
     // eprintln!("Finalized loop: {}", exit_block.get_name());
     let finalized = finalized_loops.pop().unwrap();
     // print_loop_info(&finalized, 0);
 
-    res.finalize_loop(loop_stack.last().map(|x| *x), finalized);
+    res.finalize_loop(cur.get_parent().get_skey(), loop_stack.last().map(|x| *x), finalized);
   }
 
 }
 
-pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) -> TopoInfo<'ctx> {
+fn analyze_function_topology<'ctx>(func: FunctionRef,
+                                   reachability: &Reachability,
+                                   visited: &mut Vec<bool>,
+                                   res: &mut TopoInfo<'ctx>) {
   let mut loop_stack = Vec::new();
   let mut finalized_loops = Vec::new();
-  let mut res = TopoInfo::new(func.ctx());
 
   if func.is_declaration() {
-    return res;
+    return;
   }
 
   let entry = func.get_block(0).unwrap();
   visited[entry.get_skey()] = true;
-  dfs_topology(func.ctx(), &entry, visited, &mut loop_stack, &mut finalized_loops, &mut res);
+  dfs_topology(func.ctx(), &entry, visited,
+    reachability, &mut loop_stack, &mut finalized_loops, res);
 
   // eprintln!("[TOPO] Analyzed topology of func @{}", func.get_name());
   // for elem in res.iter() {
@@ -521,5 +546,16 @@ pub fn analyze_topology<'ctx>(func: &'ctx FunctionRef, visited: &mut Vec<bool>) 
   // }
 
   assert!(finalized_loops.is_empty(), "There are still some loops not finalized!");
-  return res;
 }
+
+pub fn analyze_topology<'ctx>(m: &'ctx Module) -> TopoInfo<'ctx> {
+  let mut res = TopoInfo::new(&m.context);
+  let mut visited = vec![false; m.context.capacity()];
+  let reachability = Reachability::new(m);
+  for f in m.func_iter() {
+    res.add_function(f.get_skey());
+    analyze_function_topology(f, &reachability, &mut visited, &mut res);
+  }
+  res
+}
+
