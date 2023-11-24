@@ -49,7 +49,8 @@ fn has_trivial_converge(module: &Module) -> Option<(ValueRef, ValueRef, ValueRef
           }
           let dest = t.succ_iter().next().unwrap();
           // eprintln!("[CFG] Find a trivial converge: {}", br.to_string());
-          // eprintln!("Before:\n{}\n{}\n{}\n{}", block.to_string(true), t.to_string(true), f.to_string(true), dest.to_string(true));
+          // eprintln!("Before:\n{}\n{}\n{}\n{}", block.to_string(true), t.to_string(true),
+          //           f.to_string(true), dest.to_string(true));
           return Some((block.as_super(), t.as_super(), f.as_super(), dest.as_super()))
         }
       }
