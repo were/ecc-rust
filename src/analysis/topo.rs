@@ -231,7 +231,7 @@ impl <'ctx>TopoInfo<'ctx> {
   }
 
   /// Add a block as a node in this topology info record.
-  fn add_block(&mut self, bb_skey: usize) -> Option<usize> {
+  fn create_block(&mut self, bb_skey: usize) -> Option<usize> {
     if let None = self.bb2node.insert(bb_skey, BlockInfo { id: self.buffer.len(), parent: None }) {
       let res = Some(self.buffer.len());
       self.buffer.push(NodeImpl::Block(bb_skey));
@@ -448,7 +448,7 @@ fn dfs_topology<'ctx>(
   finalized_loops: &mut Vec<usize>,
   res: &mut TopoInfo) {
 
-  res.add_block(cur.get_skey()).unwrap();
+  res.create_block(cur.get_skey()).unwrap();
 
   let is_head = if let Some(latch) = cur.is_loop_head() {
     // eprintln!("Loop latch: {}", latch.to_string(false));

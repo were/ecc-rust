@@ -77,7 +77,6 @@ pub fn merge_trivial_branches(module: &mut Module) -> bool {
       let mut mutator = InstMutator::new(&mut module.context, &elem);
       mutator.move_to_block(&src, None);
     }
-
     let mut bm = BlockMutator::new(&mut module.context, Block::from_skey(dest));
     bm.replace_all_uses_with(src.clone());
 

@@ -171,7 +171,7 @@ pub fn unroll_small_loops(m: Module) -> Module {
       builder.set_current_function(head.get_parent().as_super());
       (current, carried)
     };
-    let placeholder = builder.add_block("placeholder".to_string());
+    let placeholder = builder.create_block("placeholder".to_string());
     phi_current.insert(0, placeholder.clone());
     for i in 0..(n - 1) {
       // Map original values to unrolled values, including but not limited to loop carried phis
@@ -180,7 +180,7 @@ pub fn unroll_small_loops(m: Module) -> Module {
       for block in blocks.iter() {
         let block_ref = block.as_ref::<Block>(&builder.module.context).unwrap();
         let name = block_ref.get_name();
-        let current_block = builder.add_block(format!("{}.iter.{}", name, i));
+        let current_block = builder.create_block(format!("{}.iter.{}", name, i));
         value_map.insert(block.skey, current_block.clone());
         // Connect the last iteration to this iteration.
         if block == head {

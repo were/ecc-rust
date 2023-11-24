@@ -157,7 +157,7 @@ fn inject_phis(module: Module, dt: &DominatorTree, vlt: &VarLifetime) -> (Module
       let block = block.as_ref::<Block>(&builder.module.context).unwrap();
       let first_inst = block.get_inst(0).unwrap();
       builder.set_insert_before(first_inst.as_super());
-      let phi = builder.create_phi(ty, vec![]);
+      let phi = builder.create_phi(ty, vec![], vec![]);
       phi_to_alloc.insert(phi.skey, *alloc_skey);
       {
         let phi = phi.as_mut::<Instruction>(builder.context()).unwrap();

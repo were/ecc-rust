@@ -275,7 +275,7 @@ impl CodeGen {
         }
         let func_ref = self.cache_stack.get(&func.id.literal).unwrap();
         self.builder_mut().set_current_function(func_ref);
-        let block_ref = self.builder_mut().add_block("entry".to_string());
+        let block_ref = self.builder_mut().create_block("entry".to_string());
         self.builder_mut().set_current_block(block_ref);
         self.generate_func(func);
       }
@@ -432,9 +432,9 @@ impl CodeGen {
 
   fn generate_if_stmt(&mut self, if_stmt: &IfStmt) {
     let cond = self.generate_expr(&if_stmt.cond, false);
-    let then_block = self.builder_mut().add_block(format!("then.{}", cond.skey));
-    let else_block = self.builder_mut().add_block(format!("else.{}", cond.skey));
-    let converge = self.builder_mut().add_block(format!("converge.{}", cond.skey));
+    let then_block = self.builder_mut().create_block(format!("then.{}", cond.skey));
+    let else_block = self.builder_mut().create_block(format!("else.{}", cond.skey));
+    let converge = self.builder_mut().create_block(format!("converge.{}", cond.skey));
     self.builder_mut().create_conditional_branch(cond, then_block.clone(), else_block.clone(), false);
     self.builder_mut().set_current_block(then_block.clone());
     self.generate_compound_stmt(&if_stmt.then_body, true);
@@ -451,10 +451,10 @@ impl CodeGen {
     // Save the nested condition and end blocks.
     let old = self.loop_cond_or_end.clone();
     self.cache_stack.push();
-    let prehead = self.builder_mut().add_block("while.prehead".to_string());
-    let cond_block = self.builder_mut().add_block("while.cond".to_string());
-    let body_block = self.builder_mut().add_block("while.body".to_string());
-    let end_block = self.builder_mut().add_block("while.end".to_string());
+    let prehead = self.builder_mut().create_block("while.prehead".to_string());
+    let cond_block = self.builder_mut().create_block("while.cond".to_string());
+    let body_block = self.builder_mut().create_block("while.body".to_string());
+    let end_block = self.builder_mut().create_block("while.end".to_string());
     let cond = self.generate_expr(&while_stmt.cond, false);
     self.builder_mut().create_conditional_branch(cond, prehead.clone(), end_block.clone(), false);
     self.builder_mut().set_current_block(prehead);
@@ -478,10 +478,10 @@ impl CodeGen {
     let old = self.loop_cond_or_end.clone();
     self.cache_stack.push();
     self.generate_var_decl(&for_stmt.var);
-    let prehead = self.builder_mut().add_block("for.prehead".to_string());
-    let body_block = self.builder_mut().add_block("for.body".to_string());
-    let cond_block = self.builder_mut().add_block("for.cond".to_string());
-    let end_block = self.builder_mut().add_block("for.end".to_string());
+    let prehead = self.builder_mut().create_block("for.prehead".to_string());
+    let body_block = self.builder_mut().create_block("for.body".to_string());
+    let cond_block = self.builder_mut().create_block("for.cond".to_string());
+    let end_block = self.builder_mut().create_block("for.end".to_string());
     // Set it to the inner most loop.
     self.loop_cond_or_end = (cond_block.clone(), end_block.clone()).into();
     let extent = self.generate_expr(&for_stmt.end, false);
@@ -607,8 +607,8 @@ impl CodeGen {
             let one = self.tg.builder.context().const_value(i1ty.clone(), 1);
             let zero = self.tg.builder.context().const_value(i1ty.clone(), 0);
             // Create two blocks for the short-circuit evaluation.
-            let true_block = self.tg.builder.add_block(format!("sc.true.{}", alloca.skey));
-            let false_block = self.tg.builder.add_block(format!("sc.false.{}", alloca.skey));
+            let true_block = self.tg.builder.create_block(format!("sc.true.{}", alloca.skey));
+            let false_block = self.tg.builder.create_block(format!("sc.false.{}", alloca.skey));
             self.tg.builder.set_current_block(current);
             self.generate_lifetime_annot(alloca.clone(), "start");
             self.tg.builder.create_conditional_branch(lhs.clone(), true_block.clone(), false_block.clone(), false);
@@ -620,7 +620,7 @@ impl CodeGen {
             self.tg.builder.set_current_block(compute);
             let rhs = self.generate_expr(&binop.rhs, false);
             self.tg.builder.create_store(rhs, alloca.clone()).unwrap();
-            let converge = self.tg.builder.add_block(format!("sc.converge.{}", alloca.skey));
+            let converge = self.tg.builder.create_block(format!("sc.converge.{}", alloca.skey));
             self.tg.builder.create_unconditional_branch(converge.clone());
             // Create the false block.
             self.tg.builder.set_current_block(finalize);
