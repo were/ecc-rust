@@ -3,9 +3,12 @@ use std::collections::HashMap;
 
 use trinity::ir::{
   self,
-  value::{ValueRef, instruction::InstOpcode},
+  value::{
+    ValueRef, Function,
+    instruction::{InstOpcode, Alloca, BranchMetadata}
+  },
   types::{StructType, TypeRef},
-  value::{Function, instruction::Alloca}, PointerType, Block, TKindCode, Instruction,
+  PointerType, Block, TKindCode, Instruction,
 };
 use trinity::builder::Builder;
 use super::{
@@ -418,10 +421,10 @@ impl CodeGen {
     if let Some((cond, end)) = &self.loop_cond_or_end {
       match &jump.loc.value {
         TokenType::KeywordBreak => {
-          self.tg.builder.create_unconditional_branch(end.clone());
+          self.tg.builder.create_unconditional_branch(end.clone(), BranchMetadata::None);
         }
         TokenType::KeywordContinue => {
-          self.tg.builder.create_unconditional_branch(cond.clone());
+          self.tg.builder.create_unconditional_branch(cond.clone(), BranchMetadata::None);
         }
         _ => {}
       }
@@ -435,15 +438,17 @@ impl CodeGen {
     let then_block = self.builder_mut().create_block(format!("then.{}", cond.skey));
     let else_block = self.builder_mut().create_block(format!("else.{}", cond.skey));
     let converge = self.builder_mut().create_block(format!("converge.{}", cond.skey));
-    self.builder_mut().create_conditional_branch(cond, then_block.clone(), else_block.clone(), false);
+    self
+      .builder_mut()
+      .create_conditional_branch(cond, then_block.clone(), else_block.clone(), false);
     self.builder_mut().set_current_block(then_block.clone());
     self.generate_compound_stmt(&if_stmt.then_body, true);
-    self.builder_mut().create_unconditional_branch(converge.clone());
+    self.builder_mut().create_unconditional_branch(converge.clone(), BranchMetadata::None);
     self.builder_mut().set_current_block(else_block.clone());
     if let Some(else_body) = &if_stmt.else_body {
       self.generate_compound_stmt(&else_body, true);
     }
-    self.builder_mut().create_unconditional_branch(converge.clone());
+    self.builder_mut().create_unconditional_branch(converge.clone(), BranchMetadata::None);
     self.builder_mut().set_current_block(converge.clone());
   }
 
@@ -458,7 +463,7 @@ impl CodeGen {
     let cond = self.generate_expr(&while_stmt.cond, false);
     self.builder_mut().create_conditional_branch(cond, prehead.clone(), end_block.clone(), false);
     self.builder_mut().set_current_block(prehead);
-    self.builder_mut().create_unconditional_branch(body_block.clone());
+    self.builder_mut().create_unconditional_branch(body_block.clone(), BranchMetadata::None);
     // Set it to the inner most loop.
     self.loop_cond_or_end = (cond_block.clone(), end_block.clone()).into();
     self.builder_mut().set_current_block(cond_block.clone());
@@ -466,7 +471,7 @@ impl CodeGen {
     self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
     self.builder_mut().set_current_block(body_block);
     self.generate_compound_stmt(&while_stmt.body, false);
-    self.builder_mut().create_unconditional_branch(cond_block.clone());
+    self.builder_mut().create_unconditional_branch(cond_block.clone(), BranchMetadata::None);
     self.pop_scope();
     // Restore the nested condition and end blocks.
     self.loop_cond_or_end = old;
@@ -495,7 +500,7 @@ impl CodeGen {
     let precond = self.builder_mut().create_sle(extent.clone(), init, "precond".to_string());
     self.builder_mut().create_conditional_branch(precond, end_block.clone(), prehead.clone(), false);
     self.builder_mut().set_current_block(prehead);
-    self.builder_mut().create_unconditional_branch(body_block.clone());
+    self.builder_mut().create_unconditional_branch(body_block.clone(), BranchMetadata::None);
     // Generate the loop conditions.
     self.builder_mut().set_current_block(cond_block.clone());
     let loop_var_addr = self.cache_stack.get(&for_stmt.var.id.literal).unwrap();
@@ -508,7 +513,7 @@ impl CodeGen {
     let one = self.tg.builder.context().const_value(i32ty.clone(), 1);
     let added = self.builder_mut().create_add(loop_var_value, one);
     self.builder_mut().create_store(added, loop_var_addr).unwrap();
-    self.builder_mut().create_unconditional_branch(cond_block.clone());
+    self.builder_mut().create_unconditional_branch(cond_block.clone(), BranchMetadata::None);
     self.pop_scope();
     // Restore the nested condition and end blocks.
     self.loop_cond_or_end = old;
@@ -621,11 +626,11 @@ impl CodeGen {
             let rhs = self.generate_expr(&binop.rhs, false);
             self.tg.builder.create_store(rhs, alloca.clone()).unwrap();
             let converge = self.tg.builder.create_block(format!("sc.converge.{}", alloca.skey));
-            self.tg.builder.create_unconditional_branch(converge.clone());
+            self.tg.builder.create_unconditional_branch(converge.clone(), BranchMetadata::None);
             // Create the false block.
             self.tg.builder.set_current_block(finalize);
             self.tg.builder.create_store(finalized_value, alloca.clone()).unwrap();
-            self.tg.builder.create_unconditional_branch(converge.clone());
+            self.tg.builder.create_unconditional_branch(converge.clone(), BranchMetadata::None);
             // Create the converge block.
             self.tg.builder.set_current_block(converge);
             let res = Some(self.tg.builder.create_load(alloca.clone()));
@@ -658,8 +663,10 @@ impl CodeGen {
               match self.tg.builder.create_store(rhs.clone(), lhs.clone()) {
                 Ok(res) => { res }
                 Err(msg) => {
-                  eprintln!("Failed to store:\n{}", lhs.to_string(&self.tg.builder.module.context, true));
-                  eprintln!("Failed to store:\n{}", rhs.to_string(&self.tg.builder.module.context, true));
+                  let lhs = lhs.to_string(&self.tg.builder.module.context, true);
+                  let rhs = rhs.to_string(&self.tg.builder.module.context, true);
+                  eprintln!("Failed to store:\n{}", lhs);
+                  eprintln!("Failed to store:\n{}", rhs);
                   panic!("Failed to cg:\n{}, msg: {}", expr, msg);
                 }
               }
@@ -705,7 +712,8 @@ impl CodeGen {
             .as_ref::<PointerType>(&self.tg.builder.module.context).unwrap()
             .get_pointee_ty();
           let res = scalar_ty.get_scalar_size_in_bits(&self.tg.builder.module);
-          // eprintln!("{}: ty: {}, size: {}", line!(), scalar_ty.to_string(&self.tg.builder.module.context), res);
+          // eprintln!("{}: ty: {}, size: {}", line!(),
+          //           scalar_ty.to_string(&self.tg.builder.module.context), res);
           res / 8
         };
         let size = self.tg.builder.context().const_value(i32ty.clone(), size as u64);
@@ -746,13 +754,18 @@ impl CodeGen {
       ast::Expr::ArrayIndex(array_idx) => {
         let mut array_obj = self.generate_expr(&array_idx.array, false);
         // eprintln!("array obj: {}", array_obj.to_string(&self.tg.builder.module.context, true));
-        let indices = array_idx.indices.iter().map(|x| self.generate_expr(x, false)).collect::<Vec<_>>();
+        let indices = array_idx
+          .indices
+          .iter()
+          .map(|x| self.generate_expr(x, false))
+          .collect::<Vec<_>>();
         // for (i, elem) in indices.iter().enumerate() {
         //   eprintln!("idx_{}: {}", i, elem.to_string(&self.tg.builder.module.context, true));
         // }
         for (i, idx) in indices.iter().enumerate() {
           // array_obj = struct { length=i32, payload=ptr } where ptr is the pointer to the array.
-          let payload_ptr = self.tg.builder.get_struct_field(array_obj.clone(), 1, "array.payload").unwrap();
+          let payload_ptr =
+            self.tg.builder.get_struct_field(array_obj.clone(), 1, "array.payload").unwrap();
           // Dereference &array_obj.payload where payload = array_obj.payload
           let payload = self.tg.builder.create_load(payload_ptr);
           // &array_ptr[idx]
@@ -794,7 +807,9 @@ impl CodeGen {
       self.generate_expr(&arg, false).into()
     }).collect();
     let vty = self.tg.builder.context().void_type();
-    let callee = self.tg.builder.create_inline_asm(vty.clone(), asm.code.value.clone(), asm.operands.value.clone(), true);
+    let code = asm.code.value.clone();
+    let operands = asm.operands.value.clone();
+    let callee = self.tg.builder.create_inline_asm(vty.clone(), code, operands, true);
     self.tg.builder.create_typed_call(vty.clone(), callee, params)
   }
 

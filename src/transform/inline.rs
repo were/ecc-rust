@@ -3,7 +3,7 @@ use std::collections::{HashSet, HashMap};
 use trinity::{
   ir::{
     module::Module, ValueRef, value::{
-      instruction::{Call, InstMutator, InstOpcode},
+      instruction::{Call, InstMutator, InstOpcode, BranchMetadata},
       block::BlockRef
     },
     Instruction, Block
@@ -50,6 +50,7 @@ fn has_inlinable_call_site(m: &Module, inlinable: &HashSet<ValueRef>) -> Option<
 
 pub fn transform(m: Module) -> Module {
   let mut builder = Builder::new(m);
+  let void_ty = builder.context().void_type();
   let inlinable_functions = gather_inlinable_functions(&builder.module);
   while let Some(call_site) = has_inlinable_call_site(&builder.module, &inlinable_functions) {
     let call_inst = call_site.as_ref::<Instruction>(&builder.module.context).unwrap();
@@ -67,7 +68,7 @@ pub fn transform(m: Module) -> Module {
     }
     let func_name = func.get_name();
     let fbb = |bb: BlockRef| {
-      (format!("{}.{}.inline", bb.get_name(), func_name.clone()),
+      (format!("{}.{}", bb.get_name(), func_name.clone()),
        bb.as_super(),
        bb.inst_iter().map(|x| x.as_super()).collect::<Vec<_>>())
     };
@@ -78,48 +79,52 @@ pub fn transform(m: Module) -> Module {
       replace.insert(origin.clone(), inlined_bb);
     }
     let splited = builder.split_block(&call_site);
+    eprintln!("after split:");
+    eprintln!("{}", parent_block.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
+    eprintln!("{}", splited.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
     let ret_block = builder.create_block(format!("{}.return", func_name));
     let mut ret_phi = (vec![], vec![]);
     for (_, bb, insts) in bb_info.iter() {
       builder.set_current_block(replace.get(bb).unwrap().clone());
       for inst in insts {
-        let (ty, op, operands, name) = {
-          let freplace = |v: &ValueRef| {
-            if let Some(operand) = replace.get(v) {
-              operand.clone()
-            } else {
-              v.clone()
-            }
-          };
-          let inst_ref = inst.as_ref::<Instruction>(&builder.module.context).unwrap();
-          let ty = inst_ref.get_type().clone();
-          let name = format!("inlined.{}", inst_ref.get_name());
-          match inst_ref.get_opcode() {
-            InstOpcode::Return => {
-              if let Some(v) = inst_ref.get_operand(0) {
-                ret_phi.0.push(freplace(&v));
-                ret_phi.1.push(bb.clone());
-              }
-              (ty, InstOpcode::Branch(None), vec![ret_block.clone()], name)
-            }
-            _ => {
-              let opcode = inst_ref.get_opcode().clone();
-              let operands = inst_ref.operand_iter().map(|v| {
-                freplace(v)
-              }).collect::<Vec<_>>();
-              (ty, opcode, operands, name)
-            }
+        let freplace = |v: &ValueRef| {
+          if let Some(operand) = replace.get(v) {
+            operand.clone()
+          } else {
+            v.clone()
           }
         };
-        let new_value = builder.create_instruction(ty, op, operands, name);
-        replace.insert(inst.clone(), new_value);
+        let inst_ref = inst.as_ref::<Instruction>(&builder.module.context).unwrap();
+        let ty = inst_ref.get_type().clone();
+        let name = format!("{}.{}", func_name, inst_ref.get_name());
+        match inst_ref.get_opcode() {
+          InstOpcode::Return => {
+            if let Some(v) = inst_ref.get_operand(0) {
+              ret_phi.0.push(freplace(&v));
+              ret_phi.1.push(bb.clone());
+            }
+            builder.create_unconditional_branch(
+              ret_block.clone(), BranchMetadata::ReturnJump);
+          }
+          _ => {
+            let opcode = inst_ref.get_opcode().clone();
+            let operands = inst_ref.operand_iter().map(|v| {
+              freplace(v)
+            }).collect::<Vec<_>>();
+            let new_value = builder.create_instruction(ty, opcode, operands, name);
+            replace.insert(inst.clone(), new_value);
+          }
+        }
       }
+      let inlined_bb = replace.get(bb).unwrap().as_ref::<Block>(&builder.module.context).unwrap();
+      eprintln!("inlined bb:\n{}", inlined_bb.to_string(false));
     }
 
     {
       let block = parent_block.as_ref::<Block>(&builder.module.context).unwrap();
       let br = block.last_inst().unwrap();
-      if let InstOpcode::Branch(None) = br.get_opcode() {
+      if let InstOpcode::Branch(BranchMetadata::None) = br.get_opcode() {
+        assert!(br.get_num_operands() == 1);
       } else {
         panic!("{} not an unconditional branch!", br.to_string(false));
       }
@@ -129,14 +134,28 @@ pub fn transform(m: Module) -> Module {
       let mut mutator = InstMutator::new(builder.context(), &br);
       mutator.set_operand(0, entry_bb);
     }
-
-    builder.set_current_block(ret_block);
-    let ret_phi = builder.create_phi(rty, ret_phi.0, ret_phi.1);
-    builder.create_unconditional_branch(splited);
-    let mut mutator = InstMutator::new(builder.context(), &call_site);
-    mutator.replace_all_uses_with(ret_phi);
-    mutator.erase_from_parent();
+    {
+      builder.set_current_block(ret_block.clone());
+      let ret_val = if rty != void_ty {
+        let ret_phi = builder.create_phi(rty, ret_phi.0, ret_phi.1);
+        eprintln!("return value: {}",
+                  ret_phi.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
+        Some(ret_phi)
+      } else {
+        eprintln!("{} has no return!", func_name);
+        None
+      };
+      builder.create_unconditional_branch(splited, BranchMetadata::None);
+      let mut mutator = InstMutator::new(builder.context(), &call_site);
+      if ret_val.is_some() {
+        mutator.replace_all_uses_with(ret_val.unwrap());
+      }
+      mutator.erase_from_parent();
+      eprintln!("connect ret branch ");
+      eprintln!("{}", ret_block.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
+    }
   }
+  eprintln!("after unrolling:\n{}", builder.module.to_string());
   return builder.module;
 }
 

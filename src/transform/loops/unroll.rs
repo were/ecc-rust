@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use trinity::{
   ir::{
     module::Module, ConstScalar, ValueRef, Block,
-    value::{instruction::{BranchInst, InstMutator, PhiNode}, block::BlockMutator},
+    value::{
+      instruction::{BranchInst, InstMutator, PhiNode, BranchMetadata},
+      block::BlockMutator
+    },
     Instruction
   },
   builder::Builder
@@ -131,7 +134,7 @@ fn connect_block(builder: &mut Builder, last_block: &ValueRef, current: &ValueRe
   let mut inst = InstMutator::new(&mut builder.module.context, &to_rewrite);
   inst.erase_from_parent();
   builder.set_current_block(last_block.clone());
-  builder.create_unconditional_branch(current.clone());
+  builder.create_unconditional_branch(current.clone(), BranchMetadata::None);
   if let Some(restore) = restore {
     builder.set_current_block(restore);
   }
