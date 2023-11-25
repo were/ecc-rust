@@ -23,7 +23,7 @@ fn gather_inlinable_functions(m: &Module) -> HashSet<ValueRef> {
       let callee_count = f.user_iter().count();
       let weight = (inst_count + block_count) * callee_count;
       if weight != 0 && weight < 1000 {
-        eprintln!("[INLINE] {} inlinable!", f.get_name());
+        // eprintln!("[INLINE] {} inlinable!", f.get_name());
         res.insert(f.as_super());
       }
     }
@@ -82,7 +82,8 @@ pub fn transform(m: Module) -> Module {
     let ret_block = builder.create_block(format!("{}.return", func_name));
     let mut ret_phi = (vec![], vec![]);
     for (_, bb, insts) in bb_info.iter() {
-      builder.set_current_block(replace.get(bb).unwrap().clone());
+      let current_bb = replace.get(bb).unwrap().clone();
+      builder.set_current_block(current_bb.clone());
       for inst in insts {
         let freplace = |v: &ValueRef| {
           if let Some(operand) = replace.get(v) {
@@ -98,7 +99,7 @@ pub fn transform(m: Module) -> Module {
           InstOpcode::Return => {
             if let Some(v) = inst_ref.get_operand(0) {
               ret_phi.0.push(freplace(&v));
-              ret_phi.1.push(bb.clone());
+              ret_phi.1.push(current_bb.clone());
             }
             builder.create_unconditional_branch(
               ret_block.clone(), BranchMetadata::ReturnJump);
@@ -148,7 +149,7 @@ pub fn transform(m: Module) -> Module {
       if let InstOpcode::Branch(BranchMetadata::None) = br.get_opcode() {
         assert!(br.get_num_operands() == 1);
       } else {
-        panic!("{} not an unconditional branch!", br.to_string(false));
+        // panic!("{} not an unconditional branch!", br.to_string(false));
       }
       let br = br.as_super();
       let (_, entry_bb, _) = &bb_info[0];
@@ -160,24 +161,23 @@ pub fn transform(m: Module) -> Module {
       builder.set_current_block(ret_block.clone());
       let ret_val = if rty != void_ty {
         let ret_phi = builder.create_phi(rty, ret_phi.0, ret_phi.1);
-        eprintln!("return value: {}",
-                  ret_phi.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
+        // eprintln!("return value: {}",
+        //   ret_phi.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
         Some(ret_phi)
       } else {
-        eprintln!("{} has no return!", func_name);
+        // eprintln!("{} has no return!", func_name);
         None
       };
+      // eprintln!("{}", call_site.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(true));
       builder.create_unconditional_branch(splited, BranchMetadata::None);
       let mut mutator = InstMutator::new(builder.context(), &call_site);
       if ret_val.is_some() {
         mutator.replace_all_uses_with(ret_val.unwrap());
       }
       mutator.erase_from_parent();
-      eprintln!("connect ret branch ");
-      eprintln!("{}", ret_block.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
     }
   }
-  eprintln!("after unrolling:\n{}", builder.module.to_string());
+  // eprintln!("after inlining:{}\n", builder.module.to_string());
   return builder.module;
 }
 

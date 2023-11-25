@@ -4,7 +4,7 @@ use trinity::ir::{
     instruction::{PhiNode, InstMutator, BranchInst, InstructionRef, InstOpcode},
     block::BlockMutator
   },
-  Instruction, Function, ValueRef, Block
+  Instruction, Function, ValueRef, Block, ConstScalar
 };
 
 // TODO(@were): This is more complicated than I expected, especially when phi is involved.
@@ -294,7 +294,7 @@ fn has_unconditional_branch_block(module: &Module) -> Option<(ValueRef, ValueRef
               }
             }
           } else {
-            return (pred.as_super(), br.dest_label().unwrap().as_super(), 1).into()
+            return (pred.as_super(), br.dest_label().unwrap().as_super(), 0).into()
           }
         }
       }
@@ -311,6 +311,7 @@ pub fn connect_unconditional_branches(module: &mut Module) -> bool {
   while let Some((br, dest, idx)) = has_unconditional_branch_block(module) {
     {
       let br_to_connect = br.as_ref::<Instruction>(&module.context).unwrap();
+      // eprintln!("[CFG] to_connect: {}, idx: {}", br_to_connect.to_string(false), idx);
       let bb_to_remove = br_to_connect.get_operand(idx).unwrap();
       let br_to_remove = bb_to_remove
         .as_ref::<Block>(&module.context).unwrap().last_inst().unwrap().as_super();
@@ -330,6 +331,43 @@ pub fn connect_unconditional_branches(module: &mut Module) -> bool {
       br_mutator.set_operand(idx, dest.clone());
     }
     modified = true;
+  }
+  modified
+}
+
+fn has_constant_conditional_branch(module: &Module) -> Option<(ValueRef, ValueRef)> {
+  for func in module.func_iter() {
+    for bb in func.block_iter() {
+      let terminator = bb.last_inst().unwrap();
+      if let Some(br) = terminator.as_sub::<BranchInst>() {
+        if let Some(cond) = br.cond() {
+          if let Some(const_cond) = cond.as_ref::<ConstScalar>(&module.context) {
+            // eprintln!("[CFG] Unconditional conditional branch {}", terminator.to_string(false));
+            return if const_cond.get_value() == 0 {
+              (terminator.as_super(), br.false_label().unwrap().as_super()).into()
+            } else {
+              (terminator.as_super(), br.true_label().unwrap().as_super()).into()
+            }
+          }
+        }
+      }
+    }
+  }
+  None
+}
+
+/// br i0, dst0, dst1 -> br dst1
+/// br i1, dst0, dst1 -> br dst0
+pub fn simplify_constant_conditional_branches(module: &mut Module) -> bool {
+  let mut modified = false;
+  while let Some((br, dst)) = has_constant_conditional_branch(&module) {
+    modified = true;
+    let mut mutator = InstMutator::new(&mut module.context, &br);
+    mutator.remove_operand(2);
+    mutator.remove_operand(1);
+    mutator.remove_operand(0);
+    mutator.add_operand(dst);
+    // eprintln!("[CFG] Simplified {}", br.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
   }
   modified
 }

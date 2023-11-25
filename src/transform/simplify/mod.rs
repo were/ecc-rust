@@ -22,6 +22,7 @@ pub fn transform(mut module: Module, level: usize) -> (Module, bool) {
     iterative |= cfg::phi_to_select(&mut module);
     iterative |= mem::remove_redundant_load(&mut module);
     if level == 2 {
+      iterative |= cfg::simplify_constant_conditional_branches(&mut module);
       iterative |= cfg::connect_unconditional_branches(&mut module);
     }
     modified |= iterative;

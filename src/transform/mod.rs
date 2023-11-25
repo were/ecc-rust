@@ -28,7 +28,8 @@ pub fn optimize(mut module: Module, opt_level: i32) -> Module {
     let canonicalized = loops::canonicalize::transform(simplified_1);
     let inlined = inline::transform(canonicalized);
     let unrolled = loops::unroll::unroll_small_loops(inlined);
-    let (simplified_2, _) = simplify::transform(unrolled, 2);
+    let (mut simplified_2, _) = simplify::transform(unrolled, 2);
+    simplified_2.remove_unused_functions();
     simplified_2
   } else {
     ssa
