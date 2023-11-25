@@ -48,13 +48,12 @@ fn no_store_between(i0: &InstructionRef, i1: &InstructionRef,
     }
     for i in ii {
       if let Some(store) = i.as_sub::<Store>() {
-        eprintln!("store {}", i.to_string(false));
         if store.get_value().get_type(i0.ctx()) == ty {
-          eprintln!("same type!");
+          // eprintln!("store {}", i.to_string(false));
           match (&alias_info, &ac.get(&i.as_super())) {
             (AliasInfo::Array(a), AliasInfo::Array(b)) => {
-              eprintln!("a: {}, b: {}", a.to_string(i0.ctx(), true),
-                b.to_string(i0.ctx(), true));
+              // eprintln!("a: {}, b: {}", a.to_string(i0.ctx(), true),
+              //   b.to_string(i0.ctx(), true));
               if a != b {
                 continue;
               } else {
@@ -115,13 +114,12 @@ fn has_redundant_load(m: &Module, dt: &DominatorTree, rt: &Reachability, ac: &Al
                 if !dt.i_dominates_i(&i0, &i1) {
                   continue;
                 }
-                eprintln!("===============================");
                 if no_store_between(&i0, &i1, rt, &topo, ac) {
-                  eprintln!("forward store value:");
-                  eprintln!("src.block: {}", i0.get_parent().get_name());
-                  eprintln!("src.store: {}", i0.to_string(false));
-                  eprintln!("dst.block: {}", i1.get_parent().get_name());
-                  eprintln!("dst.load: {}\n", i1.to_string(false));
+                  // eprintln!("forward store value:");
+                  // eprintln!("src.block: {}", i0.get_parent().get_name());
+                  // eprintln!("src.store: {}", i0.to_string(false));
+                  // eprintln!("dst.block: {}", i1.get_parent().get_name());
+                  // eprintln!("dst.load: {}\n", i1.to_string(false));
                   return Some((store.get_value().clone(), i1.as_super()));
                 }
               }
