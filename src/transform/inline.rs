@@ -79,9 +79,6 @@ pub fn transform(m: Module) -> Module {
       replace.insert(origin.clone(), inlined_bb);
     }
     let splited = builder.split_block(&call_site);
-    eprintln!("after split:");
-    eprintln!("{}", parent_block.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
-    eprintln!("{}", splited.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
     let ret_block = builder.create_block(format!("{}.return", func_name));
     let mut ret_phi = (vec![], vec![]);
     for (_, bb, insts) in bb_info.iter() {
@@ -116,8 +113,33 @@ pub fn transform(m: Module) -> Module {
           }
         }
       }
-      let inlined_bb = replace.get(bb).unwrap().as_ref::<Block>(&builder.module.context).unwrap();
-      eprintln!("inlined bb:\n{}", inlined_bb.to_string(false));
+    }
+
+    for (_, bb, _) in bb_info.iter() {
+      let new_bb = replace.get(bb).unwrap().clone();
+      let insts = new_bb
+        .as_ref::<Block>(&builder.module.context)
+        .unwrap()
+        .inst_iter()
+        .filter_map(|inst| {
+          let set = inst
+            .operand_iter()
+            .enumerate()
+            .filter_map(|(i, k)| { replace.get(k).map(|v| (i, v.clone())) })
+            .collect::<Vec<_>>();
+          if set.is_empty() {
+            None
+          } else {
+            Some((inst.as_super(), set))
+          }
+        })
+        .collect::<Vec<_>>();
+      for (inst, replace_operands) in insts {
+        let mut mutator = InstMutator::new(builder.context(), &inst);
+        for (i, v) in replace_operands {
+          mutator.set_operand(i, v);
+        }
+      }
     }
 
     {
