@@ -311,7 +311,8 @@ pub fn connect_unconditional_branches(module: &mut Module) -> bool {
   while let Some((br, dest, idx)) = has_unconditional_branch_block(module) {
     {
       let br_to_connect = br.as_ref::<Instruction>(&module.context).unwrap();
-      // eprintln!("[CFG] to_connect: {}, idx: {}", br_to_connect.to_string(false), idx);
+      // eprintln!("[CFG] connect: {}, idx: {}", br_to_connect.to_string(false), idx);
+      // eprintln!("[CFG] merge to label {}", br_to_connect.get_parent().get_name());
       let bb_to_remove = br_to_connect.get_operand(idx).unwrap();
       let br_to_remove = bb_to_remove
         .as_ref::<Block>(&module.context).unwrap().last_inst().unwrap().as_super();
@@ -335,7 +336,8 @@ pub fn connect_unconditional_branches(module: &mut Module) -> bool {
   modified
 }
 
-fn has_constant_conditional_branch(module: &Module) -> Option<(ValueRef, ValueRef)> {
+/// Return branch inst, destination to retain, and destination to remove
+fn has_constant_conditional_branch(module: &Module) -> Option<(ValueRef, ValueRef, ValueRef)> {
   for func in module.func_iter() {
     for bb in func.block_iter() {
       let terminator = bb.last_inst().unwrap();
@@ -343,10 +345,12 @@ fn has_constant_conditional_branch(module: &Module) -> Option<(ValueRef, ValueRe
         if let Some(cond) = br.cond() {
           if let Some(const_cond) = cond.as_ref::<ConstScalar>(&module.context) {
             // eprintln!("[CFG] Unconditional conditional branch {}", terminator.to_string(false));
+            let fl = br.false_label().unwrap().as_super();
+            let tl = br.true_label().unwrap().as_super();
             return if const_cond.get_value() == 0 {
-              (terminator.as_super(), br.false_label().unwrap().as_super()).into()
+              (terminator.as_super(), fl, tl).into()
             } else {
-              (terminator.as_super(), br.true_label().unwrap().as_super()).into()
+              (terminator.as_super(), tl, fl).into()
             }
           }
         }
@@ -360,14 +364,40 @@ fn has_constant_conditional_branch(module: &Module) -> Option<(ValueRef, ValueRe
 /// br i1, dst0, dst1 -> br dst0
 pub fn simplify_constant_conditional_branches(module: &mut Module) -> bool {
   let mut modified = false;
-  while let Some((br, dst)) = has_constant_conditional_branch(&module) {
+  while let Some((br, dst, remove)) = has_constant_conditional_branch(&module) {
+    let phi_to_trim = {
+      let src = br.as_ref::<Instruction>(&module.context).unwrap().get_parent().as_super();
+      let dc_dst = remove.as_ref::<Block>(&module.context).unwrap();
+      let mut to_trim = vec![];
+      for inst in dc_dst.inst_iter() {
+        if let Some(phi) = inst.as_sub::<PhiNode>() {
+          for (idx, (block, _)) in phi.iter().enumerate() {
+            eprintln!("{}", inst.to_string(false));
+            if block.get_skey() == src.skey {
+              to_trim.push((inst.as_super(), idx))
+            }
+          }
+        }
+      }
+      to_trim
+    };
     modified = true;
     let mut mutator = InstMutator::new(&mut module.context, &br);
     mutator.remove_operand(2);
     mutator.remove_operand(1);
     mutator.remove_operand(0);
     mutator.add_operand(dst);
-    // eprintln!("[CFG] Simplified {}", br.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+    eprintln!("[CFG] Simplified {}",
+      br.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+    for (phi, idx) in phi_to_trim.iter() {
+      let mut mutator = InstMutator::new(&mut module.context, phi);
+      mutator.remove_operand(idx * 2);
+      mutator.remove_operand(idx * 2);
+    }
+    // for (phi, idx) in phi_to_trim.iter() {
+    //   eprintln!("[CFG] Phi trimed: {}",
+    //     phi.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+    // }
   }
   modified
 }

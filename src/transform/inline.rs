@@ -2,7 +2,7 @@ use std::collections::{HashSet, HashMap};
 
 use trinity::{
   ir::{
-    module::Module, ValueRef, value::{
+    module::{Module, namify}, ValueRef, value::{
       instruction::{Call, InstMutator, InstOpcode, BranchMetadata},
       block::BlockRef
     },
@@ -66,7 +66,7 @@ pub fn transform(m: Module) -> Module {
       let param = call_inst.get_operand(i).unwrap();
       replace.insert(arg, param.clone());
     }
-    let func_name = func.get_name();
+    let func_name = namify(&func.get_name());
     let fbb = |bb: BlockRef| {
       (format!("{}.{}", bb.get_name(), func_name.clone()),
        bb.as_super(),
