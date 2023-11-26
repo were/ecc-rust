@@ -9,7 +9,7 @@ use trinity::{
     },
     Instruction
   },
-  builder::Builder
+  builder::Builder, verify::verify
 };
 
 use crate::analysis::topo::{analyze_topology, ChildTraverse, ChildIter, Node};
@@ -257,6 +257,7 @@ pub fn unroll_small_loops(m: Module) -> Module {
     let mut remover = BlockMutator::new(builder.context(), placeholder);
     remover.erase_from_parent();
   }
+  verify(&builder.module);
   builder.module
 }
 

@@ -8,7 +8,7 @@ use trinity::{
     },
     Instruction, Block
   },
-  builder::Builder
+  builder::Builder, verify::verify
 };
 
 use crate::analysis::call_graph;
@@ -177,6 +177,7 @@ pub fn transform(m: Module) -> Module {
       mutator.erase_from_parent();
     }
   }
+  verify(&builder.module);
   // eprintln!("after inlining:{}\n", builder.module.to_string());
   return builder.module;
 }
