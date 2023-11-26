@@ -7,4 +7,5 @@ Cargo.lock
 *.ll
 *.out
 *.o
+*.log
 .vim/*

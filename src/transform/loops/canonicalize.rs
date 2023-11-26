@@ -1,6 +1,6 @@
 use trinity::{
   context::Context,
-  ir::{module::Module, value::instruction::{PhiNode, InstMutator, BranchInst}, ConstScalar, ValueRef, TKindCode, Instruction, Block}, builder::Builder 
+  ir::{module::Module, value::instruction::{PhiNode, InstMutator, BranchInst}, ConstScalar, ValueRef, TKindCode, Instruction, Block}, builder::Builder, verify::verify 
 };
 
 use crate::analysis::topo::{analyze_topology, ChildIter, Node, ChildTraverse};
@@ -118,6 +118,7 @@ pub fn transform(m: Module) -> Module {
       user_mutator.set_operand(idx, add.clone());
     }
   }
+  verify(&builder.module);
   builder.module
 }
 

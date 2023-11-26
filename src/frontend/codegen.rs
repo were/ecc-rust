@@ -3,9 +3,12 @@ use std::collections::HashMap;
 
 use trinity::ir::{
   self,
-  value::{ValueRef, instruction::InstOpcode},
+  value::{
+    ValueRef, Function,
+    instruction::{InstOpcode, Alloca, BranchMetadata}
+  },
   types::{StructType, TypeRef},
-  value::{Function, instruction::Alloca}, PointerType, Block, TKindCode, Instruction,
+  PointerType, Block, TKindCode, Instruction,
 };
 use trinity::builder::Builder;
 use super::{
@@ -80,7 +83,7 @@ impl TypeGen {
     for _ in 0..array.dims.len() {
       res = res.ptr_type(self.builder.context());
     }
-    self.generate_array_runtime(res)
+    self.generate_array_runtime(&res)
   }
 
   fn extract_array_type_name(&self, scalar_ty: &TypeRef) -> String {
@@ -94,7 +97,7 @@ impl TypeGen {
   }
 
 
-  fn generate_array_runtime(&mut self, ty: TypeRef) -> TypeRef {
+  fn generate_array_runtime(&mut self, ty: &TypeRef) -> TypeRef {
     if let Some(res) = self.array_types.get(&ty) {
       return res.clone()
     }
@@ -103,26 +106,26 @@ impl TypeGen {
       } else {
         // eprintln!("origin ty: {}", ty.to_string(&self.builder.module.context));
         let raw = ptr_ty.get_pointee_ty();
-        let scalar_ty = self.generate_array_runtime(raw.clone());
+        let scalar_ty = self.generate_array_runtime(&raw);
         let type_name = self.extract_array_type_name(&scalar_ty);
         let type_name = format!("array.{}", type_name.replace("%", "_"));
         // Declare the array type.
         let array_ty = self.builder.create_struct(type_name.clone());
         let length = self.builder.context().int_type(32);
-        let array_ptr = self.builder.context().pointer_type(scalar_ty.clone());
+        let array_ptr = self.builder.context().pointer_type(scalar_ty);
         array_ty
           .as_mut::<StructType>(self.builder.context())
           .unwrap()
           .set_body(vec![length, array_ptr]);
         self.class_cache.insert(type_name, array_ty.clone());
-        let res = self.builder.module.context.pointer_type(array_ty.clone());
+        let res = self.builder.module.context.pointer_type(array_ty);
         self.array_types.insert(ty.clone(), res.clone());
         // eprintln!("mapped to res: {}",
         //   array_ty.as_ref::<StructType>(&self.builder.module.context).unwrap().to_string());
         return res;
       }
     }
-    return ty;
+    return ty.clone();
   }
 
 }
@@ -230,9 +233,9 @@ impl CodeGen {
     let i64_ty = self.tg.builder.context().int_type(64);
     let fty = self.tg.builder.context().function_type(void_ty, vec![i64_ty, ptr_ty]);
     {
-      let start = self.tg.builder.create_function("llvm.lifetime.start".to_string(), fty.clone());
+      let start = self.tg.builder.create_function(&"llvm.lifetime.start".to_string(), &fty);
       self.cache_stack.insert("llvm.lifetime.start".to_string(), start);
-      let end = self.tg.builder.create_function("llvm.lifetime.end".to_string(), fty);
+      let end = self.tg.builder.create_function(&"llvm.lifetime.end".to_string(), &fty);
       self.cache_stack.insert("llvm.lifetime.end".to_string(), end);
     }
     for tu in &ast.tus {
@@ -264,7 +267,7 @@ impl CodeGen {
           }
         }).collect();
         let fty = ret_ty.fn_type(self.tg.builder.context(), args_ty);
-        let func_ref = self.tg.builder.create_function(func.id.literal.clone(), fty);
+        let func_ref = self.tg.builder.create_function(&func.id.literal, &fty);
         self.cache_stack.insert(func.id.literal.clone(), func_ref.clone());
       }
     }
@@ -275,7 +278,7 @@ impl CodeGen {
         }
         let func_ref = self.cache_stack.get(&func.id.literal).unwrap();
         self.builder_mut().set_current_function(func_ref);
-        let block_ref = self.builder_mut().add_block("entry".to_string());
+        let block_ref = self.builder_mut().create_block("entry".to_string());
         self.builder_mut().set_current_block(block_ref);
         self.generate_func(func);
       }
@@ -418,10 +421,10 @@ impl CodeGen {
     if let Some((cond, end)) = &self.loop_cond_or_end {
       match &jump.loc.value {
         TokenType::KeywordBreak => {
-          self.tg.builder.create_unconditional_branch(end.clone());
+          self.tg.builder.create_unconditional_branch(end.clone(), BranchMetadata::None);
         }
         TokenType::KeywordContinue => {
-          self.tg.builder.create_unconditional_branch(cond.clone());
+          self.tg.builder.create_unconditional_branch(cond.clone(), BranchMetadata::None);
         }
         _ => {}
       }
@@ -432,18 +435,20 @@ impl CodeGen {
 
   fn generate_if_stmt(&mut self, if_stmt: &IfStmt) {
     let cond = self.generate_expr(&if_stmt.cond, false);
-    let then_block = self.builder_mut().add_block(format!("then.{}", cond.skey));
-    let else_block = self.builder_mut().add_block(format!("else.{}", cond.skey));
-    let converge = self.builder_mut().add_block(format!("converge.{}", cond.skey));
-    self.builder_mut().create_conditional_branch(cond, then_block.clone(), else_block.clone(), false);
+    let then_block = self.builder_mut().create_block(format!("then.{}", cond.skey));
+    let else_block = self.builder_mut().create_block(format!("else.{}", cond.skey));
+    let converge = self.builder_mut().create_block(format!("converge.{}", cond.skey));
+    self
+      .builder_mut()
+      .create_conditional_branch(cond, then_block.clone(), else_block.clone(), false);
     self.builder_mut().set_current_block(then_block.clone());
     self.generate_compound_stmt(&if_stmt.then_body, true);
-    self.builder_mut().create_unconditional_branch(converge.clone());
+    self.builder_mut().create_unconditional_branch(converge.clone(), BranchMetadata::None);
     self.builder_mut().set_current_block(else_block.clone());
     if let Some(else_body) = &if_stmt.else_body {
       self.generate_compound_stmt(&else_body, true);
     }
-    self.builder_mut().create_unconditional_branch(converge.clone());
+    self.builder_mut().create_unconditional_branch(converge.clone(), BranchMetadata::None);
     self.builder_mut().set_current_block(converge.clone());
   }
 
@@ -451,14 +456,14 @@ impl CodeGen {
     // Save the nested condition and end blocks.
     let old = self.loop_cond_or_end.clone();
     self.cache_stack.push();
-    let prehead = self.builder_mut().add_block("while.prehead".to_string());
-    let cond_block = self.builder_mut().add_block("while.cond".to_string());
-    let body_block = self.builder_mut().add_block("while.body".to_string());
-    let end_block = self.builder_mut().add_block("while.end".to_string());
+    let prehead = self.builder_mut().create_block("while.prehead".to_string());
+    let cond_block = self.builder_mut().create_block("while.cond".to_string());
+    let body_block = self.builder_mut().create_block("while.body".to_string());
+    let end_block = self.builder_mut().create_block("while.end".to_string());
     let cond = self.generate_expr(&while_stmt.cond, false);
     self.builder_mut().create_conditional_branch(cond, prehead.clone(), end_block.clone(), false);
     self.builder_mut().set_current_block(prehead);
-    self.builder_mut().create_unconditional_branch(body_block.clone());
+    self.builder_mut().create_unconditional_branch(body_block.clone(), BranchMetadata::None);
     // Set it to the inner most loop.
     self.loop_cond_or_end = (cond_block.clone(), end_block.clone()).into();
     self.builder_mut().set_current_block(cond_block.clone());
@@ -466,7 +471,7 @@ impl CodeGen {
     self.builder_mut().create_conditional_branch(cond, body_block.clone(), end_block.clone(), true);
     self.builder_mut().set_current_block(body_block);
     self.generate_compound_stmt(&while_stmt.body, false);
-    self.builder_mut().create_unconditional_branch(cond_block.clone());
+    self.builder_mut().create_unconditional_branch(cond_block.clone(), BranchMetadata::None);
     self.pop_scope();
     // Restore the nested condition and end blocks.
     self.loop_cond_or_end = old;
@@ -478,10 +483,10 @@ impl CodeGen {
     let old = self.loop_cond_or_end.clone();
     self.cache_stack.push();
     self.generate_var_decl(&for_stmt.var);
-    let prehead = self.builder_mut().add_block("for.prehead".to_string());
-    let body_block = self.builder_mut().add_block("for.body".to_string());
-    let cond_block = self.builder_mut().add_block("for.cond".to_string());
-    let end_block = self.builder_mut().add_block("for.end".to_string());
+    let prehead = self.builder_mut().create_block("for.prehead".to_string());
+    let body_block = self.builder_mut().create_block("for.body".to_string());
+    let cond_block = self.builder_mut().create_block("for.cond".to_string());
+    let end_block = self.builder_mut().create_block("for.end".to_string());
     // Set it to the inner most loop.
     self.loop_cond_or_end = (cond_block.clone(), end_block.clone()).into();
     let extent = self.generate_expr(&for_stmt.end, false);
@@ -495,7 +500,7 @@ impl CodeGen {
     let precond = self.builder_mut().create_sle(extent.clone(), init, "precond".to_string());
     self.builder_mut().create_conditional_branch(precond, end_block.clone(), prehead.clone(), false);
     self.builder_mut().set_current_block(prehead);
-    self.builder_mut().create_unconditional_branch(body_block.clone());
+    self.builder_mut().create_unconditional_branch(body_block.clone(), BranchMetadata::None);
     // Generate the loop conditions.
     self.builder_mut().set_current_block(cond_block.clone());
     let loop_var_addr = self.cache_stack.get(&for_stmt.var.id.literal).unwrap();
@@ -508,7 +513,7 @@ impl CodeGen {
     let one = self.tg.builder.context().const_value(i32ty.clone(), 1);
     let added = self.builder_mut().create_add(loop_var_value, one);
     self.builder_mut().create_store(added, loop_var_addr).unwrap();
-    self.builder_mut().create_unconditional_branch(cond_block.clone());
+    self.builder_mut().create_unconditional_branch(cond_block.clone(), BranchMetadata::None);
     self.pop_scope();
     // Restore the nested condition and end blocks.
     self.loop_cond_or_end = old;
@@ -541,7 +546,7 @@ impl CodeGen {
         let i8ty = self.tg.builder.context().int_type(8);
         let i8ptr = i8ty.ptr_type(self.tg.builder.context());
         let str_value = self.tg.builder.create_string(value.value.clone());
-        let i8array = self.tg.generate_array_runtime(i8ptr.clone());
+        let i8array = self.tg.generate_array_runtime(&i8ptr);
         let i8array = {
           let ptr = i8array.as_ref::<PointerType>(&self.tg.builder.module.context).unwrap();
           ptr.get_pointee_ty()
@@ -607,8 +612,8 @@ impl CodeGen {
             let one = self.tg.builder.context().const_value(i1ty.clone(), 1);
             let zero = self.tg.builder.context().const_value(i1ty.clone(), 0);
             // Create two blocks for the short-circuit evaluation.
-            let true_block = self.tg.builder.add_block(format!("sc.true.{}", alloca.skey));
-            let false_block = self.tg.builder.add_block(format!("sc.false.{}", alloca.skey));
+            let true_block = self.tg.builder.create_block(format!("sc.true.{}", alloca.skey));
+            let false_block = self.tg.builder.create_block(format!("sc.false.{}", alloca.skey));
             self.tg.builder.set_current_block(current);
             self.generate_lifetime_annot(alloca.clone(), "start");
             self.tg.builder.create_conditional_branch(lhs.clone(), true_block.clone(), false_block.clone(), false);
@@ -620,12 +625,12 @@ impl CodeGen {
             self.tg.builder.set_current_block(compute);
             let rhs = self.generate_expr(&binop.rhs, false);
             self.tg.builder.create_store(rhs, alloca.clone()).unwrap();
-            let converge = self.tg.builder.add_block(format!("sc.converge.{}", alloca.skey));
-            self.tg.builder.create_unconditional_branch(converge.clone());
+            let converge = self.tg.builder.create_block(format!("sc.converge.{}", alloca.skey));
+            self.tg.builder.create_unconditional_branch(converge.clone(), BranchMetadata::None);
             // Create the false block.
             self.tg.builder.set_current_block(finalize);
             self.tg.builder.create_store(finalized_value, alloca.clone()).unwrap();
-            self.tg.builder.create_unconditional_branch(converge.clone());
+            self.tg.builder.create_unconditional_branch(converge.clone(), BranchMetadata::None);
             // Create the converge block.
             self.tg.builder.set_current_block(converge);
             let res = Some(self.tg.builder.create_load(alloca.clone()));
@@ -658,8 +663,10 @@ impl CodeGen {
               match self.tg.builder.create_store(rhs.clone(), lhs.clone()) {
                 Ok(res) => { res }
                 Err(msg) => {
-                  eprintln!("Failed to store:\n{}", lhs.to_string(&self.tg.builder.module.context, true));
-                  eprintln!("Failed to store:\n{}", rhs.to_string(&self.tg.builder.module.context, true));
+                  let lhs = lhs.to_string(&self.tg.builder.module.context, true);
+                  let rhs = rhs.to_string(&self.tg.builder.module.context, true);
+                  eprintln!("Failed to store:\n{}", lhs);
+                  eprintln!("Failed to store:\n{}", rhs);
                   panic!("Failed to cg:\n{}, msg: {}", expr, msg);
                 }
               }
@@ -705,7 +712,8 @@ impl CodeGen {
             .as_ref::<PointerType>(&self.tg.builder.module.context).unwrap()
             .get_pointee_ty();
           let res = scalar_ty.get_scalar_size_in_bits(&self.tg.builder.module);
-          // eprintln!("{}: ty: {}, size: {}", line!(), scalar_ty.to_string(&self.tg.builder.module.context), res);
+          // eprintln!("{}: ty: {}, size: {}", line!(),
+          //           scalar_ty.to_string(&self.tg.builder.module.context), res);
           res / 8
         };
         let size = self.tg.builder.context().const_value(i32ty.clone(), size as u64);
@@ -746,13 +754,18 @@ impl CodeGen {
       ast::Expr::ArrayIndex(array_idx) => {
         let mut array_obj = self.generate_expr(&array_idx.array, false);
         // eprintln!("array obj: {}", array_obj.to_string(&self.tg.builder.module.context, true));
-        let indices = array_idx.indices.iter().map(|x| self.generate_expr(x, false)).collect::<Vec<_>>();
+        let indices = array_idx
+          .indices
+          .iter()
+          .map(|x| self.generate_expr(x, false))
+          .collect::<Vec<_>>();
         // for (i, elem) in indices.iter().enumerate() {
         //   eprintln!("idx_{}: {}", i, elem.to_string(&self.tg.builder.module.context, true));
         // }
         for (i, idx) in indices.iter().enumerate() {
           // array_obj = struct { length=i32, payload=ptr } where ptr is the pointer to the array.
-          let payload_ptr = self.tg.builder.get_struct_field(array_obj.clone(), 1, "array.payload").unwrap();
+          let payload_ptr =
+            self.tg.builder.get_struct_field(array_obj.clone(), 1, "array.payload").unwrap();
           // Dereference &array_obj.payload where payload = array_obj.payload
           let payload = self.tg.builder.create_load(payload_ptr);
           // &array_ptr[idx]
@@ -794,7 +807,9 @@ impl CodeGen {
       self.generate_expr(&arg, false).into()
     }).collect();
     let vty = self.tg.builder.context().void_type();
-    let callee = self.tg.builder.create_inline_asm(vty.clone(), asm.code.value.clone(), asm.operands.value.clone(), true);
+    let code = asm.code.value.clone();
+    let operands = asm.operands.value.clone();
+    let callee = self.tg.builder.create_inline_asm(vty.clone(), code, operands, true);
     self.tg.builder.create_typed_call(vty.clone(), callee, params)
   }
 

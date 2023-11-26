@@ -3,13 +3,16 @@ use std::collections::HashMap;
 use trinity::{
   ir::{
     module::Module, ConstScalar, ValueRef, Block,
-    value::{instruction::{BranchInst, InstMutator, PhiNode}, block::BlockMutator},
+    value::{
+      instruction::{BranchInst, InstMutator, PhiNode, BranchMetadata, InstOpcode},
+      block::BlockMutator
+    },
     Instruction
   },
-  builder::Builder
+  builder::Builder, verify::verify
 };
 
-use crate::analysis::topo::{analyze_topology, ChildTraverse, ChildIter, Node};
+use crate::{analysis::topo::{analyze_topology, ChildTraverse, ChildIter, Node}, transform::simplify};
 
 type FullyUnroll = (usize, ValueRef, ValueRef, ValueRef, ValueRef, Vec<ValueRef>);
 
@@ -90,13 +93,43 @@ fn build_unrolled_insts(
       let op = inst.get_opcode().clone();
       let ty = inst.get_type().clone();
       let name = inst.get_name();
-      let operands = if inst.get_skey() == latch.skey {
+      let operands = if inst_skey == latch.skey {
         // If this is a latch, we need to rewrite the branch to a unconditional branch jumps to
         // the next iteration.
         if !is_last {
           *last_block = value_map.get(&block.skey).unwrap().clone();
         }
+        // Since the next iteration is not constructed yet, we now use a placeholder to
+        // construct the jump instruction.
         vec![value_map.get(&0).unwrap().clone()]
+      } else if &InstOpcode::Branch(BranchMetadata::ReturnJump) == inst.get_opcode() {
+        // eprintln!("Unrolling a return jump! {}", inst.to_string(false));
+        let dst = inst.get_operand(0).unwrap();
+        if blocks.contains(dst) {
+          vec![value_map.get(&dst.skey).unwrap().clone()]
+        } else {
+          let dst = dst.as_ref::<Block>(&builder.module.context).unwrap();
+          // eprintln!("{}", dst.to_string(false));
+          if let Some(phi) = dst.get_inst(0).unwrap().as_sub::<PhiNode>() {
+            // eprintln!("is a phi! orig: {}", block.skey);
+            for (in_block, in_value) in phi.iter() {
+              // eprintln!("{}, {}", in_block.get_skey(), in_value.skey);
+              if in_block.get_skey() == block.skey {
+                if let Some(v) = value_map.get(&in_value.skey) {
+                  // eprintln!("TODO: replace [{}, {}] to [{}, {}]",
+                  //   in_block.get_name(), in_value.to_string(&builder.module.context, true),
+                  //   value_map.get(&block.skey).unwrap().to_string(&builder.module.context, true),
+                  //   v.to_string(&builder.module.context, true));
+                } else {
+                  // eprintln!("TODO: expand [{}, {}] to [{}]",
+                  //   in_block.get_name(), in_value.to_string(&builder.module.context, true),
+                  //   value_map.get(&block.skey).unwrap().to_string(&builder.module.context, true));
+                }
+              }
+            }
+          }
+          vec![inst.get_operand(0).unwrap().clone()]
+        }
       } else {
         inst.operand_iter().map(|operand| {
           if let Some(mapped) = value_map.get(&operand.skey) {
@@ -131,7 +164,7 @@ fn connect_block(builder: &mut Builder, last_block: &ValueRef, current: &ValueRe
   let mut inst = InstMutator::new(&mut builder.module.context, &to_rewrite);
   inst.erase_from_parent();
   builder.set_current_block(last_block.clone());
-  builder.create_unconditional_branch(current.clone());
+  builder.create_unconditional_branch(current.clone(), BranchMetadata::None);
   if let Some(restore) = restore {
     builder.set_current_block(restore);
   }
@@ -171,7 +204,7 @@ pub fn unroll_small_loops(m: Module) -> Module {
       builder.set_current_function(head.get_parent().as_super());
       (current, carried)
     };
-    let placeholder = builder.add_block("placeholder".to_string());
+    let placeholder = builder.create_block("placeholder".to_string());
     phi_current.insert(0, placeholder.clone());
     for i in 0..(n - 1) {
       // Map original values to unrolled values, including but not limited to loop carried phis
@@ -180,7 +213,7 @@ pub fn unroll_small_loops(m: Module) -> Module {
       for block in blocks.iter() {
         let block_ref = block.as_ref::<Block>(&builder.module.context).unwrap();
         let name = block_ref.get_name();
-        let current_block = builder.add_block(format!("{}.iter.{}", name, i));
+        let current_block = builder.create_block(format!("{}.iter.{}", name, i));
         value_map.insert(block.skey, current_block.clone());
         // Connect the last iteration to this iteration.
         if block == head {
@@ -224,6 +257,8 @@ pub fn unroll_small_loops(m: Module) -> Module {
     let mut remover = BlockMutator::new(builder.context(), placeholder);
     remover.erase_from_parent();
   }
-  builder.module
+  let (module, _) = simplify::transform(builder.module, 1);
+  verify(&module);
+  module
 }
 

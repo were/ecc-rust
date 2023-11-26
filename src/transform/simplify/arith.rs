@@ -195,11 +195,12 @@ fn has_trivial_inst(builder: &mut Builder) -> Option<(usize, ValueRef)> {
         // Find phi node with all the branches are the same values.
         // e.g. phi [ block.1, %v0 ], [ block.1, %v0 ]
         if let Some(phi) = inst.as_sub::<PhiNode>() {
-          let value = phi.get_incoming_value(0).unwrap();
-          if phi.iter().all(|(_, v)| v.skey == value.skey) {
-            // eprintln!("[SIMP] Find a trivial phi: {}, replace by: {}",
-            //           inst.to_string(false), value.to_string(&module.context, true));
-            return Some((inst.get_skey(), value.clone()));
+          if let Some(value) = phi.get_incoming_value(0) {
+            if phi.iter().all(|(_, v)| v.skey == value.skey) {
+              eprintln!("[SIMP] Find a trivial phi: {}, replace by: {}",
+                        inst.to_string(false), value.to_string(&module.context, true));
+              return Some((inst.get_skey(), value.clone()));
+            }
           }
         }
         if let Some(binary) = inst.as_sub::<BinaryInst>() {
@@ -274,9 +275,9 @@ fn has_trivial_inst(builder: &mut Builder) -> Option<(usize, ValueRef)> {
                 break 'func;
               }
               if tv.get_value() == 1 && fv.get_value() == 0 {
-                eprintln!("[SIMP] Find a trivial select: {}, replace by: {}",
-                          inst.to_string(false),
-                          select.get_condition().to_string(&module.context, true));
+                // eprintln!("[SIMP] Find a trivial select: {}, replace by: {}",
+                //           inst.to_string(false),
+                //           select.get_condition().to_string(&module.context, true));
                 let value = select.get_condition().clone();
                 let ty = inst.get_type().clone();
                 cast_to_replace = (inst.as_super(), ty.clone(), value).into();
