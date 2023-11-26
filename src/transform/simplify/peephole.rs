@@ -56,16 +56,21 @@ fn rewrite_conditional_add(m: Module) -> Module {
   builder.module
 }
 
-fn has_print_int(m: &Module) -> Option<(ValueRef, ValueRef, ValueRef)> {
+fn has_print_int(m: &Module) -> Option<(ValueRef, ValueRef, ValueRef, bool)> {
   for f in m.func_iter() {
     for bb in f.block_iter() {
       for inst in bb.inst_iter() {
         if let Some(call) = inst.as_sub::<Call>() {
-          if call.get_callee().get_name() == "print" {
+          if call.get_callee().get_name() == "print" ||
+             call.get_callee().get_name() == "println" {
             if let Some(arg) = call.get_arg(0).as_ref::<Instruction>(&m.context) {
               if let Some(arg_call) = arg.as_sub::<Call>() {
                 if arg_call.get_callee().get_name() == "toString" {
-                  return Some((inst.as_super(), arg.as_super(), arg_call.get_arg(0).clone()));
+                  let newline = call.get_callee().get_name() == "println";
+                  let call = inst.as_super();
+                  let arg = arg.as_super();
+                  let arg_call = arg_call.get_arg(0).clone();
+                  return Some((call, arg, arg_call, newline));
                 }
               }
             }
@@ -78,16 +83,40 @@ fn has_print_int(m: &Module) -> Option<(ValueRef, ValueRef, ValueRef)> {
 }
 
 fn rewrite_print_int(m: Module) -> Module {
-  let mut builder = Builder::new(m);
-  let callee = builder.module
-    .func_iter()
+  let __print_int__ = m.func_iter()
     .filter(|x| x.get_name() == "__print_int__")
     .next()
     .unwrap()
     .as_super();
-  while let Some((print, to_string, value)) = has_print_int(&builder.module) {
+  let (print, newline) = {
+    let raw = m.func_iter()
+      .filter(|x| x.get_name() == "println")
+      .next()
+      .unwrap();
+    let mut newline = None;
+    let mut print = None;
+    'bb: for bb in raw.block_iter() {
+      for inst in bb.inst_iter().rev() {
+        eprintln!("{}", inst.to_string(false));
+        if let Some(call) = inst.as_sub::<Call>() {
+          if call.get_callee().get_name().eq("print") {
+            newline = Some(inst.get_operand(0).unwrap().clone());
+            print = Some(call.get_callee().as_super());
+            break 'bb;
+          }
+        }
+      }
+    }
+    if print.is_some() {
+      (print.unwrap(), newline.unwrap())
+    } else {
+      return m;
+    }
+  };
+  let mut builder = Builder::new(m);
+  while let Some((call, to_string, value, nl)) = has_print_int(&builder.module) {
     {
-      let inst = print.as_ref::<Instruction>(&builder.module.context).unwrap();
+      let inst = call.as_ref::<Instruction>(&builder.module.context).unwrap();
       let block = inst.get_parent().as_super();
       let next_inst = inst.next_inst().unwrap().as_super();
       let ty = value.get_type(&builder.module.context);
@@ -95,10 +124,13 @@ fn rewrite_print_int(m: Module) -> Module {
       assert!(ty.get_scalar_size_in_bits(&builder.module) == 32);
       builder.set_current_block(block);
       builder.set_insert_before(next_inst);
-      builder.create_func_call(callee.clone(), vec![value]);
+      builder.create_func_call(__print_int__.clone(), vec![value]);
+      if nl {
+        builder.create_func_call(print.clone(), vec![newline.clone()]);
+      }
     }
     // Erase print
-    let mut mutator = InstMutator::new(builder.context(), &print);
+    let mut mutator = InstMutator::new(builder.context(), &call);
     mutator.erase_from_parent();
     // Erase to_string
     let mut mutator = InstMutator::new(builder.context(), &to_string);
