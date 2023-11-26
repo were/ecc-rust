@@ -97,7 +97,6 @@ fn rewrite_print_int(m: Module) -> Module {
     let mut print = None;
     'bb: for bb in raw.block_iter() {
       for inst in bb.inst_iter().rev() {
-        eprintln!("{}", inst.to_string(false));
         if let Some(call) = inst.as_sub::<Call>() {
           if call.get_callee().get_name().eq("print") {
             newline = Some(inst.get_operand(0).unwrap().clone());

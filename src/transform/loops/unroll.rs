@@ -12,7 +12,7 @@ use trinity::{
   builder::Builder, verify::verify
 };
 
-use crate::analysis::topo::{analyze_topology, ChildTraverse, ChildIter, Node};
+use crate::{analysis::topo::{analyze_topology, ChildTraverse, ChildIter, Node}, transform::simplify};
 
 type FullyUnroll = (usize, ValueRef, ValueRef, ValueRef, ValueRef, Vec<ValueRef>);
 
@@ -257,7 +257,8 @@ pub fn unroll_small_loops(m: Module) -> Module {
     let mut remover = BlockMutator::new(builder.context(), placeholder);
     remover.erase_from_parent();
   }
-  verify(&builder.module);
-  builder.module
+  let (module, _) = simplify::transform(builder.module, 1);
+  verify(&module);
+  module
 }
 
