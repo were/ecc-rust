@@ -219,6 +219,24 @@ impl <'ctx>Codegen<'ctx> {
           res.last_mut().unwrap().comment = format!("ConstObject: {}", co.to_string());
           res
         }
+        VKindCode::ConstExpr => {
+          let expr = value.as_ref::<ConstExpr>(&self.module.context).unwrap();
+          let inst = expr.get_inst();
+          let inst = Reference::new(&self.module.context, inst);
+          match inst.get_opcode() {
+            InstOpcode::GetElementPtr(_) => {
+              let ptr = inst.get_operand(0).unwrap();
+              let value = self.allocated_globals.get(&ptr.skey).unwrap();
+              let mut res = vec![WASMInst::iconst(expr.get_skey(), *value as u64)];
+              res.last_mut().unwrap().comment = format!("ConstExpr: {}", expr.to_string());
+              res
+            }
+            _ => {
+              panic!("ConstExpr::to_string: not a constant opcode {:?}",
+                     inst.get_opcode().to_string());
+            }
+          }
+        }
         _ => {
           let mut res = vec![WASMInst::iconst(value.skey, 0)];
           let ctx = &self.module.context;

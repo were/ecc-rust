@@ -170,10 +170,12 @@ fn connect_block(builder: &mut Builder, last_block: &ValueRef, current: &ValueRe
   }
 }
 
-pub fn unroll_small_loops(m: Module) -> Module {
+pub fn unroll_small_loops(m: Module) -> (Module, bool) {
   let to_unroll = loops_to_unroll(&m);
+  let mut modified = false;
   let mut builder = Builder::new(m);
   for (n, prehead, head, latch, exit, blocks) in to_unroll.iter() {
+    modified = true;
     // eprintln!("{}", prehead.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
     // for block in blocks.iter() {
     //   eprintln!("{}", block.as_ref::<Block>(&builder.module.context).unwrap().to_string(false));
@@ -259,6 +261,6 @@ pub fn unroll_small_loops(m: Module) -> Module {
   }
   let (module, _) = simplify::transform(builder.module, 1);
   verify(&module);
-  module
+  (module, modified)
 }
 
