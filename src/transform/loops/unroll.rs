@@ -115,7 +115,7 @@ fn build_unrolled_insts(
             for (in_block, in_value) in phi.iter() {
               // eprintln!("{}, {}", in_block.get_skey(), in_value.skey);
               if in_block.get_skey() == block.skey {
-                if let Some(v) = value_map.get(&in_value.skey) {
+                if let Some(_) = value_map.get(&in_value.skey) {
                   // eprintln!("TODO: replace [{}, {}] to [{}, {}]",
                   //   in_block.get_name(), in_value.to_string(&builder.module.context, true),
                   //   value_map.get(&block.skey).unwrap().to_string(&builder.module.context, true),
