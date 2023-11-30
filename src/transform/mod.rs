@@ -26,9 +26,17 @@ pub fn optimize(mut module: Module, opt_level: i32) -> Module {
     let (mut simplified_1, _) = simplify::transform(ssa, 1);
     loops::hoist::hoist_invariants(&mut simplified_1);
     let canonicalized = loops::canonicalize::transform(simplified_1);
-    let inlined = inline::transform(canonicalized);
-    let unrolled = loops::unroll::unroll_small_loops(inlined);
-    let (mut simplified_2, _) = simplify::transform(unrolled, 2);
+    let mut res = canonicalized;
+    loop {
+      let (inlined_ir, inline_modified) = inline::transform(res);
+      let (unrolled_ir, unroll_modified) = loops::unroll::unroll_small_loops(inlined_ir);
+      let (simplified_ir, simplify_modified) = simplify::transform(unrolled_ir, 1);
+      res = simplified_ir;
+      if !inline_modified && !unroll_modified && !simplify_modified {
+        break;
+      }
+    }
+    let (mut simplified_2, _) = simplify::transform(res, 2);
     simplified_2.remove_unused_functions();
     simplified_2
   } else {

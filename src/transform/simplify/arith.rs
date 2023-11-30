@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use trinity::{ir::{
   module::Module,
-  value::instruction::{
+  value::{instruction::{
     PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, SelectInst,
     const_folder::{fold_binary_op, fold_cmp_op}
-  },
-  ValueRef, Instruction, ConstScalar, IntType
-}, builder::Builder};
+  }, consts::ConstObject},
+  ValueRef, Instruction, ConstScalar, IntType, ConstExpr, ConstArray
+}, builder::Builder, context::Reference};
 
 
 
@@ -197,8 +197,8 @@ fn has_trivial_inst(builder: &mut Builder) -> Option<(usize, ValueRef)> {
         if let Some(phi) = inst.as_sub::<PhiNode>() {
           if let Some(value) = phi.get_incoming_value(0) {
             if phi.iter().all(|(_, v)| v.skey == value.skey) {
-              eprintln!("[SIMP] Find a trivial phi: {}, replace by: {}",
-                        inst.to_string(false), value.to_string(&module.context, true));
+              // eprintln!("[SIMP] Find a trivial phi: {}, replace by: {}",
+              //           inst.to_string(false), value.to_string(&module.context, true));
               return Some((inst.get_skey(), value.clone()));
             }
           }
@@ -329,7 +329,10 @@ fn has_const_inst(module: &mut Module) -> Option<(ValueRef, ValueRef)> {
     for block in func.block_iter() {
       for inst in block.inst_iter() {
         match inst.get_opcode() {
-          InstOpcode::CastInst(_) | InstOpcode::BinaryOp(_) | InstOpcode::ICompare(_) => {
+          InstOpcode::CastInst(_) |
+          InstOpcode::BinaryOp(_) |
+          InstOpcode::ICompare(_) |
+          InstOpcode::Load(_) => {
             insts.push(inst.as_super());
           }
           _ => {}
@@ -345,26 +348,109 @@ fn has_const_inst(module: &mut Module) -> Option<(ValueRef, ValueRef)> {
     };
     match opcode {
       InstOpcode::CastInst(subcast) => {
-        if let CastOp::Trunc = subcast {
-          let operand = operands.get(0).unwrap();
-          if let Some(const_scalar) = operand.as_ref::<ConstScalar>(&module.context) {
-            let bits = ty.get_scalar_size_in_bits(module);
-            let shift_bits = 64 - bits;
-            let res = const_scalar.get_value();
-            let res = res << shift_bits >> shift_bits;
-            let res = module.context.const_value(ty, res);
-            return (inst.clone(), res).into();
+        match subcast {
+          CastOp::Trunc => {
+            let operand = operands.get(0).unwrap();
+            if let Some(const_scalar) = operand.as_ref::<ConstScalar>(&module.context) {
+              let bits = ty.get_scalar_size_in_bits(module);
+              let shift_bits = 64 - bits;
+              let res = const_scalar.get_value();
+              let res = res << shift_bits >> shift_bits;
+              let res = module.context.const_value(ty, res);
+              return (inst.clone(), res).into();
+            }
           }
+          CastOp::SignExt => {
+            let operand = operands.get(0).unwrap();
+            if let Some(const_scalar) = operand.as_ref::<ConstScalar>(&module.context) {
+              let bits = ty.get_scalar_size_in_bits(module);
+              let res = const_scalar.get_value();
+              if (res & (1 << (bits - 1))) == 0 {
+                let res = module.context.const_value(ty, res);
+                // eprintln!("[CONST FOLD] {} -> {}",
+                //   inst.as_ref::<Instruction>(&module.context).unwrap().to_string(false),
+                //   res.to_string(&module.context, true));
+                return (inst.clone(), res.clone()).into();
+              } else {
+                let res = (!(0 as u64) << bits) | res;
+                let res = module.context.const_value(ty, res);
+                // eprintln!("[CONST FOLD] {} -> {}",
+                //   inst.as_ref::<Instruction>(&module.context).unwrap().to_string(false),
+                //   res.to_string(&module.context, true));
+                return (inst.clone(), res).into();
+              }
+            }
+          }
+          _ => {}
         }
       }
       InstOpcode::BinaryOp(op) => {
         if let Some(value) = fold_binary_op(&op, &mut module.context, &operands[0], &operands[1]) {
+          // eprintln!("[CONST FOLD] {} -> {}",
+          //   inst.as_ref::<Instruction>(&module.context).unwrap().to_string(false),
+          //   value.to_string(&module.context, true));
           return Some((inst, value));
         }
       }
       InstOpcode::ICompare(op) => {
         if let Some(value) = fold_cmp_op(&op, &mut module.context, &operands[0], &operands[1]) {
           return Some((inst, value));
+        }
+      }
+      InstOpcode::Load(_) => {
+        if let Some(ptr) = operands[0].as_ref::<Instruction>(&module.context) {
+          if let InstOpcode::GetElementPtr(_) = ptr.get_opcode() {
+            // a.b where the b attribute is a constant.
+            let raw = ptr.get_operand(0).unwrap().as_ref::<ConstObject>(&module.context);
+            if let Some(const_obj) = raw {
+              // let obj = ptr.get_operand(0).unwrap().to_string(&module.context, true);
+              // eprintln!("array ptr: {}", ptr.to_string(false));
+              if let Some(i) = ptr.get_operand(1) {
+                if let Some(i_const) = i.as_ref::<ConstScalar>(&module.context) {
+                  if i_const.get_value() == 0 {
+                    if let Some(j) = ptr.get_operand(2) {
+                      if let Some(j_const) = j.as_ref::<ConstScalar>(&module.context) {
+                        let attr_idx = j_const.get_value() as usize;
+                        let value = const_obj.get_value().get(attr_idx).unwrap().clone();
+                        // eprintln!("{} -> {}", inst.to_string(&module.context, true),
+                        //           value.to_string(&module.context, true));
+                        return (inst, value).into();
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            // a[i] where i is a constant, and array a is a constant array.
+            let raw = ptr.get_operand(0).unwrap().as_ref::<ConstExpr>(&module.context);
+            if let Some(idx) = ptr.get_operand(1).unwrap().as_ref::<ConstScalar>(&module.context) {
+              let idx = idx.get_value();
+              if let Some(const_array) = raw {
+                let expr_inst = Reference::new(&module.context, const_array.get_inst());
+                let array = expr_inst.get_operand(0).unwrap();
+                if let Some(array) = array.as_ref::<ConstArray>(&module.context) {
+                  if let Some(value) = array.get_value().get(idx as usize) {
+                    // let array_name = array.get_name();
+                    // let value_dump = value.to_string(&module.context, true);
+                    // eprintln!("{}[{}] = {}", array_name, idx, value_dump);
+                    // Check {1}&{2} of "const gep a, {1}, {2}" are both 0.
+                    if (1..3).all(|x| {
+                      if let Some(x) = expr_inst.get_operand(x) {
+                        if let Some(i_const) = x.as_ref::<ConstScalar>(&module.context) {
+                          if i_const.get_value() == 0 {
+                            return true;
+                          }
+                        }
+                      }
+                      return false;
+                    }) {
+                      return (inst, value.clone()).into();
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
       _ => {}

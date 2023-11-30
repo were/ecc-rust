@@ -372,7 +372,6 @@ pub fn simplify_constant_conditional_branches(module: &mut Module) -> bool {
       for inst in dc_dst.inst_iter() {
         if let Some(phi) = inst.as_sub::<PhiNode>() {
           for (idx, (block, _)) in phi.iter().enumerate() {
-            eprintln!("{}", inst.to_string(false));
             if block.get_skey() == src.skey {
               to_trim.push((inst.as_super(), idx))
             }
@@ -387,8 +386,8 @@ pub fn simplify_constant_conditional_branches(module: &mut Module) -> bool {
     mutator.remove_operand(1);
     mutator.remove_operand(0);
     mutator.add_operand(dst);
-    eprintln!("[CFG] Simplified {}",
-      br.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
+    // eprintln!("[CFG] Simplified {}",
+    //   br.as_ref::<Instruction>(&module.context).unwrap().to_string(false));
     for (phi, idx) in phi_to_trim.iter() {
       let mut mutator = InstMutator::new(&mut module.context, phi);
       mutator.remove_operand(idx * 2);

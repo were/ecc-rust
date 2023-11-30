@@ -15,7 +15,20 @@ def run_cmd(cmd):
 n = 10
 prefix = '../tests/performance/'
 for f in sorted(os.listdir('../tests/performance/')):
-    myown = sum(parse_time(run_cmd(f'./test.sh {prefix}/{f} 2>&1')) for i in range(n)) / n
-    emcc = sum(parse_time(run_cmd(f'./test.sh {prefix}/{f} emcc 2>&1')) for i in range(n)) / n
-    emcc2 = sum(parse_time(run_cmd(f'./test.sh {prefix}/{f} emcc 2 2>&1')) for i in range(n)) / n
-    print(f, '%.2f %.2f %.2f' % (myown, emcc, emcc2))
+    try:
+        myown = sum(parse_time(run_cmd(f'./test.sh {prefix}/{f} 2>&1')) for i in range(n)) / n
+        myown = '%.2f' % myown
+    except:
+        myown = 'x'
+    try:
+        emcc = sum(parse_time(run_cmd(f'./test.sh {prefix}/{f} emcc 2>&1')) for i in range(n)) / n
+        emcc = '%.2f' % emcc
+    except:
+        emcc = 'x'
+    try:
+        emcc2 = sum(parse_time(run_cmd(f'./test.sh {prefix}/{f} emcc 2 2>&1')) for i in range(n)) / n
+        emcc2 = '%.2f' % emcc2
+    except:
+        emcc2 = 'x'
+    print(f, '%s %s %s' % (myown, emcc, emcc2))
+    # print(f, '%.2f %.2f' % (myown, emcc))

@@ -18,12 +18,19 @@ fn gather_inlinable_functions(m: &Module) -> HashSet<ValueRef> {
   let mut res = HashSet::new();
   for f in m.func_iter() {
     if call_graph.is_non_recursive(&f) {
-      let inst_count = f.block_iter().map(|bb| bb.get_num_insts()).sum::<usize>();
-      let block_count = f.get_num_blocks();
-      let callee_count = f.user_iter().count();
-      let weight = (inst_count + block_count) * callee_count;
-      if weight != 0 && weight < 1000 {
-        // eprintln!("[INLINE] {} inlinable!", f.get_name());
+      let callee_count = f.user_iter().count() as i64;
+      if callee_count == 0 {
+        continue;
+      }
+      if f.is_declaration() {
+        continue;
+      }
+      let inst_count = f.block_iter().map(|bb| bb.get_num_insts()).sum::<usize>() as i64;
+      let block_count = f.get_num_blocks() as i64;
+      let num_args = f.get_num_args() as i64;
+      let weight = (inst_count + block_count - num_args - 1) * (callee_count - 1);
+      if weight < 1000 {
+        // eprintln!("[INLINE] {} inlinable, {}", f.get_name(), weight);
         res.insert(f.as_super());
       }
     }
@@ -48,11 +55,13 @@ fn has_inlinable_call_site(m: &Module, inlinable: &HashSet<ValueRef>) -> Option<
   None
 }
 
-pub fn transform(m: Module) -> Module {
+pub fn transform(m: Module) -> (Module, bool) {
   let mut builder = Builder::new(m);
+  let mut modified = false;
   let void_ty = builder.context().void_type();
   let inlinable_functions = gather_inlinable_functions(&builder.module);
   while let Some(call_site) = has_inlinable_call_site(&builder.module, &inlinable_functions) {
+    modified = true;
     let call_inst = call_site.as_ref::<Instruction>(&builder.module.context).unwrap();
     let parent_block = call_inst.get_parent().as_super();
     let current_func = call_inst.get_parent().get_parent().as_super();
@@ -157,6 +166,7 @@ pub fn transform(m: Module) -> Module {
       let mut mutator = InstMutator::new(builder.context(), &br);
       mutator.set_operand(0, entry_bb);
     }
+
     {
       builder.set_current_block(ret_block.clone());
       let ret_val = if rty != void_ty {
@@ -179,6 +189,6 @@ pub fn transform(m: Module) -> Module {
   }
   verify(&builder.module);
   // eprintln!("after inlining:{}\n", builder.module.to_string());
-  return builder.module;
+  return (builder.module, modified);
 }
 
