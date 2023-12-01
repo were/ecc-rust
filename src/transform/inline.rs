@@ -30,7 +30,7 @@ fn gather_inlinable_functions(m: &Module) -> HashSet<ValueRef> {
       let num_args = f.get_num_args() as i64;
       let weight = (inst_count + block_count - num_args - 1) * (callee_count - 1);
       if weight < 1000 {
-        // eprintln!("[INLINE] {} inlinable, {}", f.get_name(), weight);
+        eprintln!("[INLINE] {} inlinable, {}", f.get_name(), weight);
         res.insert(f.as_super());
       }
     }

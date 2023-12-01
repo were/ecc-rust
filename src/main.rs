@@ -10,31 +10,17 @@ mod analysis;
 #[cfg(test)]
 mod tests;
 
+use compiler::CompilerFlags;
+
 pub use crate::frontend::parse;
 pub use crate::frontend::semantic_check;
 
 fn main() -> Result<(), String> {
   let args: Vec<String> = env::args().collect();
-  let mut print_ast : i32 = 0;
-  let mut output: String = String::from("a.wat");
-  let mut backend: String = String::from("myown");
-  let mut opt_level: i32 = 2;
-  if args.len() < 2 {
-    println!("Usage: ./ecc [file-name]");
-  }
-  for i in 2..args.len() {
-    match args[i].as_str() {
-      "--print-ast" => { print_ast = args[i + 1].parse().unwrap(); }
-      "--output" => { output = args[i + 1].clone(); }
-      "--backend" => { backend = args[i + 1].clone(); }
-      "--opt" => { opt_level = args[i + 1].parse().unwrap(); }
-      _ => ()
-    }
-  }
-
-  let mut file = File::open(&args[1]).unwrap();
+  let compiler_flags = CompilerFlags::parse_flags(args);
+  let mut file = File::open(compiler_flags.fname.clone()).unwrap();
   let mut src = String::new();
   file.read_to_string(&mut src).unwrap();
-  compiler::invoke(&args[1], &output, src, print_ast, &backend, opt_level)
+  compiler::invoke(src, &compiler_flags)
 }
 

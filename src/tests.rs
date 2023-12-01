@@ -3,6 +3,7 @@ use std::io::Write;
 use std::fs::File;
 use rstest::*;
 
+use crate::compiler::CompilerFlags;
 use crate::compiler::invoke;
 
 struct E2EMetadata {
@@ -49,7 +50,6 @@ fn run_binary(binary_name: &String, meta: &E2EMetadata) {
   let mut output = String::new();
   exec.stdout.take().unwrap().read_to_string(&mut output).unwrap();
   let status = exec.wait().unwrap();
-  eprintln!("echo {}; status: {}", binary_name, status);
   assert!(status.success());
   assert_eq!(output, meta.stdout);
 }
@@ -100,8 +100,17 @@ fn load_source(prefix: &str, fname: &String) -> (String, E2EMetadata, String) {
 fn test_frontend(#[case] fname: &str) {
   // Load the source file
   let (src, meta, obj_output) = load_source("../tests/function/", &fname.to_string());
+  let args = vec![
+    "[placeholder]", fname,
+    "--backend", "emcc",
+    "--opt", "2",
+    "--output", obj_output.as_str()
+  ].iter().map(|x| x.to_string()).collect::<Vec<_>>();
+  eprintln!("{:?}", args);
+  let flags = CompilerFlags::parse_flags(args);
+  eprintln!("{:?}", flags);
   // Compile it
-  invoke(&fname.to_string(), &obj_output, src, 0, &"emcc".to_string(), 2).unwrap();
+  invoke(src, &flags).unwrap();
   run_binary(&obj_output, &meta);
   // Compare the output
   std::process::Command::new("rm")
@@ -145,8 +154,16 @@ fn test_frontend(#[case] fname: &str) {
 fn test_e2e(#[case] fname: &str) {
   // Load the source file
   let (src, meta, obj_output) = load_source("../tests/function/", &fname.to_string());
+  // Emulate the arguments
+  let args = vec![
+    "[placeholder]", fname,
+    "--backend", "myown",
+    "--opt", "2",
+    "--output", obj_output.as_str()
+  ].iter().map(|x| x.to_string()).collect::<Vec<String>>();
+  let flags = CompilerFlags::parse_flags(args);
   // Compile it
-  invoke(&fname.to_string(), &obj_output, src, 0, &"myown".to_string(), 2).unwrap();
+  invoke(src, &flags).unwrap();
   run_binary(&obj_output, &meta);
   // Compare the output
   std::process::Command::new("rm")
@@ -171,8 +188,16 @@ fn test_e2e(#[case] fname: &str) {
 fn test_pressure(#[case] fname: &str) {
   // Load the source file
   let (src, meta, obj_output) = load_source("../tests/performance/", &fname.to_string());
+  // Emulate the flags
+  let args = vec![
+    "placeholder", obj_output.as_str(),
+    "--backend", "myown",
+    "--opt", "2",
+    "--output", obj_output.as_str()
+  ].iter().map(|x| x.to_string()).collect::<Vec<_>>();
+  let flags = CompilerFlags::parse_flags(args);
   // Compile it
-  invoke(&fname.to_string(), &obj_output, src, 0, &"myown".to_string(), 2).unwrap();
+  invoke(src, &flags).unwrap();
   run_binary(&obj_output, &meta);
   // Compare the output
   std::process::Command::new("rm")
