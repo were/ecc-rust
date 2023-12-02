@@ -16,17 +16,17 @@ n = 10
 prefix = '../tests/performance/'
 for f in sorted(os.listdir('../tests/performance/')):
     try:
-        myown = sum(parse_time(run_cmd(f'./test.sh {prefix}/{f} 2>&1')) for i in range(n)) / n
+        myown = sum(parse_time(run_cmd(f'./test.sh {prefix}/{f} --opt 2 2>&1')) for i in range(n)) / n
         myown = '%.2f' % myown
     except:
         myown = 'x'
     try:
-        emcc = sum(parse_time(run_cmd(f'./test.sh {prefix}/{f} emcc 2>&1')) for i in range(n)) / n
+        emcc = sum(parse_time(run_cmd(f'./test.sh {prefix}/{f} --backend emcc --opt 0 2>&1')) for i in range(n)) / n
         emcc = '%.2f' % emcc
     except:
         emcc = 'x'
     try:
-        emcc2 = sum(parse_time(run_cmd(f'./test.sh {prefix}/{f} emcc 2 2>&1')) for i in range(n)) / n
+        emcc2 = sum(parse_time(run_cmd(f'./test.sh {prefix}/{f} --backend emcc --opt 2 2>&1')) for i in range(n)) / n
         emcc2 = '%.2f' % emcc2
     except:
         emcc2 = 'x'

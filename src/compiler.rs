@@ -68,8 +68,7 @@ pub fn invoke(src: String, flags: &CompilerFlags) -> Result<(), String> {
   }
   let ast = semantic_check(&ast, print_ast)?;
   let module = codegen_llvm(&ast);
-  let opt_level = flags.opt_level;
-  let optimized = optimize(module, opt_level);
+  let optimized = optimize(module, flags);
   let mangled = fname.chars().into_iter().map(
     |x| if x.is_alphanumeric() { x } else { '_' }).collect::<String>();
   let tmpdir = env::temp_dir().to_str().unwrap().to_string();

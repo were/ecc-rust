@@ -11,7 +11,7 @@ use trinity::{
   builder::Builder, verify::verify
 };
 
-use crate::analysis::call_graph;
+use crate::{analysis::call_graph, compiler::CompilerFlags};
 
 fn gather_inlinable_functions(m: &Module) -> HashSet<ValueRef> {
   let call_graph = call_graph::analyze(m);
@@ -28,10 +28,15 @@ fn gather_inlinable_functions(m: &Module) -> HashSet<ValueRef> {
       let inst_count = f.block_iter().map(|bb| bb.get_num_insts()).sum::<usize>() as i64;
       let block_count = f.get_num_blocks() as i64;
       let num_args = f.get_num_args() as i64;
-      let weight = (inst_count + block_count - num_args - 1) * (callee_count - 1);
-      if weight < 1000 {
-        eprintln!("[INLINE] {} inlinable, {}", f.get_name(), weight);
-        res.insert(f.as_super());
+      let binary_increase = (inst_count + block_count - num_args - 1) * (callee_count - 1);
+      if block_count < 5 && inst_count < 100 {
+        if binary_increase < 1000 {
+          eprintln!("[INLINE] inlining function {}, binary will increase {}",
+                    f.get_name(), binary_increase);
+          res.insert(f.as_super());
+        }
+      } else {
+        eprintln!("[INLINE] {} is too complicated to inline.", f.get_name());
       }
     }
   }
@@ -55,7 +60,10 @@ fn has_inlinable_call_site(m: &Module, inlinable: &HashSet<ValueRef>) -> Option<
   None
 }
 
-pub fn transform(m: Module) -> (Module, bool) {
+pub fn transform(m: Module, flags: &CompilerFlags) -> (Module, bool) {
+  if flags.no_inline {
+    return (m, false)
+  }
   let mut builder = Builder::new(m);
   let mut modified = false;
   let void_ty = builder.context().void_type();

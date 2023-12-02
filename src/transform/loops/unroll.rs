@@ -12,7 +12,7 @@ use trinity::{
   builder::Builder, verify::verify
 };
 
-use crate::{analysis::topo::{analyze_topology, ChildTraverse, ChildIter, Node}, transform::simplify};
+use crate::{analysis::topo::{analyze_topology, ChildTraverse, ChildIter, Node}, transform::simplify, compiler::CompilerFlags};
 
 type FullyUnroll = (usize, ValueRef, ValueRef, ValueRef, ValueRef, Vec<ValueRef>);
 
@@ -170,8 +170,11 @@ fn connect_block(builder: &mut Builder, last_block: &ValueRef, current: &ValueRe
   }
 }
 
-pub fn unroll_small_loops(m: Module) -> (Module, bool) {
+pub fn unroll_small_loops(m: Module, flags: &CompilerFlags) -> (Module, bool) {
   let to_unroll = loops_to_unroll(&m);
+  if flags.no_loop_unroll {
+    return (m, false)
+  }
   let mut modified = false;
   let mut builder = Builder::new(m);
   for (n, prehead, head, latch, exit, blocks) in to_unroll.iter() {

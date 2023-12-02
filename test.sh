@@ -3,25 +3,9 @@
 REPO=`git rev-parse --show-toplevel`
 FILE=$1
 
-if [ -z "$2" ]; then
-  backend="myown"
-else
-  backend=$2
-fi
+flags=${@:2}
 
-if [ ${backend} == "emcc" ]; then
-  opt=0
-else
-  opt=2
-fi
-
-if [ -z "$3" ]; then
-  opt=$opt
-else
-  opt=$3
-fi
-
-time $REPO/./target/debug/ecc $1 --backend $backend --output a.wasm --opt $opt > compile.log 2>&1
+$REPO/./target/debug/ecc $1 --output a.wasm ${flags} > compile.log 2>&1
 
 grep "IR dumped" compile.log
 

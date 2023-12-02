@@ -1,5 +1,7 @@
 use trinity::ir::module::Module;
 
+use crate::compiler::CompilerFlags;
+
 use self::simplify::{cfg::merge_trivial_branches, arith::const_propagate};
 
 mod inline;
@@ -11,7 +13,8 @@ mod lifetime;
 mod loops;
 mod simplify;
 
-pub fn optimize(mut module: Module, opt_level: i32) -> Module {
+pub fn optimize(mut module: Module, flags: &CompilerFlags) -> Module {
+  let opt_level = flags.opt_level;
   if opt_level == 0 {
     return module;
   }
@@ -28,8 +31,8 @@ pub fn optimize(mut module: Module, opt_level: i32) -> Module {
     let canonicalized = loops::canonicalize::transform(simplified_1);
     let mut res = canonicalized;
     loop {
-      let (inlined_ir, inline_modified) = inline::transform(res);
-      let (unrolled_ir, unroll_modified) = loops::unroll::unroll_small_loops(inlined_ir);
+      let (inlined_ir, inline_modified) = inline::transform(res, flags);
+      let (unrolled_ir, unroll_modified) = loops::unroll::unroll_small_loops(inlined_ir, flags);
       let (simplified_ir, simplify_modified) = simplify::transform(unrolled_ir, 1);
       res = simplified_ir;
       if !inline_modified && !unroll_modified && !simplify_modified {
