@@ -481,10 +481,11 @@ pub fn const_propagate(module: &mut Module) -> bool {
 
 
 pub fn linearize_addsub(m: Module) -> (bool, Module) {
-  let builder = Builder::new(m);
+  let mut builder = Builder::new(m);
+  let mut modified = false;
   let lcc = LCCache::new(&builder.module);
-  for (value, lc) in lcc.iter() {
-    let inst = value.as_ref::<Instruction>(&builder.module.context).unwrap();
+  for (to_linearize, lc) in lcc.iter() {
+    let inst = to_linearize.as_ref::<Instruction>(&builder.module.context).unwrap();
     let inex = if inst.user_iter().all(|x| {
       x.get_parent().get_skey() == inst.get_parent().get_skey()
     }) {
@@ -492,7 +493,7 @@ pub fn linearize_addsub(m: Module) -> (bool, Module) {
     } else {
       "[external]"
     };
-    let vs = value.to_string(&builder.module.context, true);
+    let vs = to_linearize.to_string(&builder.module.context, true);
     if lc.is_primitive() {
       continue;
     }
@@ -513,10 +514,44 @@ pub fn linearize_addsub(m: Module) -> (bool, Module) {
       .join(" + ");
     eprintln!("[LINEAR] {} = {} ({})", vs, rhs, inex);
     eprintln!("[LINEAR] in total {} term(s), and {} insts(s)", lc.num_terms(), lc.num_insts());
+    builder.set_insert_before(to_linearize.clone());
+    let mut carry : Option<ValueRef> = None;
+    for (sub_value, coef) in lc.iter() {
+      let opcode = if *coef > 0 {
+        BinaryOp::Add
+      } else {
+        BinaryOp::Sub
+      };
+      let term = if coef.abs() == 1 {
+        sub_value.clone()
+      } else {
+        let ty = sub_value.get_type(&builder.module.context);
+        let coef = builder.context().const_value(ty, coef.abs() as u64);
+        builder.create_mul(coef, sub_value.clone())
+      };
+      eprintln!("[LINEAR] term {}",
+                term.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
+      match &carry {
+        Some(carried) => {
+          let combined = builder.create_binary_op(opcode, carried.clone(), term, "lc".to_string());
+          eprintln!("[LINEAR] +/- {}",
+                    combined.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
+          carry = Some(combined);
+        }
+        None => {
+          eprintln!("[LINEAR] init");
+          carry = Some(term);
+        }
+      }
+    }
+    let mut mutator = InstMutator::new(builder.context(), &to_linearize);
+    mutator.replace_all_uses_with(carry.unwrap());
+    mutator.erase_from_parent();
+    modified = true;
     // for (sub_value, coef) in lc.iter() {
     //   eprintln!("        {} * {}", );
     // }
   }
-  (false, builder.module)
+  (modified, builder.module)
 }
 
