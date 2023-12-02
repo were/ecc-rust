@@ -498,22 +498,18 @@ pub fn linearize_addsub(m: Module) -> (bool, Module) {
     if lc.iter().all(|(_, v)| v.abs() == 1) {
       continue;
     }
-    let mut vec = lc.iter()
-      .map(|(k, v)| (k.clone(), *v))
-      .collect::<Vec<_>>();
-    vec.sort_by(|(_, v0), (_, v1)| { v0.cmp(v1) });
-    let rhs = vec
-      .iter()
-      .rev()
-      .map(|(sub_value, coef)| {
-        format!("({} * {})", sub_value.to_string(&builder.module.context, true), coef)
-      })
-      .collect::<Vec<_>>()
-      .join(" + ");
+    let rhs = {
+      let ctx = &builder.module.context;
+      lc.iter()
+        .map(|(sub_value, coef)| { format!("({} * {})", sub_value.to_string(ctx, true), coef) })
+        .collect::<Vec<_>>()
+        .join(" + ")
+    };
     eprintln!("[LINEAR] {} = {}", vs, rhs);
     eprintln!("[LINEAR] in total {} term(s), and {} insts(s)", lc.num_terms(), lc.num_insts());
     builder.set_insert_before(to_linearize.clone());
-    let mut carry : Option<ValueRef> = None;
+    let ty = to_linearize.get_type(&builder.module.context);
+    let mut carry : ValueRef = builder.context().const_value(ty.clone(), 0);
     for (sub_value, coef) in lc.iter() {
       let opcode = if *coef > 0 {
         BinaryOp::Add
@@ -523,27 +519,17 @@ pub fn linearize_addsub(m: Module) -> (bool, Module) {
       let term = if coef.abs() == 1 {
         sub_value.clone()
       } else {
-        let ty = sub_value.get_type(&builder.module.context);
-        let coef = builder.context().const_value(ty, coef.abs() as u64);
+        let coef = builder.context().const_value(ty.clone(), coef.abs() as u64);
         builder.create_mul(coef, sub_value.clone())
       };
       eprintln!("[LINEAR] term {}",
                 term.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
-      match &carry {
-        Some(carried) => {
-          let combined = builder.create_binary_op(opcode, carried.clone(), term, "lc".to_string());
-          eprintln!("[LINEAR] +/- {}",
-                    combined.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
-          carry = Some(combined);
-        }
-        None => {
-          eprintln!("[LINEAR] init");
-          carry = Some(term);
-        }
-      }
+      carry = builder.create_binary_op(opcode, carry.clone(), term, "lc".to_string());
+      eprintln!("[LINEAR] +/- {}",
+                carry.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
     }
     let mut mutator = InstMutator::new(builder.context(), &to_linearize);
-    mutator.replace_all_uses_with(carry.unwrap());
+    mutator.replace_all_uses_with(carry);
     mutator.erase_from_parent();
     modified = true;
     // for (sub_value, coef) in lc.iter() {
