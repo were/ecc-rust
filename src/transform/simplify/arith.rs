@@ -486,12 +486,10 @@ pub fn linearize_addsub(m: Module) -> (bool, Module) {
   let lcc = LCCache::new(&builder.module);
   for (to_linearize, lc) in lcc.iter() {
     let inst = to_linearize.as_ref::<Instruction>(&builder.module.context).unwrap();
-    let inex = if inst.user_iter().all(|x| {
+    if inst.user_iter().all(|x| {
       x.get_parent().get_skey() == inst.get_parent().get_skey()
     }) {
       continue;
-    } else {
-      "[external]"
     };
     let vs = to_linearize.to_string(&builder.module.context, true);
     if lc.is_primitive() {
@@ -512,7 +510,7 @@ pub fn linearize_addsub(m: Module) -> (bool, Module) {
       })
       .collect::<Vec<_>>()
       .join(" + ");
-    eprintln!("[LINEAR] {} = {} ({})", vs, rhs, inex);
+    eprintln!("[LINEAR] {} = {}", vs, rhs);
     eprintln!("[LINEAR] in total {} term(s), and {} insts(s)", lc.num_terms(), lc.num_insts());
     builder.set_insert_before(to_linearize.clone());
     let mut carry : Option<ValueRef> = None;
