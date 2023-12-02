@@ -1,4 +1,4 @@
-use trinity::ir::{module::Module, ValueRef, value::instruction::{Load, InstructionRef, Store, InstMutator, InstOpcode}};
+use trinity::ir::{module::Module, ValueRef, value::instruction::{Load, InstructionRef, Store, InstMutator, InstOpcode, Call}};
 
 use crate::analysis::{
   dom_tree::DominatorTree, reachable::Reachability,
@@ -47,6 +47,14 @@ fn no_store_between(i0: &InstructionRef, i1: &InstructionRef,
       }
     }
     for i in ii {
+      if let Some(call) = i.as_sub::<Call>() {
+        match call.get_callee().get_name().as_str() {
+          "__print_int__" | "__print_str__" | "print" | "println" | "nextInt" => {}
+          _ => {
+            return false;
+          }
+        }
+      }
       if let Some(store) = i.as_sub::<Store>() {
         if store.get_value().get_type(i0.ctx()) == ty {
           // eprintln!("store {}", i.to_string(false));
