@@ -1,13 +1,22 @@
 use std::collections::HashMap;
 
-use trinity::{ir::{
-  module::Module,
-  value::{instruction::{
-    PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, SelectInst,
-    const_folder::{fold_binary_op, fold_cmp_op}
-  }, consts::ConstObject},
-  ValueRef, Instruction, ConstScalar, IntType, ConstExpr, ConstArray
-}, builder::Builder, context::Reference};
+use trinity::{
+  ir::{
+    module::Module,
+    value::{
+      instruction::{
+        PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, SelectInst,
+        const_folder::{fold_binary_op, fold_cmp_op}
+      },
+      consts::ConstObject
+    },
+    ValueRef, Instruction, ConstScalar, IntType, ConstExpr, ConstArray
+  },
+  builder::Builder,
+  context::Reference,
+};
+
+use crate::analysis::linear::LCCache;
 
 
 
@@ -468,5 +477,46 @@ pub fn const_propagate(module: &mut Module) -> bool {
     modified = true;
   }
   modified
+}
+
+
+pub fn linearize_addsub(m: Module) -> (bool, Module) {
+  let builder = Builder::new(m);
+  let lcc = LCCache::new(&builder.module);
+  for (value, lc) in lcc.iter() {
+    let inst = value.as_ref::<Instruction>(&builder.module.context).unwrap();
+    let inex = if inst.user_iter().all(|x| {
+      x.get_parent().get_skey() == inst.get_parent().get_skey()
+    }) {
+      continue;
+    } else {
+      "[external]"
+    };
+    let vs = value.to_string(&builder.module.context, true);
+    if lc.is_primitive() {
+      continue;
+    }
+    if lc.iter().all(|(_, v)| v.abs() == 1) {
+      continue;
+    }
+    let mut vec = lc.iter()
+      .map(|(k, v)| (k.clone(), *v))
+      .collect::<Vec<_>>();
+    vec.sort_by(|(_, v0), (_, v1)| { v0.cmp(v1) });
+    let rhs = vec
+      .iter()
+      .rev()
+      .map(|(sub_value, coef)| {
+        format!("({} * {})", sub_value.to_string(&builder.module.context, true), coef)
+      })
+      .collect::<Vec<_>>()
+      .join(" + ");
+    eprintln!("[LINEAR] {} = {} ({})", vs, rhs, inex);
+    eprintln!("[LINEAR] in total {} term(s), and {} insts(s)", lc.num_terms(), lc.num_insts());
+    // for (sub_value, coef) in lc.iter() {
+    //   eprintln!("        {} * {}", );
+    // }
+  }
+  (false, builder.module)
 }
 

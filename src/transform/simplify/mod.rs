@@ -24,6 +24,8 @@ pub fn transform(mut module: Module, level: usize) -> (Module, bool) {
     if level == 2 {
       iterative |= cfg::simplify_constant_conditional_branches(&mut module);
       iterative |= cfg::connect_unconditional_branches(&mut module);
+      let linearized = arith::linearize_addsub(module);
+      (iterative, module) = (iterative | linearized.0, linearized.1);
       verify::verify(&module);
     }
     modified |= iterative;
