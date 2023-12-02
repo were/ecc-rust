@@ -49,7 +49,7 @@ fn no_store_between(i0: &InstructionRef, i1: &InstructionRef,
     for i in ii {
       if let Some(call) = i.as_sub::<Call>() {
         match call.get_callee().get_name().as_str() {
-          "__print_int__" | "__print_str__" | "print" | "println" | "nextInt" => {}
+          "__print_int__" | "__print_str__" | "print" | "println" | "nextInt" | "malloc" => {}
           _ => {
             return false;
           }

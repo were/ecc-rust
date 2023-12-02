@@ -486,27 +486,29 @@ pub fn linearize_addsub(m: Module) -> (bool, Module) {
   let lcc = LCCache::new(&builder.module);
   for (to_linearize, lc) in lcc.iter() {
     let inst = to_linearize.as_ref::<Instruction>(&builder.module.context).unwrap();
-    if inst.user_iter().all(|x| {
-      x.get_parent().get_skey() == inst.get_parent().get_skey()
-    }) {
+    if inst.user_iter().all(|x| { x.get_parent().get_skey() == inst.get_parent().get_skey() }) {
       continue;
     };
-    let vs = to_linearize.to_string(&builder.module.context, true);
     if lc.is_primitive() {
       continue;
     }
     if lc.iter().all(|(_, v)| v.abs() == 1) {
       continue;
     }
-    let rhs = {
-      let ctx = &builder.module.context;
-      lc.iter()
-        .map(|(sub_value, coef)| { format!("({} * {})", sub_value.to_string(ctx, true), coef) })
-        .collect::<Vec<_>>()
-        .join(" + ")
-    };
-    eprintln!("[LINEAR] {} = {}", vs, rhs);
-    eprintln!("[LINEAR] in total {} term(s), and {} insts(s)", lc.num_terms(), lc.num_insts());
+    // let vs = to_linearize.to_string(&builder.module.context, true);
+    // let rhs = {
+    //   let ctx = &builder.module.context;
+    //   lc.iter()
+    //     .map(|(sub_value, coef)| { format!("({} * {})", sub_value.to_string(ctx, true), coef) })
+    //     .collect::<Vec<_>>()
+    //     .join(" + ")
+    // };
+    if lc.num_terms() * 2 - 1 > lc.num_insts() {
+      // eprintln!("[LINEAR] skip {} = {} for too many insts", vs, rhs);
+      continue;
+    }
+    // eprintln!("[LINEAR] {} = {}", vs, rhs);
+    // eprintln!("[LINEAR] in total {} term(s), and {} insts(s)", lc.num_terms(), lc.num_insts());
     builder.set_insert_before(to_linearize.clone());
     let ty = to_linearize.get_type(&builder.module.context);
     let mut carry : ValueRef = builder.context().const_value(ty.clone(), 0);
@@ -522,11 +524,11 @@ pub fn linearize_addsub(m: Module) -> (bool, Module) {
         let coef = builder.context().const_value(ty.clone(), coef.abs() as u64);
         builder.create_mul(coef, sub_value.clone())
       };
-      eprintln!("[LINEAR] term {}",
-                term.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
+      // eprintln!("[LINEAR] term {}",
+      //           term.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
       carry = builder.create_binary_op(opcode, carry.clone(), term, "lc".to_string());
-      eprintln!("[LINEAR] +/- {}",
-                carry.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
+      // eprintln!("[LINEAR] +/- {}",
+      //           carry.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
     }
     let mut mutator = InstMutator::new(builder.context(), &to_linearize);
     mutator.replace_all_uses_with(carry);

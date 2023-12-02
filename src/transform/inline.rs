@@ -31,12 +31,12 @@ fn gather_inlinable_functions(m: &Module) -> HashSet<ValueRef> {
       let binary_increase = (inst_count + block_count - num_args - 1) * (callee_count - 1);
       if block_count < 5 && inst_count < 100 {
         if binary_increase < 1000 {
-          eprintln!("[INLINE] inlining function {}, binary will increase {}",
-                    f.get_name(), binary_increase);
+          // eprintln!("[INLINE] inlining function {}, binary will increase {}",
+          //           f.get_name(), binary_increase);
           res.insert(f.as_super());
         }
       } else {
-        eprintln!("[INLINE] {} is too complicated to inline.", f.get_name());
+        // eprintln!("[INLINE] {} is too complicated to inline.", f.get_name());
       }
     }
   }
