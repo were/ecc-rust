@@ -1,13 +1,22 @@
 use std::collections::HashMap;
 
-use trinity::{ir::{
-  module::Module,
-  value::{instruction::{
-    PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, SelectInst,
-    const_folder::{fold_binary_op, fold_cmp_op}
-  }, consts::ConstObject},
-  ValueRef, Instruction, ConstScalar, IntType, ConstExpr, ConstArray
-}, builder::Builder, context::Reference};
+use trinity::{
+  ir::{
+    module::Module,
+    value::{
+      instruction::{
+        PhiNode, InstMutator, InstructionRef, InstOpcode, CastOp, BinaryOp, BinaryInst, SelectInst,
+        const_folder::{fold_binary_op, fold_cmp_op}
+      },
+      consts::ConstObject
+    },
+    ValueRef, Instruction, ConstScalar, IntType, ConstExpr, ConstArray
+  },
+  builder::Builder,
+  context::Reference,
+};
+
+use crate::analysis::linear::LCCache;
 
 
 
@@ -468,5 +477,67 @@ pub fn const_propagate(module: &mut Module) -> bool {
     modified = true;
   }
   modified
+}
+
+
+pub fn linearize_addsub(m: Module) -> (bool, Module) {
+  let mut builder = Builder::new(m);
+  let mut modified = false;
+  let lcc = LCCache::new(&builder.module);
+  for (to_linearize, lc) in lcc.iter() {
+    let inst = to_linearize.as_ref::<Instruction>(&builder.module.context).unwrap();
+    if inst.user_iter().all(|x| { x.get_parent().get_skey() == inst.get_parent().get_skey() }) {
+      continue;
+    };
+    if lc.is_primitive() {
+      continue;
+    }
+    if lc.iter().all(|(_, v)| v.abs() == 1) {
+      continue;
+    }
+    // let vs = to_linearize.to_string(&builder.module.context, true);
+    // let rhs = {
+    //   let ctx = &builder.module.context;
+    //   lc.iter()
+    //     .map(|(sub_value, coef)| { format!("({} * {})", sub_value.to_string(ctx, true), coef) })
+    //     .collect::<Vec<_>>()
+    //     .join(" + ")
+    // };
+    if lc.num_terms() * 2 - 1 > lc.num_insts() {
+      // eprintln!("[LINEAR] skip {} = {} for too many insts", vs, rhs);
+      continue;
+    }
+    // eprintln!("[LINEAR] {} = {}", vs, rhs);
+    // eprintln!("[LINEAR] in total {} term(s), and {} insts(s)", lc.num_terms(), lc.num_insts());
+    builder.set_insert_before(to_linearize.clone());
+    let ty = to_linearize.get_type(&builder.module.context);
+    let mut carry : ValueRef = builder.context().const_value(ty.clone(), 0);
+    for (sub_value, coef) in lc.iter() {
+      let opcode = if *coef > 0 {
+        BinaryOp::Add
+      } else {
+        BinaryOp::Sub
+      };
+      let term = if coef.abs() == 1 {
+        sub_value.clone()
+      } else {
+        let coef = builder.context().const_value(ty.clone(), coef.abs() as u64);
+        builder.create_mul(coef, sub_value.clone())
+      };
+      // eprintln!("[LINEAR] term {}",
+      //           term.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
+      carry = builder.create_binary_op(opcode, carry.clone(), term, "lc".to_string());
+      // eprintln!("[LINEAR] +/- {}",
+      //           carry.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
+    }
+    let mut mutator = InstMutator::new(builder.context(), &to_linearize);
+    mutator.replace_all_uses_with(carry);
+    mutator.erase_from_parent();
+    modified = true;
+    // for (sub_value, coef) in lc.iter() {
+    //   eprintln!("        {} * {}", );
+    // }
+  }
+  (modified, builder.module)
 }
 
