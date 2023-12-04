@@ -6,7 +6,7 @@ use trinity::{
     value::instruction::{Store, InstOpcode, Load, InstructionRef, InstMutator},
     Instruction, ValueRef, VKindCode, PointerType
   },
-  context::Context,
+  context::{Context, WithSuperType},
   builder::Builder
 };
 

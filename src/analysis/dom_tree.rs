@@ -1,10 +1,10 @@
 use std::collections::{HashSet, VecDeque};
 
-use trinity::ir::{
+use trinity::{ir::{
   value::{instruction::InstructionRef, function::FunctionRef, block::BlockRef},
   Block,
   module::Module
-};
+}, context::WithSuperType};
 
 
 pub struct DomInfo {

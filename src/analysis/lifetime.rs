@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use trinity::ir::{ValueRef, module::Module, value::instruction::{Call, Alloca}, VKindCode, Instruction};
+use trinity::{ir::{ValueRef, module::Module, value::instruction::{Call, Alloca}, VKindCode, Instruction}, context::WithSuperType};
 
 pub struct VarLifetime {
   /// The cache of the given instruction.

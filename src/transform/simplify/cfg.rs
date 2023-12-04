@@ -1,10 +1,13 @@
-use trinity::ir::{
-  module::Module,
-  value::{
-    instruction::{PhiNode, InstMutator, BranchInst, InstructionRef, InstOpcode},
-    block::BlockMutator
+use trinity::{
+  ir::{
+    module::Module,
+    value::{
+      instruction::{PhiNode, InstMutator, BranchInst, InstructionRef, InstOpcode},
+      block::BlockMutator
+    },
+    Instruction, Function, ValueRef, Block, ConstScalar
   },
-  Instruction, Function, ValueRef, Block, ConstScalar
+  context::WithSuperType
 };
 
 // TODO(@were): This is more complicated than I expected, especially when phi is involved.

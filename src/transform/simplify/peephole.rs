@@ -19,7 +19,7 @@ fn has_conditional_add(m: &Module) -> Option<(TypeRef, ValueRef, ValueRef, Value
               }
               for j in 0..2 {
                 let orig = select.get_false_value().clone();
-                if *inst.get_operand(j).unwrap() == orig {
+                if inst.get_operand(j).unwrap() == orig {
                   let other = inst.get_operand(1 - j).unwrap();
                   if let Some(cs) = other.as_ref::<ConstScalar>(&m.context) {
                     if cs.get_value() == 1 {

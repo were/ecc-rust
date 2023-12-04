@@ -105,7 +105,7 @@ fn build_unrolled_insts(
       } else if &InstOpcode::Branch(BranchMetadata::ReturnJump) == inst.get_opcode() {
         // eprintln!("Unrolling a return jump! {}", inst.to_string(false));
         let dst = inst.get_operand(0).unwrap();
-        if blocks.contains(dst) {
+        if blocks.contains(&dst) {
           vec![value_map.get(&dst.skey).unwrap().clone()]
         } else {
           let dst = dst.as_ref::<Block>(&builder.module.context).unwrap();

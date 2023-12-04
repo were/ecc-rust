@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use trinity::ir::{ValueRef, module::Module, value::instruction::{Call, InstOpcode}, Instruction};
+use trinity::{
+  ir::{ValueRef, module::Module, value::instruction::{Call, InstOpcode}, Instruction},
+  context::WithSuperType
+};
 
 #[derive(Clone)]
 pub enum AliasInfo {

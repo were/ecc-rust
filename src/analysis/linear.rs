@@ -83,7 +83,7 @@ impl LCCache {
             if let Some(coef) = coef {
               let lhs = i.get_operand(0).unwrap();
               let rhs = i.get_operand(1).unwrap();
-              if let (Some(lhs), Some(rhs)) = (res.get(&lhs), res.get(rhs)) {
+              if let (Some(lhs), Some(rhs)) = (res.get(&lhs), res.get(&rhs)) {
                 iterative = true;
                 let mut lc = lhs.combine.clone();
                 let count = lhs.count.max(rhs.count) + 1;

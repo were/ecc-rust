@@ -12,8 +12,8 @@ use trinity::{
     },
     ValueRef, Instruction, ConstScalar, IntType, ConstExpr, ConstArray
   },
+  context::WithSuperType,
   builder::Builder,
-  context::Reference,
 };
 
 use crate::analysis::linear::LCCache;
@@ -435,8 +435,7 @@ fn has_const_inst(module: &mut Module) -> Option<(ValueRef, ValueRef)> {
             if let Some(idx) = ptr.get_operand(1).unwrap().as_ref::<ConstScalar>(&module.context) {
               let idx = idx.get_value();
               if let Some(const_array) = raw {
-                let expr_inst = Reference::new(&module.context, const_array.get_inst());
-                let array = expr_inst.get_operand(0).unwrap();
+                let array = const_array.get_operand(0).unwrap();
                 if let Some(array) = array.as_ref::<ConstArray>(&module.context) {
                   if let Some(value) = array.get_value().get(idx as usize) {
                     // let array_name = array.get_name();
@@ -444,7 +443,7 @@ fn has_const_inst(module: &mut Module) -> Option<(ValueRef, ValueRef)> {
                     // eprintln!("{}[{}] = {}", array_name, idx, value_dump);
                     // Check {1}&{2} of "const gep a, {1}, {2}" are both 0.
                     if (1..3).all(|x| {
-                      if let Some(x) = expr_inst.get_operand(x) {
+                      if let Some(x) = const_array.get_operand(x) {
                         if let Some(i_const) = x.as_ref::<ConstScalar>(&module.context) {
                           if i_const.get_value() == 0 {
                             return true;

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use trinity::{ir::{
+use trinity::ir::{
   module::{Module, namify},
   value::{
     function::FunctionRef,
@@ -12,7 +12,7 @@ use trinity::{ir::{
   },
   VoidType, Argument, Instruction, ValueRef, ConstScalar, VKindCode,
   ConstArray, StructType, ConstExpr, PointerType
-}, context::Reference};
+};
 
 use crate::analysis::topo::{analyze_topology, Node, ChildTraverse, FuncTopoInfo};
 
@@ -58,7 +58,7 @@ impl <'ctx>Codegen<'ctx> {
           if let Some(cond) = br.cond() {
             let raw_true = br.true_label().unwrap();
             let raw_false = br.false_label().unwrap();
-            let mut cond = self.emit_value(cond, false);
+            let mut cond = self.emit_value(&cond, false);
             let mut res = vec![
               WASMInst::br_if(inst.get_skey(), namify(&raw_true.get_name()), cond.remove(0)),
               WASMInst::br(inst.get_skey(), namify(&raw_false.get_name()))];
@@ -75,8 +75,8 @@ impl <'ctx>Codegen<'ctx> {
         }
         InstOpcode::ICompare(_) => {
           let cmp = inst.as_sub::<CompareInst>().unwrap();
-          let mut lhs = self.emit_value(inst.get_operand(0).unwrap(), false);
-          let mut rhs = self.emit_value(inst.get_operand(1).unwrap(), false);
+          let mut lhs = self.emit_value(&inst.get_operand(0).unwrap(), false);
+          let mut rhs = self.emit_value(&inst.get_operand(1).unwrap(), false);
           let mut res = match cmp.get_pred() {
             CmpPred::SLT | CmpPred::SGT | CmpPred::SLE | CmpPred::SGE | CmpPred::EQ | CmpPred::NE => {
               vec![WASMInst::cmp(inst.get_skey(), cmp.get_pred().clone(), lhs.remove(0), rhs.remove(0))]
@@ -86,19 +86,19 @@ impl <'ctx>Codegen<'ctx> {
           res
         }
         InstOpcode::BinaryOp(op) => {
-          let mut lhs = self.emit_value(inst.get_operand(0).unwrap(), false);
-          let mut rhs = self.emit_value(inst.get_operand(1).unwrap(), false);
+          let mut lhs = self.emit_value(&inst.get_operand(0).unwrap(), false);
+          let mut rhs = self.emit_value(&inst.get_operand(1).unwrap(), false);
           vec![WASMInst::binop(inst.get_skey(), op, lhs.remove(0), rhs.remove(0))]
         }
         InstOpcode::CastInst(op) => {
           match op {
             CastOp::Bitcast => {
-              let mut src = self.emit_value(inst.get_operand(0).unwrap(), false);
+              let mut src = self.emit_value(&inst.get_operand(0).unwrap(), false);
               src.last_mut().unwrap().comment = "Bitcast is a noop".to_string();
               src
             }
             CastOp::SignExt | CastOp::ZeroExt => {
-              let mut src = self.emit_value(inst.get_operand(0).unwrap(), false);
+              let mut src = self.emit_value(&inst.get_operand(0).unwrap(), false);
               src.last_mut().unwrap().comment = "SignExt&ZeroExt is a noop".to_string();
               src
             }
@@ -112,7 +112,7 @@ impl <'ctx>Codegen<'ctx> {
         InstOpcode::Return => {
           let ret = inst.as_sub::<Return>().unwrap();
           if let Some(val) = ret.get_ret_val() {
-            let mut ret_val = self.emit_value(val, false);
+            let mut ret_val = self.emit_value(&val, false);
             vec![WASMInst::ret(inst.get_skey(), Some(ret_val.remove(0)))]
           } else {
             vec![WASMInst::ret(inst.get_skey(), None)]
@@ -124,10 +124,10 @@ impl <'ctx>Codegen<'ctx> {
         }
         InstOpcode::GetElementPtr(_) => {
           let array_ptr = inst.get_operand(0).unwrap();
-          let mut array = self.emit_value(array_ptr, false).remove(0);
+          let mut array = self.emit_value(&array_ptr, false).remove(0);
           array.comment = "array".to_string();
           let operand_idx = inst.get_operand(1).unwrap();
-          let idx = self.emit_value(operand_idx, false).remove(0);
+          let idx = self.emit_value(&operand_idx, false).remove(0);
           let ptr_ty = array_ptr.get_type(&self.module.context).as_ref::<PointerType>(&self.module.context).unwrap();
           let scalar_size = ptr_ty.get_pointee_ty().get_scalar_size_in_bits(self.module) / 8; // bits / 8 to get byte size
           let mut scalar_size = WASMInst::iconst(value.skey, scalar_size as u64);
@@ -150,7 +150,7 @@ impl <'ctx>Codegen<'ctx> {
         }
         InstOpcode::Store(_) => {
           let store = inst.as_sub::<Store>().unwrap();
-          let mut ptr = self.emit_value(store.get_ptr(), false);
+          let mut ptr = self.emit_value(&store.get_ptr(), false);
           let mut value = store.get_value().clone();
           let module = self.module;
           let ctx = &self.module.context;
@@ -170,7 +170,7 @@ impl <'ctx>Codegen<'ctx> {
         }
         InstOpcode::Load(_) => {
           let load = inst.as_sub::<Load>().unwrap();
-          let mut value = self.emit_value(load.get_ptr(), false);
+          let mut value = self.emit_value(&load.get_ptr(), false);
           let bits = inst.get_type().get_scalar_size_in_bits(self.module);
           let mut res = WASMInst::load(inst.get_skey(), bits, value.remove(0));
           res.comment = format!("load: {}", inst.to_string(false));
@@ -181,9 +181,9 @@ impl <'ctx>Codegen<'ctx> {
           }
         }
         InstOpcode::Select => {
-          let cond = self.emit_value(inst.get_operand(0).unwrap(), false).remove(0);
-          let tv = self.emit_value(inst.get_operand(1).unwrap(), false).remove(0);
-          let fv = self.emit_value(inst.get_operand(2).unwrap(), false).remove(0);
+          let cond = self.emit_value(&inst.get_operand(0).unwrap(), false).remove(0);
+          let tv = self.emit_value(&inst.get_operand(1).unwrap(), false).remove(0);
+          let fv = self.emit_value(&inst.get_operand(2).unwrap(), false).remove(0);
           vec![WASMInst::select(inst.get_skey(), cond, tv, fv)]
         }
         _ => {
@@ -221,11 +221,9 @@ impl <'ctx>Codegen<'ctx> {
         }
         VKindCode::ConstExpr => {
           let expr = value.as_ref::<ConstExpr>(&self.module.context).unwrap();
-          let inst = expr.get_inst();
-          let inst = Reference::new(&self.module.context, inst);
-          match inst.get_opcode() {
+          match expr.get_opcode() {
             InstOpcode::GetElementPtr(_) => {
-              let ptr = inst.get_operand(0).unwrap();
+              let ptr = expr.get_operand(0).unwrap();
               let value = self.allocated_globals.get(&ptr.skey).unwrap();
               let mut res = vec![WASMInst::iconst(expr.get_skey(), *value as u64)];
               res.last_mut().unwrap().comment = format!("ConstExpr: {}", expr.to_string());
@@ -233,7 +231,7 @@ impl <'ctx>Codegen<'ctx> {
             }
             _ => {
               panic!("ConstExpr::to_string: not a constant opcode {:?}",
-                     inst.get_opcode().to_string());
+                     expr.get_opcode().to_string());
             }
           }
         }
@@ -356,11 +354,9 @@ impl <'ctx>Codegen<'ctx> {
     match gv.kind {
       VKindCode::ConstExpr => {
         let gv = gv.as_ref::<ConstExpr>(&self.module.context).unwrap();
-        let inst = gv.get_inst();
-        let inst = Reference::new(&self.module.context, inst);
-        match inst.get_opcode() {
+        match gv.get_opcode() {
           InstOpcode::GetElementPtr(_) => {
-            let ptr = inst.get_operand(0).unwrap();
+            let ptr = gv.get_operand(0).unwrap();
             let value = self.allocated_globals.get(&ptr.skey).unwrap();
             let mut res = value.to_le_bytes().to_vec();
             res.resize(self.module.tm.get_pointer_size_in_bits() / 8, 0);
@@ -370,7 +366,7 @@ impl <'ctx>Codegen<'ctx> {
             // let opcode = inst.get_opcode();
           }
           _ => {
-            panic!("ConstExpr::to_string: not a constant opcode {:?}", inst.get_opcode().to_string());
+            panic!("ConstExpr::to_string: not a constant opcode {:?}", gv.get_opcode().to_string());
           }
         }
       },
