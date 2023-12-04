@@ -1,8 +1,8 @@
-use trinity::ir::{
+use trinity::{ir::{
   module::Module, Instruction,
   value::instruction::{InstOpcode, InstMutator, Store, InstructionRef, Load},
   Block, TypeRef
-};
+}, context::WithSuperType};
 use crate::analysis::{
   topo::{analyze_topology, self, Node, ChildTraverse, LoopInfo, ChildIter, },
   dom_tree::DominatorTree

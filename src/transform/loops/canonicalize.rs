@@ -1,6 +1,11 @@
 use trinity::{
-  context::Context,
-  ir::{module::Module, value::instruction::{PhiNode, InstMutator, BranchInst}, ConstScalar, ValueRef, TKindCode, Instruction, Block}, builder::Builder, verify::verify 
+  context::{Context, WithSuperType},
+  ir::{
+    module::Module,
+    value::instruction::{PhiNode, InstMutator, BranchInst}, ConstScalar,
+    ValueRef, TKindCode, Instruction, Block
+  },
+  builder::Builder, verify::verify 
 };
 
 use crate::analysis::topo::{analyze_topology, ChildIter, Node, ChildTraverse};
@@ -28,7 +33,7 @@ fn loops_to_canonicalize(
                   let phi = ind_var.as_sub::<PhiNode>().unwrap();
                   for (idx, (block, init)) in phi.iter().enumerate() {
                     if block.get_skey() == prehead.get_skey() {
-                      if !is_const(block.ctx(), init, 0) {
+                      if !is_const(block.ctx(), &init, 0) {
                         let prehead = prehead.as_super();
                         let latch = li.get_latch().as_super();
                         let ind_var = ind_var.as_super();

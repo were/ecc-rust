@@ -10,7 +10,7 @@ use trinity::{
     },
     Block, Instruction, ValueRef, module::Module, Function
   },
-  context::Context
+  context::{Context, WithSuperType}
 };
 
 use super::reachable::Reachability;

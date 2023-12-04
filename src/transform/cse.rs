@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-use trinity::ir::{
-  module::Module, value::instruction::{InstMutator, InstOpcode}, Instruction, ValueRef
+use trinity::{
+  ir::{module::Module, value::instruction::{InstMutator, InstOpcode}, Instruction, ValueRef},
+  context::WithSuperType
 };
 
 use crate::analysis::dom_tree::DominatorTree;

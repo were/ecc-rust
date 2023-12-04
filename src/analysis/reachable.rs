@@ -1,6 +1,9 @@
 use std::collections::{HashSet, HashMap};
 
-use trinity::ir::{module::Module, value::block::BlockRef, Block};
+use trinity::{
+  ir::{module::Module, value::block::BlockRef, Block},
+  context::WithSuperType
+};
 
 pub struct Reachability {
   data: HashMap<usize, HashSet<usize>>,
