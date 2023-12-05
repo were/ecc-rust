@@ -10,9 +10,9 @@ use trinity::{
       },
       consts::ConstObject
     },
-    ValueRef, Instruction, ConstScalar, IntType, ConstExpr, ConstArray
+    ValueRef, Instruction, ConstScalar, IntType, ConstExpr, ConstArray, TKindCode, TypeRef
   },
-  context::WithSuperType,
+  context::{WithSuperType, Context},
   builder::Builder,
 };
 
@@ -82,7 +82,31 @@ fn add_sub_fuse(inst: &InstructionRef) -> Option<(InstOpcode, ValueRef, ValueRef
   None
 }
 
-fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef, ValueRef)> {
+enum Operand {
+  ValueRef(ValueRef),
+  ConstScalar((TypeRef, u64)),
+}
+
+impl Operand {
+
+  fn to_value_ref(self, ctx: &mut Context) -> ValueRef {
+    match self {
+      Operand::ValueRef(v) => v,
+      Operand::ConstScalar((ty, value)) => ctx.const_value(ty, value)
+    }
+  }
+
+}
+
+impl From<ValueRef> for Operand {
+
+  fn from(value: ValueRef) -> Self {
+    Operand::ValueRef(value)
+  }
+
+}
+
+fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, Operand, Operand)> {
   for func in module.func_iter() {
     for block in func.block_iter() {
       for inst in block.inst_iter() {
@@ -104,8 +128,8 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
                           //   operand_inst.to_string(false),
                           //   inst.to_string(false));
                           let opcode = InstOpcode::BinaryOp(BinaryOp::Sub);
-                          let lhs = inst.get_operand(1 - i).unwrap().clone();
-                          let rhs = operand_bin.rhs().clone();
+                          let lhs = inst.get_operand(1 - i).unwrap().clone().into();
+                          let rhs = operand_bin.rhs().clone().into();
                           return Some((inst.get_skey(), opcode, lhs, rhs));
                         }
                       }
@@ -117,7 +141,7 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
                 // eprintln!("[SIMP] Sub a value {}, can be fused into add: {}",
                 //   inst.to_string(false),
                 //   inst.to_string(false));
-                return Some((inst.get_skey(), op, a, b));
+                return Some((inst.get_skey(), op, a.into(), b.into()));
               }
             }
             // TODO(@were): Should have more principle way to do this.
@@ -126,7 +150,20 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
                 // eprintln!("[SIMP] Sub a value {}, can be fused into add: {}",
                 //   inst.to_string(false),
                 //   inst.to_string(false));
-                return Some((inst.get_skey(), op, a, b));
+                return Some((inst.get_skey(), op, a.into(), b.into()));
+              }
+            }
+            BinaryOp::Mul => {
+              let rhs = inst.get_operand(1).unwrap();
+              if let Some(rhs) = rhs.as_ref::<ConstScalar>(&inst.ctx()) {
+                if rhs.get_type().kind() == &TKindCode::IntType {
+                  if rhs.get_value().is_power_of_two() {
+                    let log2n = 64 - rhs.get_value().leading_zeros() - 1;
+                    let lhs = inst.get_operand(0).unwrap().into();
+                    let rhs = Operand::ConstScalar((inst.get_type().clone(), log2n as u64));
+                    return Some((inst.get_skey(), InstOpcode::BinaryOp(BinaryOp::Shl), lhs, rhs));
+                  }
+                }
               }
             }
             _ => {}
@@ -140,8 +177,8 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
             }
             if fv.get_value() == 0 {
               let opcode = InstOpcode::BinaryOp(BinaryOp::And);
-              let cond = select.get_condition().clone();
-              let tv = select.get_true_value().clone();
+              let cond = select.get_condition().clone().into();
+              let tv = select.get_true_value().clone().into();
               return Some((inst.get_skey(), opcode, cond, tv));
             }
           }
@@ -158,8 +195,8 @@ fn has_arith_to_simplify(module: &Module) -> Option<(usize, InstOpcode, ValueRef
               //   opcode.to_string(),
               //   select.get_condition().to_string(&module.context, true),
               //   select.get_false_value().to_string(&module.context, true));
-              let cond = select.get_condition().clone();
-              let value = select.get_false_value().clone();
+              let cond = select.get_condition().clone().into();
+              let value = select.get_false_value().clone().into();
               return Some((inst.get_skey(), opcode, cond, value));
             }
           }
@@ -179,6 +216,8 @@ pub fn simplify_arith(module: &mut Module) -> bool {
       // eprintln!("[SIMP] Before {}", inst.to_string(false));
       inst.get_num_operands()
     };
+    let a = a.to_value_ref(&mut module.context);
+    let b = b.to_value_ref(&mut module.context);
     let mut inst_mut = InstMutator::new(&mut module.context, &inst);
     inst_mut.set_operand(0, a);
     inst_mut.set_operand(1, b);
@@ -511,7 +550,47 @@ pub fn linearize_addsub(m: Module) -> (bool, Module) {
     builder.set_insert_before(to_linearize.clone());
     let ty = to_linearize.get_type(&builder.module.context);
     let mut carry : ValueRef = builder.context().const_value(ty.clone(), 0);
-    for (sub_value, coef) in lc.iter() {
+    let mut terms = lc.iter().map(|(k, v)| (k.clone(), *v)).collect::<Vec<_>>();
+    {
+      eprintln!("hoist co-coefficients!");
+      let mut iterative = true;
+      while iterative {
+        iterative = false;
+        'outer: for i in 0..terms.len() {
+          for j in (i+1)..terms.len() {
+            let a = &terms[i];
+            let b = &terms[j];
+            if a.1.abs() == b.1.abs() {
+              let si = a.1 > 0;
+              let sj = b.1 > 0;
+              let coef = a.1.abs();
+              if coef == 1 {
+                continue;
+              }
+              iterative = true;
+              let ty = a.0.get_type(&builder.module.context).clone();
+              let coef = builder.context().const_value(ty.clone(), coef as u64);
+              let (delta, op) = if si && sj {
+                (builder.create_add(a.0.clone(), b.0.clone()), BinaryOp::Add)
+              } else if !si && !sj {
+                (builder.create_add(a.0.clone(), b.0.clone()), BinaryOp::Sub)
+              } else if si && !sj {
+                (builder.create_sub(a.0.clone(), b.0.clone()), BinaryOp::Add)
+              } else /* if !si && sj */ {
+                (builder.create_sub(b.0.clone(), a.0.clone()), BinaryOp::Add)
+              };
+              let delta = builder.create_mul(delta, coef);
+              carry = builder.create_instruction(
+                ty, InstOpcode::BinaryOp(op), vec![carry, delta], "lc".to_string());
+              terms.remove(i);
+              terms.remove(j - 1);
+              break 'outer;
+            }
+          }
+        }
+      }
+    }
+    for (sub_value, coef) in terms.iter() {
       let opcode = if *coef > 0 {
         BinaryOp::Add
       } else {
@@ -521,7 +600,7 @@ pub fn linearize_addsub(m: Module) -> (bool, Module) {
         sub_value.clone()
       } else {
         let coef = builder.context().const_value(ty.clone(), coef.abs() as u64);
-        builder.create_mul(coef, sub_value.clone())
+        builder.create_mul(sub_value.clone(), coef)
       };
       // eprintln!("[LINEAR] term {}",
       //           term.as_ref::<Instruction>(&builder.module.context).unwrap().to_string(false));
