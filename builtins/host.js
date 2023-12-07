@@ -26,8 +26,8 @@ memory = null
 mem_u8view = null
 input_i8view = null
 
-memory_size = 65536 
-static_size = (1 << 10)
+memory_size = 65536
+static_size = (1 << 20)
 heap_size = static_size
 
 function __print_str__(array) {
@@ -55,7 +55,7 @@ function __malloc__(size) {
   }
   res = heap_size;
   heap_size += size;
-  // console.log('malloc', res, 'size', size);
+  console.log('malloc', res, 'size', size);
   return res
 }
 

@@ -285,13 +285,26 @@ fn has_trivial_inst(builder: &mut Builder) -> Option<(usize, ValueRef)> {
                 break 'func;
               }
               if let Some(lhs_bin) = binary.lhs().as_ref::<Instruction>(inst.ctx()) {
-                if let InstOpcode::BinaryOp(BinaryOp::Add) = lhs_bin.get_opcode() {
-                  for i in 0..2 {
-                    if lhs_bin.get_operand(i).unwrap().skey == binary.rhs().skey {
-                      // eprintln!("[SIMP] a + x - x = a: {}", inst.to_string(false));
-                      return Some((inst.get_skey(), lhs_bin.get_operand(1 - i).unwrap().clone()));
+                match lhs_bin.get_opcode() {
+                  InstOpcode::BinaryOp(BinaryOp::Add) => {
+                    for i in 0..2 {
+                      if lhs_bin.get_operand(i).unwrap().skey == binary.rhs().skey {
+                        // eprintln!("[SIMP] a + x - x = a: {}", inst.to_string(false));
+                        return Some((inst.get_skey(), lhs_bin.get_operand(1 - i).unwrap().clone()));
+                      }
                     }
                   }
+                  InstOpcode::BinaryOp(BinaryOp::Mul) => {
+                    if lhs_bin.get_operand(0).unwrap().skey == binary.rhs().skey {
+                      let coef = lhs_bin.get_operand(1).unwrap();
+                      if let Some(coef) = coef.as_ref::<ConstScalar>(lhs_bin.ctx()) {
+                        if coef.get_value() == 2 {
+                          return Some((inst.get_skey(), lhs_bin.get_operand(0).unwrap().clone()));
+                        }
+                      }
+                    }
+                  }
+                  _ => {}
                 }
               }
             }

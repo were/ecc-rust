@@ -23,7 +23,7 @@ cat $FILE | sed '1,/\[Metadata.stdout\]/d' | sed '/\[Metadata.end\]/,$d' | awk '
 echo "Input data and reference output extracted!"
 echo "Run the compiled binaries!"
 
-node $REPO/./builtins/host.js a.wasm --verbose < input > raw_output
+node --stack-size=1048576 $REPO/./builtins/host.js a.wasm --verbose < input > raw_output
 
 tail -n 2 raw_output
 

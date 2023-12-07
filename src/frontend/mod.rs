@@ -2,6 +2,8 @@ use std::rc::Rc;
 
 use trinity::ir::module::Module;
 
+use crate::compiler::CompilerFlags;
+
 use self::ast::Linkage;
 
 mod lexer;
@@ -12,13 +14,13 @@ mod visitor;
 mod sema;
 mod codegen;
 
-pub fn inject_builtins(ast: ast::TranslateUnit) -> Rc<Linkage> {
-  #[cfg(feature = "x86")]
-  let asm = include_str!("../../builtins/x86.ecc");
-  #[cfg(feature = "wasm")]
-  let asm = include_str!("../../builtins/wasm.ecc");
-  #[cfg(feature = "riscv")]
-  let asm = include_str!("../../builtins/riscv.ecc");
+pub fn inject_builtins(flags: &CompilerFlags, ast: ast::TranslateUnit) -> Rc<Linkage> {
+  let asm = match flags.target.as_str() {
+    "x86" => include_str!("../../builtins/x86.ecc"),
+    "wasm" => include_str!("../../builtins/wasm.ecc"),
+    "riscv" => include_str!("../../builtins/riscv.ecc"),
+    _ => ""
+  };
   let mut builtins = include_str!("../../builtins/builtin.ecc").to_string();
   builtins.push_str(asm);
   let mut tokenizer = lexer::Lexer::new(builtins);
@@ -28,11 +30,11 @@ pub fn inject_builtins(ast: ast::TranslateUnit) -> Rc<Linkage> {
   })
 }
 
-pub fn parse(fname: &String, src: String) -> Result<Rc<Linkage>, String> {
+pub fn parse(flags: &CompilerFlags, src: String) -> Result<Rc<Linkage>, String> {
   let mut tokenizer = lexer::Lexer::new(src);
-  match parser::parse_program(&mut tokenizer, fname.clone()) {
+  match parser::parse_program(&mut tokenizer, flags.fname.clone()) {
     Ok(ast) => {
-      return Ok(inject_builtins(ast));
+      return Ok(inject_builtins(flags, ast));
     }
     Err(msg) => {
       Err(msg)
@@ -59,10 +61,6 @@ pub fn semantic_check(ast: &Rc<Linkage>, print_ast: i32) -> Result<Rc<Linkage>, 
   }
 }
 
-pub fn codegen_llvm(ast: &Rc<Linkage>) -> Module {
-  #[cfg(feature = "wasm")]
-  let tt = "wasm32-unknown-emscripten";
-  #[cfg(feature = "wasm")]
-  let layout = "e-m:e-p:32:32";
-  codegen::codegen(ast, tt.to_string(), layout.to_string())
+pub fn codegen_llvm(flags: &CompilerFlags, ast: &Rc<Linkage>) -> Module {
+  codegen::codegen(ast, flags.target_triple(), flags.data_layout())
 }
