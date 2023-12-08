@@ -66,3 +66,23 @@ pub fn emcc_codegen(irname: &String, output: &String) {
     .expect("failed to execute process");
   assert!(assemble.status.success());
 }
+
+pub fn clang_codegen(irname: &String, output: &String) {
+  eprintln!("Output to: {}", output);
+  assert!(irname.ends_with(".ll"));
+  // emcc a.ll -c
+  if let Ok(linker) = std::process::Command::new("clang")
+    .arg("-mllvm")
+    .arg("--disable-loop-idiom-all")
+    .arg("-O3")
+    .arg("-c")
+    .arg("-o")
+    .arg(output)
+    .arg(irname)
+    .output() {
+    linker.stderr.iter().for_each(|x| eprint!("{}", *x as char));
+    assert!(linker.status.success());
+  } else {
+    panic!("do you have clang on your machine?");
+  }
+}

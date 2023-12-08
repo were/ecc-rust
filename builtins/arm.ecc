@@ -1,0 +1,9 @@
+func putchar(i8 ch) -> void;
+
+func malloc(i32 size) -> i8[];
+
+func print(string s) -> void {
+  for i in 0..s.length() {
+    putchar(s.data_[i]);
+  }
+}

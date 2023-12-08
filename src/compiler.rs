@@ -59,6 +59,7 @@ impl CompilerFlags {
   pub fn data_layout(&self) -> String {
     String::from(match self.target.as_str() {
       "wasm" => "e-m:e-p:32:32",
+      "apple-arm" => "e-m:o-i64:64-i128:128-n32:64-S128",
       _ => "",
     })
   }
@@ -66,6 +67,7 @@ impl CompilerFlags {
   pub fn target_triple(&self) -> String {
     String::from(match self.target.as_str() {
       "wasm" => "wasm32-unknown-emscripten",
+      "apple-arm" => "arm64-apple-macosx14.0.0",
       _ => "",
     })
   }
@@ -97,12 +99,21 @@ pub fn invoke(src: String, flags: &CompilerFlags) -> Result<(), String> {
   }
   let backend = &flags.backend;
   let output = &flags.output;
-  if backend.eq("emcc") {
-    backend::emcc_codegen(&irname, output);
-  } else if backend.eq("myown") {
-    backend::myown_codegen(&optimized, output);
-  } else {
-    panic!("Unknown backend: {}", backend);
+  match flags.target.as_str() {
+    "wasm" => {
+      match backend.as_str() {
+        "emcc" => backend::emcc_codegen(&irname, output),
+        "myown" => backend::myown_codegen(&optimized, output),
+        _ => panic!("Unknown backend: {}", backend)
+      }
+    }
+    "apple-arm" => {
+      match backend.as_str() {
+        "clang" => backend::clang_codegen(&irname, output),
+        _ => panic!("Unknown backend: {}", backend)
+      }
+    }
+    _ => panic!("Unknown target: {}", flags.target)
   }
   Ok(())
 }

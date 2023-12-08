@@ -19,6 +19,7 @@ pub fn inject_builtins(flags: &CompilerFlags, ast: ast::TranslateUnit) -> Rc<Lin
     "x86" => include_str!("../../builtins/x86.ecc"),
     "wasm" => include_str!("../../builtins/wasm.ecc"),
     "riscv" => include_str!("../../builtins/riscv.ecc"),
+    "apple-arm" => include_str!("../../builtins/arm.ecc"),
     _ => ""
   };
   let mut builtins = include_str!("../../builtins/builtin.ecc").to_string();
