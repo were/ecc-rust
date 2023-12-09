@@ -2,15 +2,15 @@ use trinity::ir::{module::Module, ValueRef, value::instruction::{Call, InstMutat
 
 use crate::analysis::lifetime::VarLifetime;
 
-
-fn has_lifetime_hint(module: &Module) -> Option<ValueRef> {
+fn has_lifetime_hint(module: &Module) -> Vec<ValueRef> {
+  let mut res = Vec::new();
   for func in module.func_iter() {
     for block in func.block_iter() {
       for inst in block.inst_iter() {
         if let Some(call) = inst.as_sub::<Call>() {
           match call.get_callee().get_name().as_str() {
             "llvm.lifetime.end" | "llvm.lifetime.start" => {
-              return Some(inst.as_super())
+              res.push(inst.as_super());
             }
             _ => {}
           }
@@ -18,13 +18,28 @@ fn has_lifetime_hint(module: &Module) -> Option<ValueRef> {
       }
     }
   }
-  None
+  return res;
 }
 
-pub fn remove_lifetime_hint(module: &mut Module) {
-  while let Some(to_remove) = has_lifetime_hint(module) {
+pub fn remove_lifetime_hint(module: &mut Module, remove_func_decl: bool) {
+  let hints = has_lifetime_hint(module);
+  for to_remove in hints.into_iter() {
     let mut inst = InstMutator::new(&mut module.context, &to_remove);
     inst.erase_from_parent();
+  }
+  if remove_func_decl {
+    let mut to_remove = Vec::new();
+    for func in module.func_iter() {
+      match func.get_name().as_str() {
+        "llvm.lifetime.end" | "llvm.lifetime.start" => {
+          to_remove.push(func.as_super());
+        }
+        _ => {}
+      }
+    }
+    for func in to_remove.into_iter() {
+      module.remove_func(func)
+    }
   }
 }
 

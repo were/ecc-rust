@@ -75,7 +75,6 @@ pub fn clang_codegen(irname: &String, output: &String) {
     .arg("-mllvm")
     .arg("--disable-loop-idiom-all")
     .arg("-O3")
-    .arg("-c")
     .arg("-o")
     .arg(output)
     .arg(irname)

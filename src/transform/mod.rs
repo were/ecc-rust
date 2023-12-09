@@ -25,7 +25,7 @@ pub fn optimize(mut module: Module, flags: &CompilerFlags) -> Module {
   let mut ssa = ssa::transform(module);
   merge_trivial_branches(&mut ssa);
   if opt_level == 2 {
-    lifetime::remove_lifetime_hint(&mut ssa);
+    lifetime::remove_lifetime_hint(&mut ssa, true);
     let (mut simplified_1, _) = simplify::transform(ssa, 1);
     loops::hoist::hoist_invariants(&mut simplified_1);
     let canonicalized = loops::canonicalize::transform(simplified_1);
