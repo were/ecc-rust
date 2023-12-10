@@ -1,0 +1,25 @@
+func putchar(i8 ch) -> void;
+
+func malloc(i32 size) -> i8[];
+
+func getchar() -> i8;
+
+func nextInt() -> i32 {
+  let i32 res = 0;
+  let i8 ch = getchar();
+  while ch < 48 || ch > 57 {
+    ch = getchar();
+  }
+  while ch >= 48 && ch <= 57 {
+    res = res * 10 + ((ch as i32) - 48);
+    ch = getchar();
+  }
+  return res;
+}
+
+func print(string s) -> void {
+  for i in 0..s.length() {
+    putchar(s.data_[i]);
+  }
+  return;
+}

@@ -40,6 +40,9 @@ fn gather_small_loops(iter: ChildIter, res: &mut Vec<FullyUnroll>) -> bool {
                   let latch = li.get_latch();
                   let latch = latch.as_super();
                   let n = const_scalar.get_value();
+                  if n == 0 || n == 1 {
+                    continue;
+                  }
                   let blocks = blocks.iter().rev().map(|x| x.as_super()).collect();
                   let prehead = li.get_prehead().as_super();
                   let head = li.get_head().as_super();

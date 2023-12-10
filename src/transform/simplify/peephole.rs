@@ -82,12 +82,21 @@ fn has_print_int(m: &Module) -> Option<(ValueRef, ValueRef, ValueRef, bool)> {
   None
 }
 
+fn get_function_by_name(m: &Module, name: &str) -> Option<ValueRef> {
+  let mut iter = m.func_iter().filter(|x| x.get_name() == name);
+  if let Some(func) = iter.next() {
+    Some(func.as_super())
+  } else {
+    None
+  }
+}
+
 fn rewrite_print_int(m: Module) -> Module {
-  let __print_int__ = m.func_iter()
-    .filter(|x| x.get_name() == "__print_int__")
-    .next()
-    .unwrap()
-    .as_super();
+  let __print_int__ = if let Some(func) = get_function_by_name(&m, "__print_int__") {
+    func
+  } else {
+    return m;
+  };
   let (print, newline) = {
     let raw = m.func_iter()
       .filter(|x| x.get_name() == "println")

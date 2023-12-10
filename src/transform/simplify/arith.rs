@@ -565,7 +565,6 @@ pub fn linearize_addsub(m: Module) -> (bool, Module) {
     let mut carry : ValueRef = builder.context().const_value(ty.clone(), 0);
     let mut terms = lc.iter().map(|(k, v)| (k.clone(), *v)).collect::<Vec<_>>();
     {
-      eprintln!("hoist co-coefficients!");
       let mut iterative = true;
       while iterative {
         iterative = false;

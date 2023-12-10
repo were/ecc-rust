@@ -55,7 +55,6 @@ function __malloc__(size) {
   }
   res = heap_size;
   heap_size += size;
-  console.log('malloc', res, 'size', size);
   return res
 }
 

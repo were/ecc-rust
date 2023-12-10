@@ -2,7 +2,7 @@ use trinity::ir::module::Module;
 
 use crate::compiler::CompilerFlags;
 
-use self::simplify::{cfg::merge_trivial_branches, arith::const_propagate};
+use self::simplify::{cfg::merge_trivial_branches, arith::const_propagate, trim};
 
 mod inline;
 mod mem;
@@ -25,7 +25,7 @@ pub fn optimize(mut module: Module, flags: &CompilerFlags) -> Module {
   let mut ssa = ssa::transform(module);
   merge_trivial_branches(&mut ssa);
   if opt_level == 2 {
-    lifetime::remove_lifetime_hint(&mut ssa);
+    lifetime::remove_lifetime_hint(&mut ssa, true);
     let (mut simplified_1, _) = simplify::transform(ssa, 1);
     loops::hoist::hoist_invariants(&mut simplified_1);
     let canonicalized = loops::canonicalize::transform(simplified_1);
@@ -40,7 +40,7 @@ pub fn optimize(mut module: Module, flags: &CompilerFlags) -> Module {
       }
     }
     let (mut simplified_2, _) = simplify::transform(res, 2);
-    simplified_2.remove_unused_functions();
+    trim::remove_uncalled_functions(&mut simplified_2);
     simplified_2
   } else {
     ssa
