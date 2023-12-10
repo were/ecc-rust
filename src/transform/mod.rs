@@ -2,7 +2,7 @@ use trinity::ir::module::Module;
 
 use crate::compiler::CompilerFlags;
 
-use self::simplify::{cfg::merge_trivial_branches, arith::const_propagate};
+use self::simplify::{cfg::merge_trivial_branches, arith::const_propagate, trim};
 
 mod inline;
 mod mem;
@@ -40,7 +40,7 @@ pub fn optimize(mut module: Module, flags: &CompilerFlags) -> Module {
       }
     }
     let (mut simplified_2, _) = simplify::transform(res, 2);
-    simplified_2.remove_unused_functions();
+    trim::remove_uncalled_functions(&mut simplified_2);
     simplified_2
   } else {
     ssa

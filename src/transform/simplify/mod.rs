@@ -1,6 +1,7 @@
 pub mod arith;
 pub mod cfg;
 pub mod peephole;
+pub mod trim;
 
 use trinity::{ir::module::Module, verify};
 
