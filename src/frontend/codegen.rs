@@ -749,7 +749,7 @@ impl CodeGen {
           self.tg.builder.create_store(payload, payload_ptr).unwrap();
         }
 
-        self.tg.builder.create_bitcast(obj, ty)
+        obj
       }
       ast::Expr::ArrayIndex(array_idx) => {
         let mut array_obj = self.generate_expr(&array_idx.array, false);
