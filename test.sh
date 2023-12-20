@@ -9,10 +9,8 @@ TARGET=$2
 FLAGS=${@:4}
 
 # Pass the flags to the compiler.
-$REPO/./target/debug/ecc $1 --target ${TARGET} --output a.out ${FLAGS} > compile.log 2>&1
-
 echo "Compiling $1 to ${TARGET}..."
-grep "IR dumped" compile.log
+$REPO/./target/debug/ecc $1 --target ${TARGET} --output a.out ${FLAGS} > compile.log 2>&1
 
 if [ $? -ne 0 ]; then
   echo Compilation failed!
@@ -21,6 +19,7 @@ fi
 
 echo $1 compiled to a.out!
 echo Compilation log dummped to \"compile.log\"!
+grep "IR dumped" compile.log
 
 # Extract the input data and reference output.
 cat $FILE | sed '1,/\[Metadata.stdin\]/d' | sed '/\[Metadata.end\]/,$d' | awk '{ print substr($0, 4) }' > input
