@@ -38,11 +38,6 @@ impl CGType {
     }
   }
 
-  pub(super) fn new_pointer(ty: TypeRef) -> CGType {
-    let raw = Box::new(ty.into());
-    CGType::Pointer(raw)
-  }
-
   pub(super) fn to_llvm(&self, ctx: &mut Context) -> TypeRef {
     match self {
       Self::Pointer(_) => {
@@ -127,7 +122,7 @@ impl TypeGen {
       ast::Type::Class(class) => {
         // NOTE: Here we generate a pointer type for class type
         let res = self.class_cache.get(&class.id.literal).unwrap();
-        return CGType::new_pointer(res.clone());
+        return CGType::Pointer(Box::new(res.clone().into()));
       }
       ast::Type::Builtin(builtin) => {
         let ty = self.builtin_to_llvm(builtin.as_ref());

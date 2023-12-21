@@ -143,8 +143,8 @@ impl CodeGen {
       if let ast::Decl::Func(func) = decl {
         let ret_ty = if func.id.literal == "malloc".to_string() {
           // If it is "malloc", return a raw pointer.
-          let i8ty = self.tg.builder.context().int_type(8);
-          self.tg.builder.context().pointer_type(i8ty)
+          let vty = self.tg.builder.context().void_type();
+          self.tg.builder.context().pointer_type(vty)
         } else {
           // If not, respect the compiler.
           let cgty = self.tg.type_to_llvm(&func.ty);
@@ -246,7 +246,7 @@ impl CodeGen {
     if let Some(expr) = init {
       self.tg.builder.create_store(expr, alloca.clone()).unwrap();
     }
-    self.pointer_cache.insert(alloca.skey, CGType::new_pointer(raw_ty));
+    self.pointer_cache.insert(alloca.skey, CGType::Pointer(ty.into()));
     self.cache_stack.insert(id.clone(), alloca.clone());
     alloca
   }
@@ -457,7 +457,7 @@ impl CodeGen {
         let len = value.value.len();
         let i32ty = self.tg.builder.context().int_type(32);
         let len = self.tg.builder.context().const_value(i32ty.clone(), len as u64);
-        let raw_ai8ty = ai8ty.get_pointee_ty().unwrap();
+        let raw_ai8ty = ai8ty.unwrap();
         let i8array_obj = self.tg.builder.create_global_struct(raw_ai8ty, vec![len, str_value]);
         let string_ty = self.tg.get_class(&"string".into()).unwrap();
         // let str_ptr = self.tg.builder.get_struct_field(i8array, 0).unwrap();
@@ -475,16 +475,25 @@ impl CodeGen {
           value
         } else {
           let ty = self.pointer_cache.get(&value.skey).unwrap().clone();
-          let ty = ty.get_pointee_ty().to_llvm(self.builder_mut().context());
+          let llvm_ty = ty.get_pointee_ty().to_llvm(self.builder_mut().context());
+          let kind = llvm_ty.kind().clone();
           // TODO(@were): Check if it is a pointer.
-          self.tg.builder.create_load(ty, value)
+          let res = self.tg.builder.create_load(llvm_ty, value);
+          if kind == TKindCode::PointerType {
+            self.pointer_cache.insert(res.skey, ty.get_pointee_ty());
+          }
+          res
         }
         // panic!("{} is not a pointer!", value.print_to_string().to_string());
       }
       ast::Expr::AttrAccess(aa) => {
         // "This" is expected to be a pointer to a struct.
-        let this = self.generate_expr(&aa.this, true);
-        let sty = self.pointer_cache.get(&this.skey).unwrap().get_pointee_ty().unwrap();
+        let this = self.generate_expr(&aa.this, false);
+        eprintln!("{}", aa.this);
+        let sty = self.pointer_cache.get(&this.skey).unwrap();
+        dbg!(sty.clone());
+        let sty = sty.get_pointee_ty().unwrap();
+        dbg!(sty.clone());
         assert!(sty.kind() == &TKindCode::StructType);
         // Get the pointer's underlying struct type.
         let res = self.get_struct_field(sty.clone(), this, aa.idx, "");
