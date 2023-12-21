@@ -1,7 +1,7 @@
 use std::{collections::HashMap, rc::Rc};
 
 use trinity::{
-  ir::{TypeRef, StructType, module::Module, TKindCode},
+  ir::{TypeRef, StructType, module::Module},
   builder::Builder,
   context::Context
 };
@@ -79,16 +79,6 @@ impl TypeGen {
       }
     }
 
-    // Initialize arrays.
-    {
-      let aty = builder.create_struct("__array__".into());
-      let i32ty = builder.context().int_type(32);
-      // TODO(@were): Make this pointer type-opaque.
-      let ptrty = builder.context().pointer_type(i32ty.clone());
-      aty.as_mut::<StructType>(builder.context()).unwrap().set_body(vec![i32ty, ptrty]);
-      class_cache.insert("__array__".into(), aty);
-    }
-
     let res = TypeGen {
       builder,
       class_cache,
@@ -128,39 +118,33 @@ impl TypeGen {
       ty.clone()
     } else {
       let sty = ty.as_ref::<StructType>(&self.builder.module.context).unwrap();
-      CGType::Type(sty.get_attr(i))
+      sty.get_attr(i).into()
     }
   }
 
-  pub(super) fn type_to_llvm(&mut self, ty: &ast::Type) -> TypeRef {
+  pub(super) fn type_to_llvm(&mut self, ty: &ast::Type) -> CGType {
     match ty {
       ast::Type::Class(class) => {
         // NOTE: Here we generate a pointer type for class type
         let res = self.class_cache.get(&class.id.literal).unwrap();
-        return res.clone();
+        return CGType::new_pointer(res.clone());
       }
       ast::Type::Builtin(builtin) => {
         let ty = self.builtin_to_llvm(builtin.as_ref());
-        ty
+        ty.into()
       }
       ast::Type::Array(array) => {
-        self.array_to_llvm(array)
+        return CGType::Pointer(self.array_to_llvm(array).into());
       }
     }
   }
 
   pub(super) fn class_to_struct(&mut self, class: &Rc<ast::ClassDecl>) {
-    let attrs = class.attrs.iter().map(
-      |attr| {
-        let ty = self.type_to_llvm(&attr.ty);
-        if &TKindCode::StructType == ty.kind() {
-          CGType::new_pointer(ty)
-        } else {
-          ty.into()
-        }
-      }).collect();
+    let attrs = class.attrs.iter().map(|attr| { self.type_to_llvm(&attr.ty) }).collect();
     let sty = self.class_cache.get(&class.id.literal).unwrap();
     self.struct_set_body(sty.clone(), attrs);
+    // let sty = self.class_cache.get(&class.id.literal).unwrap();
+    // eprintln!("{}", sty.as_ref::<StructType>(&self.builder.module.context).unwrap().to_string());
   }
 
   pub(super) fn builtin_to_llvm(&mut self, builtin : &ast::BuiltinType) -> TypeRef {
@@ -195,37 +179,44 @@ impl TypeGen {
     sty_mut.set_body(body);
   }
 
-  pub(super) fn array_to_llvm(&mut self, array: &ast::ArrayType) -> TypeRef {
+  pub(super) fn array_to_llvm(&mut self, array: &ast::ArrayType) -> CGType {
     let scalar_ty = self.type_to_llvm(&array.scalar_ty);
     self.generate_array_runtime(scalar_ty, array.dims.len())
   }
 
-  pub(super) fn generate_array_runtime(&mut self, scalar_ty: TypeRef, n: usize) -> TypeRef {
+  pub(super) fn generate_array_runtime(&mut self, scalar_ty: CGType, n: usize) -> CGType {
     let ty_name = Self::extract_type_name(&self.builder.module.context, &scalar_ty);
-    let mut pointee = scalar_ty.clone();
+    let mut pointee = CGType::Pointer(scalar_ty.into());
     for i in 0..n {
       let dim = n - i;
       let id = format!("__arrayof.{}.{}d__", ty_name, dim);
-      if let Some(ty) = self.class_cache.get(&id) {
-        pointee = ty.clone();
+      pointee = if let Some(ty) = self.class_cache.get(&id) {
+        ty.clone().into()
       } else {
         let aty = self.create_struct(id.clone());
         let i32ty = self.builder.context().int_type(32);
-        self.struct_set_body(aty, vec![
+        self.struct_set_body(aty.clone(), vec![
           CGType::Type(i32ty.clone()),
-          CGType::new_pointer(pointee.clone()),
+          pointee
         ]);
-      }
+        aty.into()
+      };
     }
     pointee
   }
 
-  pub(super) fn extract_type_name(ctx: &Context, ty: &TypeRef) -> String {
-    return ty
-      .to_string(ctx)
-      .chars()
-      .filter(|c| *c != ' ')
-      .collect::<_>()
+  pub(super) fn extract_type_name(ctx: &Context, ty: &CGType) -> String {
+    match ty {
+      CGType::Type(x) => {
+        x.to_string(ctx)
+        .chars()
+        .filter(|c| *c != ' ')
+        .collect::<_>()
+      }
+      CGType::Pointer(ty) => {
+        format!("ptr.{}", Self::extract_type_name(ctx, ty.as_ref()))
+      }
+    }
   }
 
 }
