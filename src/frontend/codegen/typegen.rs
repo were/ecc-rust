@@ -117,7 +117,7 @@ impl TypeGen {
     }
   }
 
-  pub(super) fn type_to_llvm(&mut self, ty: &ast::Type) -> CGType {
+  pub(super) fn generate_type(&mut self, ty: &ast::Type) -> CGType {
     match ty {
       ast::Type::Class(class) => {
         // NOTE: Here we generate a pointer type for class type
@@ -129,13 +129,13 @@ impl TypeGen {
         ty.into()
       }
       ast::Type::Array(array) => {
-        return CGType::Pointer(self.array_to_llvm(array).into());
+        return self.array_to_llvm(array).into();
       }
     }
   }
 
   pub(super) fn class_to_struct(&mut self, class: &Rc<ast::ClassDecl>) {
-    let attrs = class.attrs.iter().map(|attr| { self.type_to_llvm(&attr.ty) }).collect();
+    let attrs = class.attrs.iter().map(|attr| { self.generate_type(&attr.ty) }).collect();
     let sty = self.class_cache.get(&class.id.literal).unwrap();
     self.struct_set_body(sty.clone(), attrs);
     // let sty = self.class_cache.get(&class.id.literal).unwrap();
@@ -175,15 +175,15 @@ impl TypeGen {
   }
 
   pub(super) fn array_to_llvm(&mut self, array: &ast::ArrayType) -> CGType {
-    let scalar_ty = self.type_to_llvm(&array.scalar_ty);
+    let scalar_ty = self.generate_type(&array.scalar_ty);
     self.generate_array_runtime(scalar_ty, array.dims.len())
   }
 
   pub(super) fn generate_array_runtime(&mut self, scalar_ty: CGType, n: usize) -> CGType {
     let ty_name = Self::extract_type_name(&self.builder.module.context, &scalar_ty);
-    let mut pointee = CGType::Pointer(scalar_ty.into());
+    let mut pointee = scalar_ty;
     for i in 0..n {
-      let dim = n - i;
+      let dim = i + 1;
       let id = format!("__arrayof.{}.{}d__", ty_name, dim);
       pointee = if let Some(ty) = self.class_cache.get(&id) {
         ty.clone().into()
@@ -192,10 +192,11 @@ impl TypeGen {
         let i32ty = self.builder.context().int_type(32);
         self.struct_set_body(aty.clone(), vec![
           CGType::Type(i32ty.clone()),
-          pointee
+          CGType::Pointer(pointee.into())
         ]);
         aty.into()
       };
+      pointee = CGType::Pointer(pointee.into());
     }
     pointee
   }
