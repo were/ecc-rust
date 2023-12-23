@@ -173,37 +173,37 @@ fn test_e2e(#[case] fname: &str) {
     .spawn()
     .unwrap();
 }
-// 
-// /// This uses my own backend, all the cases are tested end-to-end.
-// #[rstest]
-// #[case("01-cse.ecc")]
-// #[case("02-bulgarian.ecc")]
-// #[case("03-inflate.ecc")]
-// #[case("04-hanoi.ecc")]
-// #[case("05-cnf-lp.ecc")]
-// #[case("06-cse1.ecc")]
-// #[case("07-superloop.ecc")]
-// #[case("08-heapsort.ecc")]
-// #[case("09-humble.ecc")]
-// #[case("10-uselessload.ecc")]
-// #[case("11-supergcd.ecc")]
-// fn test_pressure(#[case] fname: &str) {
-//   // Load the source file
-//   let (src, meta, obj_output) = load_source("../tests/performance/", &fname.to_string());
-//   // Emulate the flags
-//   let args = vec![
-//     "placeholder", obj_output.as_str(),
-//     "--backend", "myown",
-//     "--opt", "2",
-//     "--output", obj_output.as_str()
-//   ].iter().map(|x| x.to_string()).collect::<Vec<_>>();
-//   let flags = CompilerFlags::parse_flags(args);
-//   // Compile it
-//   invoke(src, &flags).unwrap();
-//   run_binary(&obj_output, &meta);
-//   // Compare the output
-//   std::process::Command::new("rm")
-//     .arg(obj_output)
-//     .spawn()
-//     .unwrap();
-// }
+
+/// This uses my own backend, all the cases are tested end-to-end.
+#[rstest]
+#[case("01-cse.ecc")]
+#[case("02-bulgarian.ecc")]
+#[case("03-inflate.ecc")]
+#[case("04-hanoi.ecc")]
+#[case("05-cnf-lp.ecc")]
+#[case("06-cse1.ecc")]
+#[case("07-superloop.ecc")]
+#[case("08-heapsort.ecc")]
+#[case("09-humble.ecc")]
+#[case("10-uselessload.ecc")]
+#[case("11-supergcd.ecc")]
+fn test_pressure(#[case] fname: &str) {
+  // Load the source file
+  let (src, meta, obj_output) = load_source("../tests/performance/", &fname.to_string());
+  // Emulate the flags
+  let args = vec![
+    "placeholder", obj_output.as_str(),
+    "--backend", "myown",
+    "--opt", "2",
+    "--output", obj_output.as_str()
+  ].iter().map(|x| x.to_string()).collect::<Vec<_>>();
+  let flags = CompilerFlags::parse_flags(args);
+  // Compile it
+  invoke(src, &flags).unwrap();
+  run_binary(&obj_output, &meta);
+  // Compare the output
+  std::process::Command::new("rm")
+    .arg(obj_output)
+    .spawn()
+    .unwrap();
+}
