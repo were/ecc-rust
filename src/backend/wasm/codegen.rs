@@ -11,7 +11,7 @@ use trinity::ir::{
     consts::ConstObject
   },
   VoidType, Argument, Instruction, ValueRef, ConstScalar, VKindCode,
-  ConstArray, StructType, ConstExpr, PointerType
+  ConstArray, StructType, ConstExpr
 };
 
 use crate::analysis::topo::{analyze_topology, Node, ChildTraverse, FuncTopoInfo};
@@ -381,8 +381,7 @@ impl <'ctx>Codegen<'ctx> {
       }
       VKindCode::ConstObject => {
         let co = gv.as_ref::<ConstObject>(&self.module.context).unwrap();
-        let ptr_ty = co.get_type().as_ref::<PointerType>(&self.module.context).unwrap();
-        let sty = ptr_ty.get_pointee_ty().as_ref::<StructType>(&self.module.context).unwrap();
+        let sty = co.get_value_type().as_ref::<StructType>(&self.module.context).unwrap();
         let mut res = vec![];
         co.get_value().iter().enumerate().for_each(|(i, x)| {
           let n = sty.get_offset_in_bytes(&self.module, i);
@@ -422,23 +421,27 @@ impl <'ctx>Codegen<'ctx> {
     let module = self.module;
     for i in 0..module.get_num_gvs() {
       let gv = module.get_gv(i);
+      let ty = if let Some(array) = gv.as_ref::<ConstArray>(&module.context) {
+        array.get_scalar_type().clone()
+      } else if let Some(co) = gv.as_ref::<ConstObject>(&module.context) {
+        co.get_value_type().clone()
+      } else {
+        panic!("Not a global value type");
+      };
       {
         let offset = &mut self.global_offset;
-        let rem = *offset % (gv.get_type(&module.context).get_align_in_bits(&module) / 8);
+        let rem = *offset % (ty.get_align_in_bits(&module) / 8);
         if rem != 0 {
-          *offset += gv.get_type(&module.context).get_align_in_bits(&module) / 8 - rem;
+          *offset += ty.get_align_in_bits(&module) / 8 - rem;
         }
-        dbg!("alloc", gv.skey, *offset);
         self.allocated_globals.insert(gv.skey, *offset);
       }
       let buffer = self.to_linear_buffer(&gv);
       self.global_buffer.push(buffer);
       {
         let offset = &mut self.global_offset;
-        let ty = gv.get_type(&module.context);
-        let ty = ty.as_ref::<PointerType>(&module.context).unwrap();
         // eprintln!("ty: {}", ty.get_pointee_ty().to_string(&module.context));
-        *offset += ty.get_pointee_ty().get_scalar_size_in_bits(&module) / 8;
+        *offset += ty.get_scalar_size_in_bits(&module) / 8;
         // eprintln!("Global {}'s size is: {} byte(s)", i, ty.get_pointee_ty().get_scalar_size_in_bits(&module) / 8)
       }
     }
