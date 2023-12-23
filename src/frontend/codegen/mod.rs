@@ -10,7 +10,7 @@ use trinity::ir::{
     instruction::{InstOpcode, Alloca, BranchMetadata}
   },
   types::TypeRef,
-  Block, Instruction, module::Module, TKindCode, StructType,
+  Block, Instruction, module::Module, TKindCode,
 };
 use trinity::builder::Builder;
 use self::typegen::{TypeGen, CGType};
@@ -488,11 +488,8 @@ impl CodeGen {
       ast::Expr::AttrAccess(aa) => {
         // "This" is expected to be a pointer to a struct.
         let this = self.generate_expr(&aa.this, false);
-        eprintln!("{}", aa.this);
         let sty = self.pointer_cache.get(&this.skey).unwrap();
-        dbg!(sty.clone());
         let sty = sty.get_pointee_ty().unwrap();
-        dbg!(sty.clone());
         assert!(sty.kind() == &TKindCode::StructType);
         // Get the pointer's underlying struct type.
         let res = self.get_struct_field(sty.clone(), this, aa.idx, "");
@@ -671,8 +668,6 @@ impl CodeGen {
       }
       ast::Expr::ArrayIndex(array_idx) => {
         let mut array_obj = self.generate_expr(&array_idx.array, false);
-        eprintln!("array: {}", array_idx.array);
-        eprintln!("array obj: {}", array_obj.to_string(&self.tg.builder.module.context, true));
         let indices = array_idx
           .indices
           .iter()
@@ -686,11 +681,8 @@ impl CodeGen {
           // array_struct = struct { length=i32, payload=ptr }
           // ptr is the pointer to the array, and the type is scalar_ty*.
           let array_struct = carried_ty.get_pointee_ty().unwrap();
-          dbg!(array_struct.as_ref::<StructType>(&self.tg.builder.module.context).unwrap().to_string());
           let field_ty = self.tg.get_struct_field(array_struct.clone(), 1); // scalar*
-          dbg!(field_ty.clone());
           let scalar_ty = field_ty.get_pointee_ty(); // scalar
-          dbg!(scalar_ty.clone());
           // array_struct.payload is scalar_ty*, but the GEP instruction returns
           // scalar_ty** for further load this field.
           let payload_ptr = self.get_struct_field(array_struct, array_obj, 1, "array.payload");
@@ -716,7 +708,6 @@ impl CodeGen {
           // If we have further indices, we need to use it as a right-value.
           // Dereference the address.
           if i != indices.len() - 1 {
-            dbg!(scalar_ty.clone());
             let llvm_ty = scalar_ty.to_llvm(self.builder_mut().context());
             array_obj = self.tg.builder.create_load(llvm_ty, array_obj);
             if let CGType::Pointer(ty) = &scalar_ty {
