@@ -359,6 +359,12 @@ impl Visitor for SymbolResolver {
               }
               panic!("{} not founded", attr);
             }
+            for elem in self.scopes.scopes.iter() {
+              for (k, _) in elem.symbols.iter() {
+                eprintln!("{}", k);
+              }
+              eprintln!("===========");
+            }
             panic!("Expect {} to be a class, but {}", lhs, lhs.dtype(&self.scopes));
           }
           Expr::FuncCall(call) => {

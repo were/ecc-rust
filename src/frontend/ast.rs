@@ -303,7 +303,19 @@ impl Expr {
       Expr::AttrAccess(access) => {
         if let Type::Class(x) = access.this.dtype(symbols) {
           if let Some(class) = &x.class {
-            class.attrs[access.idx as usize].ty.clone()
+            // TODO(@were): We should have a more fundamental way to fix this.
+            let res = class.attrs[access.idx as usize].ty.clone();
+            if let Type::Builtin(unwrap) = &res {
+              if unwrap.as_ref().code == BuiltinTypeCode::Unknown {
+                if let Some(WithID::Class(c)) = symbols.find(&unwrap.token.literal) {
+                  return Type::Class(Rc::new(ClassRef {
+                    id: unwrap.token.clone(),
+                    class: Some(c.clone())
+                  }))
+                }
+              }
+            }
+            res
           } else {
             Type::Builtin(Rc::new(BuiltinType {
               token: access.attr.clone(),

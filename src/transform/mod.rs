@@ -24,26 +24,29 @@ pub fn optimize(mut module: Module, flags: &CompilerFlags) -> Module {
   lifetime::remove_unpaired_lifetime(&mut module);
   let mut ssa = ssa::transform(module);
   merge_trivial_branches(&mut ssa);
-  if opt_level == 2 {
-    lifetime::remove_lifetime_hint(&mut ssa, true);
-    let (mut simplified_1, _) = simplify::transform(ssa, 1);
-    loops::hoist::hoist_invariants(&mut simplified_1);
-    let canonicalized = loops::canonicalize::transform(simplified_1);
-    let mut res = canonicalized;
-    loop {
-      let (inlined_ir, inline_modified) = inline::transform(res, flags);
-      let (unrolled_ir, unroll_modified) = loops::unroll::unroll_small_loops(inlined_ir, flags);
-      let (simplified_ir, simplify_modified) = simplify::transform(unrolled_ir, 1);
-      res = simplified_ir;
-      if !inline_modified && !unroll_modified && !simplify_modified {
-        break;
-      }
-    }
-    let (mut simplified_2, _) = simplify::transform(res, 2);
-    trim::remove_uncalled_functions(&mut simplified_2);
-    simplified_2
-  } else {
-    ssa
+  if opt_level == 1 {
+    return ssa;
   }
+  lifetime::remove_lifetime_hint(&mut ssa, true);
+  let (mut simplified_1, _) = simplify::transform(ssa, 1);
+  loops::hoist::hoist_invariants(&mut simplified_1);
+  if opt_level == 2 {
+    return simplified_1;
+  }
+  // Optimization level 3
+  let canonicalized = loops::canonicalize::transform(simplified_1);
+  let mut res = canonicalized;
+  loop {
+    let (inlined_ir, inline_modified) = inline::transform(res, flags);
+    let (unrolled_ir, unroll_modified) = loops::unroll::unroll_small_loops(inlined_ir, flags);
+    let (simplified_ir, simplify_modified) = simplify::transform(unrolled_ir, 1);
+    res = simplified_ir;
+    if !inline_modified && !unroll_modified && !simplify_modified {
+      break;
+    }
+  }
+  let (mut simplified_2, _) = simplify::transform(res, 2);
+  trim::remove_uncalled_functions(&mut simplified_2);
+  simplified_2
 }
 

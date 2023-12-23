@@ -13,7 +13,9 @@ pub fn transform(mut module: Module, level: usize) -> (Module, bool) {
   while iterative {
     iterative = false;
     module = cse::transform(module);
-    module = peephole::transform(module);
+    if level == 3 {
+      module = peephole::transform(module);
+    }
     let removed = arith::remove_trivial_inst(module);
     (iterative, module) = (iterative | removed.0, removed.1);
     iterative |= cfg::merge_trivial_branches(&mut module);

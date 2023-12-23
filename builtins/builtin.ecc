@@ -19,19 +19,28 @@ func toString(i32 x) -> string {
   if cnt == 0 {
     cnt = 1;
   }
-  let string res = new string;
   let i32 length = cnt + neg;
-  res.data_ = new i8[length];
+  let i8[] buffer = new i8[length];
+  __print_int__(buffer.length());
+  println("");
   if neg == 1 {
-    res.data_[0] = 45 as i8;
+    buffer[0] = 45 as i8;
     x = 0 - x;
   }
   for i in 0..cnt {
     let i32 value = (x % 10 + 48);
     let i32 idx = neg + cnt - 1 - i;
-    res.data_[idx] = value as i8;
+    buffer[idx] = value as i8;
     x = x / 10;
   }
+  __print_int__(buffer.length());
+  println("");
+  let string res = new string;
+  res.data_ = buffer;
+  __print_int__(res.length());
+  println("");
+  __print_int__(buffer.length());
+  println("");
   return res;
 }
 
