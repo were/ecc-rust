@@ -41,8 +41,7 @@ impl CGType {
   pub(super) fn to_llvm(&self, ctx: &mut Context) -> TypeRef {
     match self {
       Self::Pointer(_) => {
-        let vty = ctx.void_type();
-        ctx.pointer_type(vty)
+        ctx.pointer_type()
       }
       Self::Type(ty) => {
         ty.clone()
@@ -159,8 +158,7 @@ impl TypeGen {
   }
 
   fn struct_set_body(&mut self, sty: TypeRef, fields: Vec<CGType>) {
-    let vty = self.builder.context().void_type();
-    let ptr = self.builder.context().pointer_type(vty);
+    let ptr = self.builder.context().pointer_type();
     let body = fields.into_iter().enumerate().map(|(i, attr)| {
       match attr {
         CGType::Pointer(_) => {

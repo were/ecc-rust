@@ -120,7 +120,7 @@ impl CodeGen {
     assert_eq!(ast.tus.len(), 2);
     self.cache_stack.push();
     let void_ty = self.tg.builder.context().void_type();
-    let ptr_ty = self.tg.builder.context().pointer_type(void_ty.clone());
+    let ptr_ty = self.tg.builder.context().pointer_type();
     let i64_ty = self.tg.builder.context().int_type(64);
     let fty = self.tg.builder.context().function_type(void_ty, vec![i64_ty, ptr_ty]);
     {
@@ -143,8 +143,7 @@ impl CodeGen {
       if let ast::Decl::Func(func) = decl {
         let ret_ty = if func.id.literal == "malloc".to_string() {
           // If it is "malloc", return a raw pointer.
-          let vty = self.tg.builder.context().void_type();
-          self.tg.builder.context().pointer_type(vty)
+          self.tg.builder.context().pointer_type()
         } else {
           // If not, respect the compiler.
           let cgty = self.tg.generate_type(&func.ty);
@@ -700,8 +699,7 @@ impl CodeGen {
           // i.e. the ``pointer_cache'' HashMap.
           self.pointer_cache.insert(payload_ptr.skey, CGType::Pointer(field_ty.clone().into()));
           // TODO(@were): Deprecate this later. We no longer care about the pointee type.
-          let vty = self.tg.builder.context().void_type();
-          let pty = self.tg.builder.context().pointer_type(vty);
+          let pty = self.tg.builder.context().pointer_type();
           // Load scalar_ty* from scalar_ty**, but it is still a pointer type.
           let payload = self.tg.builder.create_load(pty, payload_ptr);
           // Record this load is scalar_ty* in our data structure.
