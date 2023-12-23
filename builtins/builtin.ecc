@@ -21,8 +21,6 @@ func toString(i32 x) -> string {
   }
   let i32 length = cnt + neg;
   let i8[] buffer = new i8[length];
-  __print_int__(buffer.length());
-  println("");
   if neg == 1 {
     buffer[0] = 45 as i8;
     x = 0 - x;
@@ -33,14 +31,8 @@ func toString(i32 x) -> string {
     buffer[idx] = value as i8;
     x = x / 10;
   }
-  __print_int__(buffer.length());
-  println("");
   let string res = new string;
   res.data_ = buffer;
-  __print_int__(res.length());
-  println("");
-  __print_int__(buffer.length());
-  println("");
   return res;
 }
 

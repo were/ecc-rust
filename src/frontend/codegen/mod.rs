@@ -628,7 +628,10 @@ impl CodeGen {
         let malloc = self.cache_stack.get(&"malloc".to_string()).unwrap().clone();
         let i32ty = self.tg.builder.context().int_type(32);
         let ty = self.tg.generate_type(&ne.dtype);
-        let size = {
+        let size = if let CGType::Pointer(pointee) = &ty {
+          let ty = pointee.unwrap();
+          ty.get_scalar_size_in_bits(&self.tg.builder.module) / 8
+        } else {
           let ty = ty.to_llvm(self.builder_mut().context());
           ty.get_scalar_size_in_bits(&self.tg.builder.module) / 8
         };
