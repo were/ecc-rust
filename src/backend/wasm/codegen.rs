@@ -389,13 +389,22 @@ impl <'ctx>Codegen<'ctx> {
           while res.len() < n {
             res.push(0);
           }
-          if let Some(obj_init) = x.as_ref::<ConstObject>(&self.module.context) {
-            let value = self.allocated_globals.get(&obj_init.get_skey()).unwrap();
-            res.extend(value.to_le_bytes().to_vec());
+          if x.kind == VKindCode::ConstObject || x.kind == VKindCode::ConstArray {
+            let value = self.allocated_globals.get(&x.skey).unwrap();
+            let init = value.to_le_bytes().to_vec();
+            res.extend((0..4).map(|x| init[x]).collect::<Vec<_>>());
           } else {
-            res.extend(self.to_linear_buffer(x))
+            let init = self.to_linear_buffer(x);
+            res.extend(init);
           }
         });
+        let struct_size = sty.as_super().get_scalar_size_in_bits(self.module) / 8;
+        while res.len() < struct_size {
+          res.push(0);
+        }
+        dbg!(sty.to_string());
+        dbg!(co.to_string());
+        assert_eq!(struct_size, res.len());
         res
       }
       VKindCode::ConstScalar => {
@@ -418,6 +427,7 @@ impl <'ctx>Codegen<'ctx> {
         if rem != 0 {
           *offset += gv.get_type(&module.context).get_align_in_bits(&module) / 8 - rem;
         }
+        dbg!("alloc", gv.skey, *offset);
         self.allocated_globals.insert(gv.skey, *offset);
       }
       let buffer = self.to_linear_buffer(&gv);
