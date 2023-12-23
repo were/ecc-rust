@@ -3,8 +3,8 @@ use std::collections::{HashSet, HashMap};
 use trinity::{
   ir::{
     module::Module, Block,
-    value::instruction::{Store, InstOpcode, Load, InstructionRef, InstMutator},
-    Instruction, ValueRef, VKindCode, PointerType
+    value::instruction::{Store, InstOpcode, Load, InstructionRef, InstMutator, Alloca},
+    Instruction, ValueRef, VKindCode
   },
   context::{Context, WithSuperType},
   builder::Builder
@@ -149,9 +149,11 @@ fn inject_phis(module: Module, dt: &DominatorTree, vlt: &VarLifetime) -> (Module
     for (block_skey, alloc_skey) in to_inject.iter() {
       let block = Block::from_skey(*block_skey);
       let alloc = Instruction::from_skey(*alloc_skey);
-      let ptr_ty = alloc.get_type(&builder.module.context);
-      let ptr_ty = ptr_ty.as_ref::<PointerType>(&builder.module.context).unwrap();
-      let ty = ptr_ty.get_pointee_ty();
+      let ty = {
+        let alloc = alloc.as_ref::<Instruction>(&builder.module.context).unwrap();
+        let alloc = alloc.as_sub::<Alloca>().unwrap();
+        alloc.get_pointee_ty()
+      };
       let comment = alloc.to_string(&builder.module.context, true);
       builder.set_current_block(block.clone());
       let block = block.as_ref::<Block>(&builder.module.context).unwrap();

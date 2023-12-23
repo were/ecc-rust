@@ -6,12 +6,12 @@ use trinity::ir::{
     function::FunctionRef,
     instruction::{
       InstOpcode, BranchInst, Return, Call, CompareInst, CmpPred, SubInst,
-      CastOp, BinaryOp, Store, CastInst, Load
+      CastOp, BinaryOp, Store, CastInst, Load, GetElementPtr
     },
     consts::ConstObject
   },
   VoidType, Argument, Instruction, ValueRef, ConstScalar, VKindCode,
-  ConstArray, StructType, ConstExpr, PointerType
+  ConstArray, StructType, ConstExpr
 };
 
 use crate::analysis::topo::{analyze_topology, Node, ChildTraverse, FuncTopoInfo};
@@ -123,19 +123,20 @@ impl <'ctx>Codegen<'ctx> {
           vec![WASMInst::local_get(inst.get_skey(), namify(&inst.get_name()))]
         }
         InstOpcode::GetElementPtr(_) => {
+          let gep = inst.as_sub::<GetElementPtr>().unwrap();
           let array_ptr = inst.get_operand(0).unwrap();
           let mut array = self.emit_value(&array_ptr, false).remove(0);
           array.comment = "array".to_string();
           let operand_idx = inst.get_operand(1).unwrap();
           let idx = self.emit_value(&operand_idx, false).remove(0);
-          let ptr_ty = array_ptr.get_type(&self.module.context).as_ref::<PointerType>(&self.module.context).unwrap();
-          let scalar_size = ptr_ty.get_pointee_ty().get_scalar_size_in_bits(self.module) / 8; // bits / 8 to get byte size
+          let pointee_ty = gep.get_pointee_ty();
+          let scalar_size = pointee_ty.get_scalar_size_in_bits(self.module) / 8; // bits / 8 to get byte size
           let mut scalar_size = WASMInst::iconst(value.skey, scalar_size as u64);
-          scalar_size.comment = format!("scalar size of {}", ptr_ty.get_pointee_ty().to_string(&self.module.context));
+          scalar_size.comment = format!("scalar size of {}", pointee_ty.to_string(&self.module.context));
           let mut idx = WASMInst::binop(value.skey, &BinaryOp::Mul, idx, scalar_size);
           idx.comment = format!("idx: {}", operand_idx.to_string(&self.module.context, true));
           let mut addr = WASMInst::binop(value.skey, &BinaryOp::Add, array, idx);
-          if let Some(sty) = ptr_ty.get_pointee_ty().as_ref::<StructType>(&self.module.context) {
+          if let Some(sty) = pointee_ty.as_ref::<StructType>(&self.module.context) {
             if let Some(offset) = inst.get_operand(2) {
               let ci = offset.as_ref::<ConstScalar>(&self.module.context).unwrap();
               let offset = sty.get_offset_in_bytes(&self.module, ci.get_value() as usize);
@@ -380,8 +381,7 @@ impl <'ctx>Codegen<'ctx> {
       }
       VKindCode::ConstObject => {
         let co = gv.as_ref::<ConstObject>(&self.module.context).unwrap();
-        let ptr_ty = co.get_type().as_ref::<PointerType>(&self.module.context).unwrap();
-        let sty = ptr_ty.get_pointee_ty().as_ref::<StructType>(&self.module.context).unwrap();
+        let sty = co.get_value_type().as_ref::<StructType>(&self.module.context).unwrap();
         let mut res = vec![];
         co.get_value().iter().enumerate().for_each(|(i, x)| {
           let n = sty.get_offset_in_bytes(&self.module, i);
@@ -389,13 +389,22 @@ impl <'ctx>Codegen<'ctx> {
           while res.len() < n {
             res.push(0);
           }
-          if let Some(obj_init) = x.as_ref::<ConstObject>(&self.module.context) {
-            let value = self.allocated_globals.get(&obj_init.get_skey()).unwrap();
-            res.extend(value.to_le_bytes().to_vec());
+          if x.kind == VKindCode::ConstObject || x.kind == VKindCode::ConstArray {
+            let value = self.allocated_globals.get(&x.skey).unwrap();
+            let init = value.to_le_bytes().to_vec();
+            res.extend((0..4).map(|x| init[x]).collect::<Vec<_>>());
           } else {
-            res.extend(self.to_linear_buffer(x))
+            let init = self.to_linear_buffer(x);
+            res.extend(init);
           }
         });
+        let struct_size = sty.as_super().get_scalar_size_in_bits(self.module) / 8;
+        while res.len() < struct_size {
+          res.push(0);
+        }
+        dbg!(sty.to_string());
+        dbg!(co.to_string());
+        assert_eq!(struct_size, res.len());
         res
       }
       VKindCode::ConstScalar => {
@@ -412,11 +421,18 @@ impl <'ctx>Codegen<'ctx> {
     let module = self.module;
     for i in 0..module.get_num_gvs() {
       let gv = module.get_gv(i);
+      let ty = if let Some(array) = gv.as_ref::<ConstArray>(&module.context) {
+        array.get_scalar_type().clone()
+      } else if let Some(co) = gv.as_ref::<ConstObject>(&module.context) {
+        co.get_value_type().clone()
+      } else {
+        panic!("Not a global value type");
+      };
       {
         let offset = &mut self.global_offset;
-        let rem = *offset % (gv.get_type(&module.context).get_align_in_bits(&module) / 8);
+        let rem = *offset % (ty.get_align_in_bits(&module) / 8);
         if rem != 0 {
-          *offset += gv.get_type(&module.context).get_align_in_bits(&module) / 8 - rem;
+          *offset += ty.get_align_in_bits(&module) / 8 - rem;
         }
         self.allocated_globals.insert(gv.skey, *offset);
       }
@@ -424,10 +440,8 @@ impl <'ctx>Codegen<'ctx> {
       self.global_buffer.push(buffer);
       {
         let offset = &mut self.global_offset;
-        let ty = gv.get_type(&module.context);
-        let ty = ty.as_ref::<PointerType>(&module.context).unwrap();
         // eprintln!("ty: {}", ty.get_pointee_ty().to_string(&module.context));
-        *offset += ty.get_pointee_ty().get_scalar_size_in_bits(&module) / 8;
+        *offset += ty.get_scalar_size_in_bits(&module) / 8;
         // eprintln!("Global {}'s size is: {} byte(s)", i, ty.get_pointee_ty().get_scalar_size_in_bits(&module) / 8)
       }
     }

@@ -39,7 +39,7 @@ fn has_conditional_add(m: &Module) -> Option<(TypeRef, ValueRef, ValueRef, Value
   None
 }
 
-fn rewrite_conditional_add(m: Module) -> Module {
+pub fn rewrite_conditional_add(m: Module) -> Module {
   let mut builder = Builder::new(m);
   while let Some((ty, orig, cond, coef, value)) = has_conditional_add(&builder.module) {
     // let inst = orig.as_ref::<Instruction>(&builder.module.context).unwrap();
@@ -91,7 +91,7 @@ fn get_function_by_name(m: &Module, name: &str) -> Option<ValueRef> {
   }
 }
 
-fn rewrite_print_int(m: Module) -> Module {
+pub fn rewrite_print_int(m: Module) -> Module {
   let __print_int__ = if let Some(func) = get_function_by_name(&m, "__print_int__") {
     func
   } else {
@@ -145,11 +145,5 @@ fn rewrite_print_int(m: Module) -> Module {
     mutator.erase_from_parent();
   }
   builder.module
-}
-
-pub fn transform(m: Module) -> Module {
-  let m0 = rewrite_print_int(m);
-  let m1 = rewrite_conditional_add(m0);
-  m1
 }
 
