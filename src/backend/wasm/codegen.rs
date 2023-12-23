@@ -6,7 +6,7 @@ use trinity::ir::{
     function::FunctionRef,
     instruction::{
       InstOpcode, BranchInst, Return, Call, CompareInst, CmpPred, SubInst,
-      CastOp, BinaryOp, Store, CastInst, Load
+      CastOp, BinaryOp, Store, CastInst, Load, GetElementPtr
     },
     consts::ConstObject
   },
@@ -123,19 +123,20 @@ impl <'ctx>Codegen<'ctx> {
           vec![WASMInst::local_get(inst.get_skey(), namify(&inst.get_name()))]
         }
         InstOpcode::GetElementPtr(_) => {
+          let gep = inst.as_sub::<GetElementPtr>().unwrap();
           let array_ptr = inst.get_operand(0).unwrap();
           let mut array = self.emit_value(&array_ptr, false).remove(0);
           array.comment = "array".to_string();
           let operand_idx = inst.get_operand(1).unwrap();
           let idx = self.emit_value(&operand_idx, false).remove(0);
-          let ptr_ty = array_ptr.get_type(&self.module.context).as_ref::<PointerType>(&self.module.context).unwrap();
-          let scalar_size = ptr_ty.get_pointee_ty().get_scalar_size_in_bits(self.module) / 8; // bits / 8 to get byte size
+          let pointee_ty = gep.get_pointee_ty();
+          let scalar_size = pointee_ty.get_scalar_size_in_bits(self.module) / 8; // bits / 8 to get byte size
           let mut scalar_size = WASMInst::iconst(value.skey, scalar_size as u64);
-          scalar_size.comment = format!("scalar size of {}", ptr_ty.get_pointee_ty().to_string(&self.module.context));
+          scalar_size.comment = format!("scalar size of {}", pointee_ty.to_string(&self.module.context));
           let mut idx = WASMInst::binop(value.skey, &BinaryOp::Mul, idx, scalar_size);
           idx.comment = format!("idx: {}", operand_idx.to_string(&self.module.context, true));
           let mut addr = WASMInst::binop(value.skey, &BinaryOp::Add, array, idx);
-          if let Some(sty) = ptr_ty.get_pointee_ty().as_ref::<StructType>(&self.module.context) {
+          if let Some(sty) = pointee_ty.as_ref::<StructType>(&self.module.context) {
             if let Some(offset) = inst.get_operand(2) {
               let ci = offset.as_ref::<ConstScalar>(&self.module.context).unwrap();
               let offset = sty.get_offset_in_bytes(&self.module, ci.get_value() as usize);

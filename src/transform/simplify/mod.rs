@@ -13,9 +13,7 @@ pub fn transform(mut module: Module, level: usize) -> (Module, bool) {
   while iterative {
     iterative = false;
     module = cse::transform(module);
-    if level == 3 {
-      module = peephole::transform(module);
-    }
+    module = peephole::rewrite_conditional_add(module);
     let removed = arith::remove_trivial_inst(module);
     (iterative, module) = (iterative | removed.0, removed.1);
     iterative |= cfg::merge_trivial_branches(&mut module);
@@ -24,7 +22,7 @@ pub fn transform(mut module: Module, level: usize) -> (Module, bool) {
     iterative |= arith::const_propagate(&mut module);
     iterative |= cfg::phi_to_select(&mut module);
     iterative |= mem::remove_redundant_load(&mut module);
-    if level == 2 {
+    if level >= 2 {
       iterative |= cfg::simplify_constant_conditional_branches(&mut module);
       iterative |= cfg::connect_unconditional_branches(&mut module);
       let linearized = arith::linearize_addsub(module);

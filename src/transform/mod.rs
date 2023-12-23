@@ -2,7 +2,7 @@ use trinity::ir::module::Module;
 
 use crate::compiler::CompilerFlags;
 
-use self::simplify::{cfg::merge_trivial_branches, arith::const_propagate, trim};
+use self::simplify::{cfg::merge_trivial_branches, arith::const_propagate, trim, peephole};
 
 mod inline;
 mod mem;
@@ -45,7 +45,8 @@ pub fn optimize(mut module: Module, flags: &CompilerFlags) -> Module {
       break;
     }
   }
-  let (mut simplified_2, _) = simplify::transform(res, 2);
+  let rewritten = peephole::rewrite_print_int(res);
+  let (mut simplified_2, _) = simplify::transform(rewritten, flags.opt_level as usize);
   trim::remove_uncalled_functions(&mut simplified_2);
   simplified_2
 }
