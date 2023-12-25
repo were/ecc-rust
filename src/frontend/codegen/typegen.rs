@@ -204,7 +204,7 @@ impl TypeGen {
       CGType::Type(x) => {
         x.to_string(ctx)
         .chars()
-        .filter(|c| *c != ' ')
+        .filter(|c| *c != ' ' && *c != '%')
         .collect::<_>()
       }
       CGType::Pointer(ty) => {

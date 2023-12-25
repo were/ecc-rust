@@ -677,7 +677,6 @@ impl CodeGen {
           .iter()
           .map(|x| self.generate_expr(x, false))
           .collect::<Vec<_>>();
-        dbg!(array_obj.to_string(&self.tg.builder.module.context, true));
         let mut carried_ty = self.pointer_cache.get(&array_obj.skey).unwrap().clone();
         // for (i, elem) in indices.iter().enumerate() {
         //   eprintln!("idx_{}: {}", i, elem.to_string(&self.tg.builder.module.context, true));
