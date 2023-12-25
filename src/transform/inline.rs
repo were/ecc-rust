@@ -4,7 +4,7 @@ use trinity::{
   ir::{
     module::{Module, namify}, ValueRef, value::{
       instruction::{Call, InstMutator, InstOpcode, BranchMetadata},
-      block::BlockRef
+      block::BlockRef, function::{FuncMutator, FuncAttr}
     },
     Instruction, Block
   },
@@ -68,6 +68,15 @@ pub fn transform(m: Module, flags: &CompilerFlags) -> (Module, bool) {
   let mut modified = false;
   let void_ty = builder.context().void_type();
   let inlinable_functions = gather_inlinable_functions(&builder.module);
+  if flags.target == "wasm" {
+    for i in 0..builder.module.get_num_functions() {
+      let func = builder.module.get_function(i).unwrap().as_super();
+      if !inlinable_functions.contains(&func) {
+        let mut mutator = FuncMutator::new(builder.context(), func);
+        mutator.add_attr(FuncAttr::NoInline);
+      }
+    }
+  }
   while let Some(call_site) = has_inlinable_call_site(&builder.module, &inlinable_functions) {
     modified = true;
     let call_inst = call_site.as_ref::<Instruction>(&builder.module.context).unwrap();
