@@ -1,30 +1,48 @@
 import os
+import sys
 import subprocess
+import argparse
+
+target = sys.argv[1]
+
+tasks = {
+    'wasm': [('emcc', [1, 3]), ('myown', [3])],
+    'apple-arm': [('clang', [1, 2, 3])],
+}
+
+fmt = '%d' if target == 'apple-arm' else '%.2f'
+
+todo = tasks[target]
 
 def parse_time(raw):
     for line in raw.split('\n'):
-        if line.startswith('Exec time: '):
-            res = line[11:]
-            coef = 1 if res.endswith('ms') else 1000
-            return float(res.rstrip('ms')) * coef
+        if line.startswith('Average exec time: '):
+            raw = line.split()
+            unit = raw[-1]
+            num = raw[-2]
+            coef = 1 if unit == 'ms' else 1000
+            return float(num) * coef
+    for line in raw.split('\n'):
+        if line.startswith('Instructions retired: '):
+            return int(line.split()[-1])
 
 def run_cmd(cmd):
     return subprocess.check_output(cmd, shell=True).decode('utf-8')
 
-def average(lst):
-    return sum(lst) / len(lst)
-
-n = 10
 prefix = '../tests/performance/'
+
+head = []
+for backend, opts in todo:
+    for lv in opts:
+        head.append(f'{backend}-{lv}')
+print(',', ','.join(head), sep='')
+
 for f in sorted(os.listdir('../tests/performance/')):
-    myown = [parse_time(run_cmd(f'./test.sh {prefix}/{f} --opt 2 2>&1')) for i in range(n)]
-    myown = average(myown)
-    myown = '%.2f' % myown
-    emcc = [parse_time(run_cmd(f'./test.sh {prefix}/{f} --backend emcc --opt 0 2>&1')) for i in range(n)]
-    emcc = average(emcc)
-    emcc = '%.2f' % emcc
-    emcc2 = [parse_time(run_cmd(f'./test.sh {prefix}/{f} --backend emcc --opt 2 2>&1')) for i in range(n)]
-    emcc2 = average(emcc2)
-    emcc2 = '%.2f' % emcc2
-    print(f, '%s %s %s' % (myown, emcc, emcc2))
-    # print(f, '%.2f %.2f' % (myown, emcc))
+    data = []
+    for backend, opts in todo:
+        for lv in opts:
+            cmd = f'./test.sh {prefix}/{f} {target} --timeit --backend {backend} --opt {lv} 2>&1'
+            res = parse_time(run_cmd(cmd))
+            data.append(res)
+    print(f, ','.join(fmt % i for i in data), sep=',')
+

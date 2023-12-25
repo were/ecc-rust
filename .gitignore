@@ -8,4 +8,5 @@ Cargo.lock
 *.out
 *.o
 *.log
+*.csv
 .vim/*
