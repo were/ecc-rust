@@ -9,7 +9,7 @@ use trinity::ir::{
     ValueRef, Function,
     instruction::{InstOpcode, Alloca, BranchMetadata}
   },
-  types::TypeRef,
+  types::{TypeRef, arraytype::PointerAttr},
   Block, Instruction, module::Module, TKindCode,
 };
 use trinity::builder::Builder;
@@ -143,7 +143,7 @@ impl CodeGen {
       if let ast::Decl::Func(func) = decl {
         let ret_ty = if func.id.literal == "malloc".to_string() {
           // If it is "malloc", return a raw pointer.
-          self.tg.builder.context().pointer_type()
+          self.tg.builder.context().attributed_pointer_type(vec![PointerAttr::NoAlias])
         } else {
           // If not, respect the compiler.
           let cgty = self.tg.generate_type(&func.ty);
@@ -228,6 +228,15 @@ impl CodeGen {
     res
   }
 
+  /// Call malloc and store the pointer type.
+  fn call_malloc(&mut self, size: ValueRef, ty: CGType) -> ValueRef {
+    let callee = self.cache_stack.get(&"malloc".to_string()).unwrap().clone();
+    let obj = self.tg.builder.create_func_call(callee, vec![size]);
+    self.pointer_cache.insert(obj.skey, ty.clone());
+    obj
+  }
+
+  /// Declare a variable and store the pointer type.
   fn declare_variable(&mut self, ty: CGType, id: String, init: Option<ValueRef>) -> ValueRef {
     // Save block and instruciton for restoring later
     let block = self.tg.builder.get_current_block().unwrap();
@@ -625,7 +634,6 @@ impl CodeGen {
         res
       }
       ast::Expr::NewExpr(ne) => {
-        let malloc = self.cache_stack.get(&"malloc".to_string()).unwrap().clone();
         let i32ty = self.tg.builder.context().int_type(32);
         let ty = self.tg.generate_type(&ne.dtype);
         let size = if let CGType::Pointer(pointee) = &ty {
@@ -636,8 +644,7 @@ impl CodeGen {
           ty.get_scalar_size_in_bits(&self.tg.builder.module) / 8
         };
         let size = self.tg.builder.context().const_value(i32ty.clone(), size as u64);
-        let obj = self.tg.builder.create_func_call(malloc.clone(), vec![size]);
-        self.pointer_cache.insert(obj.skey, ty.clone());
+        let obj = self.call_malloc(size, ty.clone());
         // eprintln!("mark {} as {}", obj.to_string(&self.tg.builder.module.context, true),
         //   ty.to_string(&self.tg.builder.module.context));
 
@@ -663,9 +670,10 @@ impl CodeGen {
           let obj_size = self.tg.builder.context().const_value(i32ty.clone(), obj_size as u64);
           // Allocate the array buffer.
           let bytes = self.tg.builder.create_mul(array_len, obj_size);
-          let payload = self.tg.builder.create_func_call(malloc, vec![bytes]);
           // Write array buffer to object's second field.
-          let payload_ptr = self.get_struct_field(raw_aty, obj.clone(), 1, "array.payload");
+          let payload_ptr = self.get_struct_field(raw_aty.clone(), obj.clone(), 1, "array.payload");
+          let ptr_ty = self.pointer_cache.get(&payload_ptr.skey).unwrap();
+          let payload = self.call_malloc(bytes, ptr_ty.get_pointee_ty());
           self.tg.builder.create_store(payload, payload_ptr).unwrap();
         }
         obj

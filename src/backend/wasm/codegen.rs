@@ -362,9 +362,6 @@ impl <'ctx>Codegen<'ctx> {
             let mut res = value.to_le_bytes().to_vec();
             res.resize(self.module.tm.get_pointer_size_in_bits() / 8, 0);
             res
-            // let ptr_ty = ptr_ty.as_ref::<PointerType>(&self.module.context).unwrap();
-            // let ptr_scalar = ptr_ty.get_pointee_ty();
-            // let opcode = inst.get_opcode();
           }
           _ => {
             panic!("ConstExpr::to_string: not a constant opcode {:?}", gv.get_opcode().to_string());

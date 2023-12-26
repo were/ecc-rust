@@ -15,12 +15,12 @@ mod simplify;
 
 pub fn optimize(mut module: Module, flags: &CompilerFlags) -> Module {
   let opt_level = flags.opt_level;
+  simplify::cfg::remove_unreachable_block(&mut module);
   if opt_level == 0 {
     return module;
   }
   // eprintln!("{}", module);
   const_propagate(&mut module);
-  simplify::cfg::remove_unreachable_block(&mut module);
   lifetime::remove_unpaired_lifetime(&mut module);
   let mut ssa = ssa::transform(module);
   merge_trivial_branches(&mut ssa);

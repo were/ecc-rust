@@ -6,8 +6,8 @@ import argparse
 target = sys.argv[1]
 
 tasks = {
-    'wasm': [('emcc', [1, 3]), ('myown', [3])],
-    'apple-arm': [('clang', [1, 2, 3])],
+    'wasm': [('emcc', [0, 1, 2, 3]), ('myown', [3])],
+    'apple-arm': [('clang', [0, 1, 2, 3])],
 }
 
 fmt = '%d' if target == 'apple-arm' else '%.2f'
