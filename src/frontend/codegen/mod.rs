@@ -1,16 +1,17 @@
 mod typegen;
 
-use std::rc::Rc;
+use std::{rc::Rc, collections::HashSet};
 use std::collections::HashMap;
 
+use trinity::ir::types::functype::RetValAttr;
 use trinity::ir::{
   self,
   value::{
     ValueRef, Function,
-    instruction::{InstOpcode, Alloca, BranchMetadata}
+    instruction::{InstOpcode, Alloca, BranchMetadata, CallAttr}
   },
-  types::{TypeRef, arraytype::PointerAttr},
-  Block, Instruction, module::Module, TKindCode,
+  types::TypeRef,
+  Block, Instruction, module::Module, TKindCode, ConstScalar,
 };
 use trinity::builder::Builder;
 use self::typegen::{TypeGen, CGType};
@@ -124,9 +125,14 @@ impl CodeGen {
     let i64_ty = self.tg.builder.context().int_type(64);
     let fty = self.tg.builder.context().function_type(void_ty, vec![i64_ty, ptr_ty]);
     {
-      let start = self.tg.builder.create_function(&"llvm.lifetime.start".to_string(), &fty);
+      let empty_attr = HashSet::new();
+      let start = self
+        .builder_mut()
+        .create_function(&"llvm.lifetime.start".to_string(), &fty, empty_attr.clone());
       self.cache_stack.insert("llvm.lifetime.start".to_string(), start);
-      let end = self.tg.builder.create_function(&"llvm.lifetime.end".to_string(), &fty);
+      let end = self
+        .builder_mut()
+        .create_function(&"llvm.lifetime.end".to_string(), &fty, empty_attr);
       self.cache_stack.insert("llvm.lifetime.end".to_string(), end);
     }
     for tu in &ast.tus {
@@ -141,20 +147,21 @@ impl CodeGen {
   fn generate_translation_unit(&mut self, tu: &Rc<ast::TranslateUnit>) {
     for decl in &tu.decls {
       if let ast::Decl::Func(func) = decl {
-        let ret_ty = if func.id.literal == "malloc".to_string() {
+        let (ret_ty, attr) = if func.id.literal == "malloc".to_string() {
+          let attrs = vec![RetValAttr::NoAlias];
           // If it is "malloc", return a raw pointer.
-          self.tg.builder.context().attributed_pointer_type(vec![PointerAttr::NoAlias])
+          (self.tg.builder.context().pointer_type(), attrs.into_iter().collect())
         } else {
           // If not, respect the compiler.
           let cgty = self.tg.generate_type(&func.ty);
-          cgty.to_llvm(self.builder_mut().context())
+          (cgty.to_llvm(self.builder_mut().context()), HashSet::new())
         };
         let args_ty :Vec<TypeRef> = func.args.iter().map(|arg| {
           let res = self.tg.generate_type(&arg.ty);
           res.to_llvm(self.builder_mut().context())
         }).collect();
-        let fty = ret_ty.fn_type(self.tg.builder.context(), args_ty);
-        let func_ref = self.tg.builder.create_function(&func.id.literal, &fty);
+        let fty = ret_ty.fn_type(self.builder_mut().context(), args_ty);
+        let func_ref = self.tg.builder.create_function(&func.id.literal, &fty, attr);
         self.cache_stack.insert(func.id.literal.clone(), func_ref.clone());
       }
     }
@@ -231,7 +238,13 @@ impl CodeGen {
   /// Call malloc and store the pointer type.
   fn call_malloc(&mut self, size: ValueRef, ty: CGType) -> ValueRef {
     let callee = self.cache_stack.get(&"malloc".to_string()).unwrap().clone();
-    let obj = self.tg.builder.create_func_call(callee, vec![size]);
+    let attrs = if let Some(cs) = size.as_ref::<ConstScalar>(&self.tg.builder.module.context) {
+      vec![CallAttr::DereferenceableOrNull(cs.get_value() as usize)]
+    } else {
+      vec![]
+    };
+    let call_ty = self.builder_mut().context().pointer_type();
+    let obj = self.builder_mut().create_typed_call_with_attrs(attrs, call_ty, callee, vec![size]);
     self.pointer_cache.insert(obj.skey, ty.clone());
     obj
   }
@@ -756,7 +769,7 @@ impl CodeGen {
     let code = asm.code.value.clone();
     let operands = asm.operands.value.clone();
     let callee = self.tg.builder.create_inline_asm(vty.clone(), code, operands, true);
-    self.tg.builder.create_typed_call(vty.clone(), callee, params)
+    self.tg.builder.create_typed_call_with_attrs(vec![], vty.clone(), callee, params)
   }
 
   fn generate_func_call(&mut self, call: &Rc<ast::FuncCall>) -> ValueRef {

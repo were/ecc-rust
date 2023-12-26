@@ -22,7 +22,7 @@ pub fn remove_uncalled_functions(m: &mut Module) -> bool {
       let mut to_maintain = Vec::new();
       for bb in func.block_iter() {
         for inst in bb.inst_iter() {
-          if let InstOpcode::Call = inst.get_opcode() {
+          if let InstOpcode::Call(_) = inst.get_opcode() {
             to_maintain.push(inst.as_super());
           }
         }

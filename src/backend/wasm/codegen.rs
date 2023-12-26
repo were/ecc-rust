@@ -47,7 +47,7 @@ impl <'ctx>Codegen<'ctx> {
     }
     if let Some(inst) = value.as_ref::<Instruction>(&self.module.context) {
       let mut res = match inst.get_opcode() {
-        InstOpcode::Call => {
+        InstOpcode::Call(_) => {
           let call = inst.as_sub::<Call>().unwrap();
           let callee = call.get_callee().get_name();
           let operands = call.arg_iter().map(|x| self.emit_value(x, false).remove(0));
@@ -66,10 +66,6 @@ impl <'ctx>Codegen<'ctx> {
             res
           } else {
             let raw_dest = br.dest_label().unwrap();
-            // if raw_dest.get_skey() == next_block {
-            //   vec![WASMInst::plain(format!(";; Linearly, next block is already {}", namify(&raw_dest.get_name())))]
-            // } else {
-            // }
             vec![WASMInst::br(inst.get_skey(), namify(&raw_dest.get_name()))]
           }
         }
@@ -294,7 +290,7 @@ impl <'ctx>Codegen<'ctx> {
               InstOpcode::Return | InstOpcode::Store(_) => {
                 true
               }
-              InstOpcode::Call => {
+              InstOpcode::Call(_) => {
                 if self.locals.contains_key(&inst.get_skey()) {
                   true
                 } else {

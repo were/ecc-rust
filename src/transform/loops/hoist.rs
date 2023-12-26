@@ -36,7 +36,7 @@ fn color_loop_invariants<'ctx>(
                 visited[user.get_skey()] = true;
                 workspace[user.get_skey()] = match user.get_opcode() {
                   InstOpcode::Load(_) => InvariantType::Memory((src_key, user.get_type().clone())),
-                  InstOpcode::Store(_) | InstOpcode::Call => InvariantType::SideEffect,
+                  InstOpcode::Store(_) | InstOpcode::Call(_) => InvariantType::SideEffect,
                   InstOpcode::Return | InstOpcode::Phi | InstOpcode::Branch(_)
                     => InvariantType::CtrlFlow,
                   _ => workspace[front.get_skey()].clone()
@@ -113,7 +113,7 @@ fn analyze_hoistable_invariants(m: &Module) -> Vec<(usize, usize)> {
     for bb in f.block_iter() {
       for i in bb.inst_iter() {
         match i.get_opcode() {
-          InstOpcode::Store(_) | InstOpcode::Call => {
+          InstOpcode::Store(_) | InstOpcode::Call(_) => {
             workspace[i.get_skey()] = InvariantType::SideEffect;
           }
           InstOpcode::Return | InstOpcode::Phi | InstOpcode::Branch(_) => {

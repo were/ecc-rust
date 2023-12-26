@@ -8,7 +8,10 @@ fn analysis(module: &Module) -> Vec<ValueRef> {
     for block in func.block_iter() {
       for inst in block.inst_iter() {
         match inst.get_opcode() {
-          InstOpcode::Return | InstOpcode::Call | InstOpcode::Branch(_) | InstOpcode::Store(_) => {
+          InstOpcode::Return |
+          InstOpcode::Call(_) |
+          InstOpcode::Branch(_) |
+          InstOpcode::Store(_) => {
             continue;
           },
           _ => {

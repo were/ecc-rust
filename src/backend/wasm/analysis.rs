@@ -15,7 +15,7 @@ pub(super) fn gather_locals(func: &FunctionRef) -> HashMap<usize, String> {
         InstOpcode::Branch(_) | InstOpcode::Return | InstOpcode::Store(_) => {
           continue;
         },
-        InstOpcode::Call => {
+        InstOpcode::Call(_) => {
           let call = inst.as_sub::<Call>().unwrap();
           let rty = call.get_callee().get_ret_ty();
           if let TKindCode::VoidType = rty.kind() {
@@ -25,7 +25,7 @@ pub(super) fn gather_locals(func: &FunctionRef) -> HashMap<usize, String> {
         _ => {}
       }
       match inst.get_opcode() {
-        InstOpcode::Phi | InstOpcode::Load(_) | InstOpcode::Call => {}
+        InstOpcode::Phi | InstOpcode::Load(_) | InstOpcode::Call(_) => {}
         _ => {
           let mut user_iter = inst.user_iter();
           // If we have a user

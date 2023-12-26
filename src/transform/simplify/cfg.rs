@@ -158,7 +158,7 @@ fn has_select_phi<'ctx>(module: &'ctx Module)
             // }
             let has_mem_op = |inst: InstructionRef| {
               match inst.get_opcode() {
-                InstOpcode::Load(_) | InstOpcode::Store(_) | InstOpcode::Call => true,
+                InstOpcode::Load(_) | InstOpcode::Store(_) | InstOpcode::Call(_) => true,
                 _ => false
               }
             };
